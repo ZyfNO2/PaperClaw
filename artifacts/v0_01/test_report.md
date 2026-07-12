@@ -3,12 +3,27 @@
 - 日期：2026-07-13
 - Python：3.13.5
 - 平台：Windows 11 / PowerShell
-- 命令：`python -m pytest -q --basetemp=tmp/pytest`
-- 结果：27 passed，1 skipped，0 failed
-- 覆盖：工具正向/失败路径、路径逃逸、symlink 逃逸、命令失败/超时、非法 JSON、未知 action、6 类离线 Agent Loop 与最大步数。
-- 静态检查：`ruff` 未安装，未擅自安装依赖。
-- 真实模型 smoke：2026-07-13 使用仓库根目录 `.env`（`https://opencode.ai/zen/go/v1` + `deepseek-v4-flash`）执行通过；真实 trace 保存在 `artifacts/v0_01/real_smoke_trace.json`。
-- 真实模型兼容修复：OpenCode Go 网关在当前环境下对无 `User-Agent` 的 `urllib` 请求返回 `403` / `error code: 1010`；适配器补充 `User-Agent` 和 `Accept` 后恢复正常。
-- 真实模型行为观察：模型在第一次参数名写错、第二次 `file_write` 覆盖冲突后，第三步改走 `bash` 覆写文件并完成验证，说明当前 v0.01 仍缺少真正的执行层 Permission Engine。
-- 观测性调整：CLI 已支持 `--verbose-events`，在测试/调试时输出每轮 `thinking / tool / result / done`；默认普通运行仅输出最终 JSON，避免日常命令行噪声过高。
-- 独立 Review：初审为 REVISE；已修复进程树超时、verification 误判、repair prompt 断言和 symlink 静默通过。任意 Shell 命令无法仅靠 denylist 保证工作区隔离，保留为已知阻塞。
+- 全量命令：`python -m pytest -q --basetemp=tmp/pytest_full_v002`
+- 结果：`44 passed, 1 skipped, 0 failed`
+
+覆盖摘要：
+
+- v0.01 基础工具链：文件读写、精确编辑、grep、bash、路径边界、超时与错误分支；
+- v0.01 Loop 行为：非法 JSON、未知 action、最大步数、未验证完成、CLI 观测事件；
+- v0.02 Verify：最新文件内容、验证命令时序、无关成功命令拒绝、pytest 摘要解析；
+- v0.02 Reflection：repair / blocked / accept / 重复失败上限 / failed claim 与 evidence 约束；
+- v0.02 集成路径：错误完成提议被拒绝、修改后未重验被拒绝、测试失败后修复并重验成功。
+
+真实模型受控演示：
+
+- 命令入口：`python -m paperclaw.cli ... --enable-verification-gate --verbose-events`
+- 模型通道：仓库根 `.env` 中的 OpenAI-compatible 配置
+- 结果：`completed_verified`
+- 演示工作区：`tmp/real_v002_demo`
+- 交付 trace：`artifacts/v0_02/verify_reflection_trace.json`
+
+关键观察：
+
+- CLI 现在可正确序列化 `DoneProposal`、`VerificationPlan`、`VerificationResult` 与 `ReflectionDecision`；
+- Verify 会保留验证命令的 `exit_code`、耗时、截断标记和 pytest 统计；
+- Reflection 若引用未知 evidence 或删减 failed claims，会被 validator 拒绝。

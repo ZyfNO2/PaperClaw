@@ -7,12 +7,16 @@ from typing import Any, Protocol
 
 @dataclass(frozen=True)
 class ToolContext:
+    """Execution context shared by every tool so path policy and output bounds stay consistent."""
+
     workspace: Path
     output_limit: int = 20_000
 
 
 @dataclass
 class ToolResult:
+    """Normalized tool outcome stored in history and reused by tests, CLI output, and later trace exporters."""
+
     ok: bool
     output: str
     error_code: str | None = None
@@ -27,6 +31,8 @@ class ToolValidationError(ValueError):
 
 
 class Tool(Protocol):
+    """Stable tool contract for registry lookup and flow-safe execution."""
+
     name: str
     description: str
 
@@ -48,6 +54,8 @@ def truncate(text: str, limit: int) -> tuple[str, bool]:
 
 
 def safe_execute(tool: Tool, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
+    """Convert expected and unexpected tool failures into ToolResult so one bad tool call cannot crash the agent loop."""
+
     try:
         tool.validate(arguments)
         return tool.execute(arguments, context)

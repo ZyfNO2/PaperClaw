@@ -57,8 +57,8 @@ def _git(*args: str, timeout: int = 5) -> str:
 
 # ----------------- SOP 识别 -----------------
 
-SOP_FILE_RE = re.compile(r"PaperAgent_Re(\d+)\.(\d+).*SOP\.md$", re.IGNORECASE)
-SOP_VERSION_IN_COMMIT_RE = re.compile(r"Re\s?(\d+)\.(\d+)", re.IGNORECASE)
+SOP_FILE_RE = re.compile(r"(?:PaperAgent_Re|PaperClaw_v)(\d+)\.(\d+).*SOP\.md$", re.IGNORECASE)
+SOP_VERSION_IN_COMMIT_RE = re.compile(r"(?:Re|v)\s?(\d+)\.(\d+)", re.IGNORECASE)
 CHECKBOX_RE = re.compile(r"^\s*- \[( |x|X)\]\s*(.*)$")
 
 
@@ -69,7 +69,7 @@ def _find_sop_files() -> list[Path]:
     改用 iterdir() + 正则过滤.
     """
     out: list[Path] = []
-    name_re = re.compile(r"^PaperAgent_Re\d+\.\d+.*SOP\.md$", re.IGNORECASE)
+    name_re = re.compile(r"^(?:PaperAgent_Re|PaperClaw_v)\d+\.\d+.*SOP\.md$", re.IGNORECASE)
     for sub in ("", "Arch", "Legcy/reports"):
         base = PLAN_DIR / sub if sub else PLAN_DIR
         if not base.exists():
@@ -94,7 +94,7 @@ def _current_sop_by_mtime() -> tuple[Path | None, str | None]:
         mtime = p.stat().st_mtime
         if datetime.fromtimestamp(mtime) < cutoff:
             continue
-        tag = f"Re{m.group(1)}.{m.group(2)}"
+        tag = f"v{m.group(1)}.{m.group(2)}"
         candidates.append((p, mtime, tag))
     if not candidates:
         return None, None
@@ -108,7 +108,7 @@ def _current_sop_from_commit() -> str | None:
     for line in log.splitlines():
         m = SOP_VERSION_IN_COMMIT_RE.search(line)
         if m:
-            return f"Re{m.group(1)}.{m.group(2)}"
+            return f"v{m.group(1)}.{m.group(2)}"
     return None
 
 
@@ -161,12 +161,12 @@ def _parse_checkboxes(sop_path: Path) -> dict:
 # ----------------- 交接包产物检查 -----------------
 
 EXPECTED_HANDOFF_FILES = [
-    "manifest.json",
-    "trace_before_after.json",
-    "failure_taxonomy.json",
-    "change_hypothesis.json",
-    "metrics.json",
-    "decision.md",
+    "implementation_summary.md",
+    "verification_contract.md",
+    "test_report.md",
+    "verify_reflection_trace.json",
+    "failure_cases.md",
+    "file_manifest.txt",
 ]
 
 
@@ -177,16 +177,16 @@ def _find_handoff_dirs(version_tag: str) -> list[Path]:
     a) artifacts/reN_M/<workpack>/  — 每个工作包一个子目录
     b) artifacts/reN_M/             — 根目录直接放 decision.md 等
     """
-    m = re.match(r"Re(\d+)\.(\d+)", version_tag, re.IGNORECASE)
+    m = re.match(r"v(\d+)\.(\d+)", version_tag, re.IGNORECASE)
     if not m:
         return []
-    artifact_root = ARTIFACTS_DIR / f"re{m.group(1)}_{m.group(2)}"
+    artifact_root = ARTIFACTS_DIR / f"v{m.group(1)}_{m.group(2)}"
     if not artifact_root.exists():
         return []
     # 所有子目录都算交接包 (eval/ 除外, 它是评测产物)
     subdirs = [p for p in artifact_root.iterdir() if p.is_dir() and p.name != "eval"]
     # 若无子目录, 但根目录有 decision.md → 视为根目录本身是一个交接包
-    if not subdirs and (artifact_root / "decision.md").exists():
+    if not subdirs and any((artifact_root / name).exists() for name in EXPECTED_HANDOFF_FILES):
         return [artifact_root]
     return subdirs
 
@@ -199,7 +199,7 @@ def _check_handoff_completeness(handoff_dirs: list[Path]) -> dict:
     for d in handoff_dirs:
         # 根目录布局 (artifacts/reN_M/ 本身) 容许缺 trace/metrics 等
         is_root_layout = d.parent == ARTIFACTS_DIR
-        expected = EXPECTED_HANDOFF_FILES if not is_root_layout else ["decision.md"]
+        expected = EXPECTED_HANDOFF_FILES
         present = [f for f in expected if (d / f).exists()]
         missing = [f for f in expected if not (d / f).exists()]
         result.append({
@@ -244,17 +244,17 @@ def main() -> int:
         _save_cache({"last_run": datetime.now().isoformat(), "in_context": False})
         return 0
 
-    # 优先用 commit 里提到的版本; 否则用 mtime 最新的
-    target_tag = commit_tag or current_tag
+    # PaperClaw 的 SOP 推进按当前工作树中最近修改的 SOP 为准，避免旧 commit tag 把检查错指到上一版。
+    target_tag = current_tag or commit_tag
     if not target_tag or not sop_path:
         _emit("  [SOP completion] in SOP context but no SOP file found; skip")
         return 0
 
-    # 如果 commit 提到的版本和 mtime 最新版本不一致, 重新定位文件
-    if commit_tag and (not current_tag or commit_tag != current_tag):
+    # 如果当前工作树没有明确的最近 SOP，再退回到 commit 提到的版本。
+    if commit_tag and not current_tag:
         for p in _find_sop_files():
             m = SOP_FILE_RE.search(p.name)
-            if m and f"Re{m.group(1)}.{m.group(2)}" == commit_tag:
+            if m and f"v{m.group(1)}.{m.group(2)}" == commit_tag:
                 sop_path = p
                 target_tag = commit_tag
                 break
