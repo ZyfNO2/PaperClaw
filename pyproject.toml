@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paperclaw"
+version = "0.0.1"
+description = "A lightweight agent runtime for coding and research workflows"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+paperclaw = "paperclaw.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.7",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["paperclaw*", "pocketflow*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

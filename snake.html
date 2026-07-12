@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>贪吃蛇</title>
+<style>
+  body { text-align: center; background: #222; color: #fff; font-family: sans-serif; }
+  canvas { background: #111; display: block; margin: 20px auto; border: 2px solid #fff; }
+  #score { font-size: 24px; }
+</style>
+</head>
+<body>
+<h1>贪吃蛇</h1>
+<div id="score">0</div>
+<canvas id="game" width="400" height="400"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreDisplay = document.getElementById('score');
+
+const grid = 20;
+const rows = canvas.height / grid;
+const cols = canvas.width / grid;
+
+let snake = [{x:10, y:10}];
+let food = {x:15, y:10};
+let direction = {x:1, y:0};
+let nextDirection = {x:1, y:0};
+let score = 0;
+let gameOver = false;
+let win = false;
+let gameLoop;
+
+// Generate random food not on snake
+function generateFood() {
+  const free = [];
+  for (let x=0; x<cols; x++) {
+    for (let y=0; y<rows; y++) {
+      if (!snake.some(s => s.x===x && s.y===y)) free.push({x,y});
+    }
+  }
+  if (free.length===0) { win=true; return null; }
+  return free[Math.floor(Math.random()*free.length)];
+}
+
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // Draw grid lines
+  ctx.strokeStyle = '#333';
+  for (let i=0; i<=cols; i++) {
+    ctx.beginPath(); ctx.moveTo(i*grid,0); ctx.lineTo(i*grid,canvas.height); ctx.stroke();
+  }
+  for (let i=0; i<=rows; i++) {
+    ctx.beginPath(); ctx.moveTo(0,i*grid); ctx.lineTo(canvas.width,i*grid); ctx.stroke();
+  }
+  // Draw snake
+  snake.forEach((seg, idx) => {
+    ctx.fillStyle = idx===0 ? '#0f0' : '#0a0';
+    ctx.fillRect(seg.x*grid+1, seg.y*grid+1, grid-2, grid-2);
+  });
+  // Draw food
+  if (food) {
+    ctx.fillStyle = '#f00';
+    ctx.fillRect(food.x*grid+1, food.y*grid+1, grid-2, grid-2);
+  }
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(255,0,0,0.5)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#fff';
+    ctx.font = '40px sans-serif';
+    ctx.fillText('Game Over', canvas.width/2-120, canvas.height/2);
+  }
+  if (win) {
+    ctx.fillStyle = 'rgba(0,255,0,0.5)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#fff';
+    ctx.font = '40px sans-serif';
+    ctx.fillText('You Win!', canvas.width/2-100, canvas.height/2);
+  }
+}
+
+function update() {
+  if (gameOver || win) return;
+  direction = nextDirection;
+  const head = {x: snake[0].x + direction.x, y: snake[0].y + direction.y};
+  // Check wall
+  if (head.x < 0 || head.x >= cols || head.y < 0 || head.y >= rows) {
+    gameOver = true; return;
+  }
+  // Check self collision
+  if (snake.some(s => s.x===head.x && s.y===head.y)) {
+    gameOver = true; return;
+  }
+  snake.unshift(head);
+  // Check food
+  if (head.x === food.x && head.y === food.y) {
+    score++;
+    scoreDisplay.textContent = score;
+    food = generateFood();
+    if (!food && !win) { // may be win
+      win = true;
+    }
+  } else {
+    snake.pop();
+  }
+}
+
+function changeDirection(e) {
+  e.preventDefault();
+  const key = e.key;
+  if ((key === 'ArrowUp' || key === 'w') && direction.y!==1) nextDirection = {x:0,y:-1};
+  if ((key === 'ArrowDown' || key === 's') && direction.y!==-1) nextDirection = {x:0,y:1};
+  if ((key === 'ArrowLeft' || key === 'a') && direction.x!==1) nextDirection = {x:-1,y:0};
+  if ((key === 'ArrowRight' || key === 'd') && direction.x!==-1) nextDirection = {x:1,y:0};
+}
+
+function restart() {
+  snake = [{x:10,y:10}];
+  food = generateFood();
+  direction = {x:1,y:0};
+  nextDirection = {x:1,y:0};
+  score = 0;
+  gameOver = false;
+  win = false;
+  scoreDisplay.textContent = '0';
+}
+
+// Events
+document.addEventListener('keydown', changeDirection);
+canvas.addEventListener('click', () => {
+  restart();
+});
+
+function gameStep() {
+  update();
+  draw();
+}
+
+// Initial food
+food = generateFood();
+
+gameLoop = setInterval(gameStep, 100);
+</script>
+</body>
+</html>
