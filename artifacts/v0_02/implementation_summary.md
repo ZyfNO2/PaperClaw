@@ -26,3 +26,10 @@
 - Verify 已能阻止“无关成功命令冒充验证”和“修改后未重验直接完成”；
 - 真实模型仍可能先走一两步低质量修复尝试，再被 Gate 拉回正确路径；
 - `bash` 仍可越过 `file_write` / `file_edit` 的更细粒度约束，因此 Permission Engine 仍是后续必做项。
+
+## 收尾 Review 结论
+
+- Verify 目前基于工作区文件、运行 history、bash metadata 和 pytest 摘要生成 `VerificationResult`，没有把模型自述当作客观 Evidence。
+- Reflection 经过 `validate_reflection_decision()` 二次校验，不能伪造 `evidence_ids`、不能在 Verify 未通过时 `accept`、也不能删减 required `failed_claim_ids`。
+- feature flag 默认关闭，v0.01 兼容路径仍保留；启用 `--enable-verification-gate` 后才切换到 `done_proposed -> verify -> reflect`。
+- 文档侧已同步到 `44 passed, 1 skipped` 的当前测试基线，并将 v0.02 SOP 状态收口为已完成。

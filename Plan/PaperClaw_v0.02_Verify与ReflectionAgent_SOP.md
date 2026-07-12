@@ -1,7 +1,7 @@
 # PaperClaw v0.02：Verify 与 Reflection Agent SOP
 
 > 版本：v0.02  
-> 状态：进行中 
+> 状态：已完成 
 > 类型：第二个工程实施 SOP  
 > 日期：2026-07-13  
 > 前置：`v0.01` 最小 PocketFlow ReAct Agent 已通过验收  
@@ -538,8 +538,8 @@ payload
 - [x] G1. 更新 README，仅描述真实完成能力。
 - [x] G2. 生成 `artifacts/v0_02/` 交付物。
 - [x] G3. 运行 SOP completion hook。
-- [ ] G4. Review Verify 是否真的产生客观证据。
-- [ ] G5. Review Reflection 是否可能绕过失败 Gate。
+- [x] G4. Review Verify 是否真的产生客观证据。
+- [x] G5. Review Reflection 是否可能绕过失败 Gate。
 
 ---
 
@@ -614,7 +614,7 @@ artifacts/v0_02/
 - [x] CLI 能解释为什么完成或为什么未完成；
 - [x] 原工具安全测试通过；
 - [x] 离线和真实模型验收完成；
-- [ ] 工程化注释审查通过；
+- [x] 工程化注释审查通过；
 - [x] 交付物齐全；
 - [x] SOP completion hook 已运行。
 
