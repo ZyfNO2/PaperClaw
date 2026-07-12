@@ -26,6 +26,7 @@ def load_dotenv(dotenv_path: Path) -> None:
 def console_print(text: str = "") -> None:
     stream = sys.stdout
     encoding = stream.encoding or "utf-8"
+    # CMD often runs in GBK; lossy re-encoding is better than crashing the whole run on one character.
     safe = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
     stream.write(safe + "\n")
     stream.flush()
@@ -38,6 +39,7 @@ def main() -> int:
     parser.add_argument("--max-steps", type=int, default=12)
     parser.add_argument("--verbose-events", action="store_true")
     args = parser.parse_args()
+    # Keep local runs zero-config while still allowing the shell to override any value explicitly.
     load_dotenv(Path.cwd() / ".env")
 
     def print_event(event: str, payload: dict) -> None:
