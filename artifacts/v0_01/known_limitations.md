@@ -1,9 +1,9 @@
 # 已知限制
 
-- Bash denylist 不是完整 Permission Engine，无法替代 OS sandbox。
-- Windows Bash 超时通过 `taskkill /T /F` 终止进程树并有 canary 测试；跨平台进程树治理延后。
-- 模型 JSON repair 仅支持完整 JSON 或单个 fenced JSON，不做宽松猜测。
-- v0.01 没有 Session、Memory、持久 Trace、Context Compaction、RAG、TUI 或多 Agent。
-- 文件写入尚非原子写入。
-- 虽然真实模型 smoke 已通过，但 `bash` 仍可绕过 `file_write` 的 overwrite 约束直接改写文件；这再次说明 denylist 不是完整 Permission Engine。
-- `--verbose-events` 仅是测试/调试观测层，不是持久 Trace 系统，也不提供可回放、可筛选或权限分级的运行审计能力。
+- `bash` denylist 不是完整 Permission Engine，无法替代真正的执行层权限隔离。
+- Windows 下超时清理依赖 `taskkill /T /F`，跨平台进程树治理仍未实现。
+- 当前模型输出契约仍偏“文字描述 + JSON”，工具参数 schema 没有细化到 prompt 内逐字段示例，因此真实模型偶尔会先试错一次参数名。
+- v0.02 Verify 只做本地确定性 Gate，尚未接入持久化 Trace、Session / Memory、Context Compaction、RAG 或 Eval。
+- 真实模型演示中，模型仍可能通过 `bash` 修改文件，这再次说明 v0.01/v0.02 的安全边界只是 MVP 级别，不适合高权限或不可信环境。
+- `--verbose-events` 只是调试观测层，不是完整可检索、可回放、可授权分级的审计系统。
+- MultiAgent、Lease、全局 Reviewer、持久事件存储仍属于 v0.03 及后续版本范围。

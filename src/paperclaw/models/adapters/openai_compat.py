@@ -37,6 +37,7 @@ class OpenAICompatibleModel:
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
+                # Some compatible gateways reject stdlib urllib traffic unless a normal User-Agent is present.
                 "User-Agent": f"PaperClaw/0.0.1 ({platform.system()} {platform.release()})",
             },
             method="POST",
@@ -50,4 +51,5 @@ class OpenAICompatibleModel:
         except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
             raise RuntimeError(f"model request timed out or failed to connect within {self.timeout:g}s") from exc
         message = data["choices"][0]["message"]
+        # Preserve provider reasoning separately so observability can show it without treating it as durable state.
         return ModelTurn(content=message.get("content", ""), reasoning=message.get("reasoning_content", ""))

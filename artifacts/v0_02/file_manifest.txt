@@ -1,0 +1,6 @@
+﻿failure_cases.md
+implementation_summary.md
+real_demo_state.json
+test_report.md
+verification_contract.md
+verify_reflection_trace.json

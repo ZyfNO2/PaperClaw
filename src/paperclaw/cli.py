@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import is_dataclass
 import json
 import os
 import sys
@@ -26,18 +27,39 @@ def load_dotenv(dotenv_path: Path) -> None:
 def console_print(text: str = "") -> None:
     stream = sys.stdout
     encoding = stream.encoding or "utf-8"
+    # CMD often runs in GBK; lossy re-encoding is better than crashing the whole run on one character.
     safe = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
     stream.write(safe + "\n")
     stream.flush()
 
 
+def json_ready(value):
+    """Convert runtime state into JSON-safe data for CLI output.
+
+    The runtime stores dataclasses for stronger internal contracts. The CLI keeps a recursive adapter here so
+    observability can expose the same state without weakening those contracts to raw dicts inside the agent loop.
+    """
+
+    if hasattr(value, "to_dict"):
+        return json_ready(value.to_dict())
+    if is_dataclass(value):
+        return json_ready(value.__dict__)
+    if isinstance(value, dict):
+        return {key: json_ready(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [json_ready(item) for item in value]
+    return value
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the PaperClaw v0.01 coding agent")
+    parser = argparse.ArgumentParser(description="Run the PaperClaw coding agent")
     parser.add_argument("task")
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
     parser.add_argument("--max-steps", type=int, default=12)
     parser.add_argument("--verbose-events", action="store_true")
+    parser.add_argument("--enable-verification-gate", action="store_true")
     args = parser.parse_args()
+    # Keep local runs zero-config while still allowing the shell to override any value explicitly.
     load_dotenv(Path.cwd() / ".env")
 
     def print_event(event: str, payload: dict) -> None:
@@ -60,18 +82,41 @@ def main() -> int:
         elif event == "invalid_model_output":
             console_print(f"[step {payload['step']}] invalid model output")
             console_print(payload["error"])
+        elif event == "done_proposed":
+            console_print(f"[step {payload['step']}] done proposed")
+            console_print(f"result: {payload['result']}")
+            console_print(f"claimed verification: {payload['verification']}")
         elif event == "done":
             console_print(f"[step {payload['step']}] done")
             console_print(f"result: {payload['result']}")
             console_print(f"verification: {payload['verification_status']}")
+        elif event == "verification_planned":
+            console_print(f"[step {payload['step']}] verification plan")
+            console_print(json.dumps(payload["plan"], ensure_ascii=False, indent=2))
+        elif event == "verification_started":
+            console_print(f"[step {payload['step']}] verification started")
+            console_print(f"claims: {payload['claim_count']}, checks: {payload['check_count']}")
+        elif event == "verification_check_completed":
+            evidence = payload["evidence"]
+            console_print(f"[step {payload['step']}] verification check <- {evidence['check_id']} ({evidence['status']})")
+            console_print(evidence["observed"])
+        elif event == "verification_completed":
+            console_print(f"[step {payload['step']}] verification result")
+            console_print(json.dumps(payload["result"], ensure_ascii=False, indent=2))
+        elif event == "reflection_started":
+            console_print(f"[step {payload['step']}] reflection started")
+            console_print(f"round: {payload['round']}")
+        elif event == "reflection_completed":
+            console_print(f"[step {payload['step']}] reflection decision")
+            console_print(json.dumps(payload["decision"], ensure_ascii=False, indent=2))
         elif event == "stop":
             console_print(f"stopped: {payload['reason']}")
 
-    state = AgentRuntime(OpenAICompatibleModel.from_env()).run(args.task, args.workspace, args.max_steps, event_handler=print_event)
+    state = AgentRuntime(OpenAICompatibleModel.from_env(), enable_verification_gate=args.enable_verification_gate).run(args.task, args.workspace, args.max_steps, event_handler=print_event)
     safe_state = {key: value for key, value in state.items() if key not in {"workspace", "current_tool_call", "event_handler"}}
     safe_state["history"] = [entry.to_dict() for entry in state["history"]]
-    console_print(json.dumps(safe_state, ensure_ascii=False, indent=2))
-    return 0 if state["stop_reason"] == "done" else 1
+    console_print(json.dumps(json_ready(safe_state), ensure_ascii=False, indent=2))
+    return 0 if state["stop_reason"] in {"done", "completed_verified"} else 1
 
 
 if __name__ == "__main__":
