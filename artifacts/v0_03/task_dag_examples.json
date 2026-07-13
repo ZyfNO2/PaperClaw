@@ -1,0 +1,144 @@
+{
+  "examples": [
+    {
+      "name": "two-independent-reads",
+      "goal": "read two independent files",
+      "tasks": [
+        {
+          "task_id": "read_a",
+          "title": "read a",
+          "objective": "read file a.txt",
+          "acceptance_criteria": ["content returned"],
+          "allowed_paths": ["."],
+          "writable_paths": [],
+          "allowed_tools": ["file_read"],
+          "dependencies": [],
+          "expected_artifacts": []
+        },
+        {
+          "task_id": "read_b",
+          "title": "read b",
+          "objective": "read file b.txt",
+          "acceptance_criteria": ["content returned"],
+          "allowed_paths": ["."],
+          "writable_paths": [],
+          "allowed_tools": ["file_read"],
+          "dependencies": [],
+          "expected_artifacts": []
+        }
+      ],
+      "expected_parallel": true
+    },
+    {
+      "name": "write-different-files",
+      "goal": "write two independent source files",
+      "tasks": [
+        {
+          "task_id": "write_a",
+          "title": "write a",
+          "objective": "write src/a.py",
+          "acceptance_criteria": ["src/a.py exists"],
+          "allowed_paths": ["."],
+          "writable_paths": ["src"],
+          "allowed_tools": ["file_write", "bash"],
+          "dependencies": [],
+          "expected_artifacts": ["src/a.py"]
+        },
+        {
+          "task_id": "write_b",
+          "title": "write b",
+          "objective": "write src/b.py",
+          "acceptance_criteria": ["src/b.py exists"],
+          "allowed_paths": ["."],
+          "writable_paths": ["src"],
+          "allowed_tools": ["file_write", "bash"],
+          "dependencies": [],
+          "expected_artifacts": ["src/b.py"]
+        }
+      ],
+      "expected_parallel": true
+    },
+    {
+      "name": "write-same-file-rejected",
+      "goal": "two workers must not write the same file",
+      "tasks": [
+        {
+          "task_id": "a",
+          "title": "write shared",
+          "objective": "write shared.py",
+          "acceptance_criteria": ["shared.py exists"],
+          "allowed_paths": ["."],
+          "writable_paths": ["src/shared.py"],
+          "allowed_tools": ["file_write"],
+          "dependencies": [],
+          "expected_artifacts": []
+        },
+        {
+          "task_id": "b",
+          "title": "write shared again",
+          "objective": "write shared.py",
+          "acceptance_criteria": ["shared.py exists"],
+          "allowed_paths": ["."],
+          "writable_paths": ["src/shared.py"],
+          "allowed_tools": ["file_write"],
+          "dependencies": [],
+          "expected_artifacts": []
+        }
+      ],
+      "expected_parallel": false,
+      "expected_error": "writable path conflict"
+    },
+    {
+      "name": "ordered-chain",
+      "goal": "ordered tasks share a file safely",
+      "tasks": [
+        {
+          "task_id": "a",
+          "title": "write base",
+          "objective": "write shared.py",
+          "acceptance_criteria": ["shared.py exists"],
+          "allowed_paths": ["."],
+          "writable_paths": ["src/shared.py"],
+          "allowed_tools": ["file_write"],
+          "dependencies": [],
+          "expected_artifacts": []
+        },
+        {
+          "task_id": "b",
+          "title": "edit shared",
+          "objective": "edit shared.py",
+          "acceptance_criteria": ["edit applied"],
+          "allowed_paths": ["."],
+          "writable_paths": ["src/shared.py"],
+          "allowed_tools": ["file_edit"],
+          "dependencies": ["a"],
+          "expected_artifacts": []
+        }
+      ],
+      "expected_parallel": false,
+      "expected_order": ["a", "b"]
+    },
+    {
+      "name": "cyclic-dag-rejected",
+      "goal": "cycle must be detected",
+      "tasks": [
+        {
+          "task_id": "a",
+          "title": "a",
+          "objective": "a",
+          "acceptance_criteria": ["done"],
+          "dependencies": ["b"]
+        },
+        {
+          "task_id": "b",
+          "title": "b",
+          "objective": "b",
+          "acceptance_criteria": ["done"],
+          "dependencies": ["a"]
+        }
+      ],
+      "expected_parallel": false,
+      "expected_error": "cycle"
+    }
+  ]
+}

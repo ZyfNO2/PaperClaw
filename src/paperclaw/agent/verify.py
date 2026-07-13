@@ -80,9 +80,15 @@ def build_verification_plan(shared: dict) -> VerificationPlan:
         claims.append(claim)
         checks.append(check)
 
-    command_claim_id = "claim-verification-command"
-    claims.append(TaskClaim(command_claim_id, "a relevant verification command ran after the last write and reported success", True, True, "project_rule"))
-    checks.append(VerificationCheck("check-verification-command", [command_claim_id], "history", {}, True))
+    # Only require a post-write verification command when the task actually
+    # performed write operations. A read-only task (file_read / grep / bash for
+    # inspection only) has no writes to verify, so demanding a "verification
+    # command after the last write" would always fail and block all read-only
+    # Workers under the default Verify Gate.
+    if seen_paths:
+        command_claim_id = "claim-verification-command"
+        claims.append(TaskClaim(command_claim_id, "a relevant verification command ran after the last write and reported success", True, True, "project_rule"))
+        checks.append(VerificationCheck("check-verification-command", [command_claim_id], "history", {}, True))
     return VerificationPlan(claims, checks, "runtime-history", shared["step_count"])
 
 
@@ -94,9 +100,18 @@ def execute_verification_plan(shared: dict, plan: VerificationPlan) -> Verificat
     failed_claim_ids: set[str] = set()
     uncovered_claim_ids: set[str] = set()
 
-    last_write_step = max((entry.step for entry in shared["history"] if entry.tool in {"file_write", "file_edit"} and entry.result.ok), default=0)
-    relevant_bash = _find_latest_relevant_bash(shared["history"], last_write_step)
-    verified_after_last_write = relevant_bash is not None
+    # Only track post-write bash verification when the task actually wrote
+    # files. Read-only tasks have no "last write" to verify after, so
+    # verified_after_last_write must be True to avoid blocking them.
+    has_writes = any(entry.tool in {"file_write", "file_edit"} and entry.result.ok for entry in shared["history"])
+    if has_writes:
+        last_write_step = max((entry.step for entry in shared["history"] if entry.tool in {"file_write", "file_edit"} and entry.result.ok), default=0)
+        relevant_bash = _find_latest_relevant_bash(shared["history"], last_write_step)
+        verified_after_last_write = relevant_bash is not None
+    else:
+        last_write_step = 0
+        relevant_bash = None
+        verified_after_last_write = True
 
     for check in plan.checks:
         if check.check_type == "file_exists":

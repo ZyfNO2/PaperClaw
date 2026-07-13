@@ -13,8 +13,10 @@
 
 - 项目方向与约束：`docs/desgin/PaperClaw_项目方向路径与约束.md`。
 - 上下文系统骨架：`docs/desgin/PaperClaw_上下文系统与提示词工程骨架.md`。
-- 当前实施顺序：`Plan/PaperClaw_v0.02_Verify与ReflectionAgent_SOP.md` → `Plan/PaperClaw_v0.03_MultiAgent分工协作_SOP.md` → `Plan/drafts/v0.04-v0.06`。
-- 上述文档中的未实现内容必须保持“设计 / 计划”状态，不得描述为已经实现。
+- 总路线与风险推演：`Plan/PaperClaw_v0.02-v0.10_SOP总路线与风险推演.md`。
+- 首批跨领域修复型测试题集：`Plan/testsets/PaperClaw_跨领域修复型测试题集_v0.01.md`，当前为设计稿，覆盖图像识别、大语言模型、三维重建各 1 题。
+- 当前实施顺序：v0.02 Verify/Reflection → v0.03 MultiAgent → v0.04 Context/SQLite → v0.05 Harness/QueryEngine → v0.06 Claw TUI → v0.07 Trace/Eval → v0.08 Retrieval/RAG → v0.09 SeededResearch → v0.10 Release。
+- v0.04–v0.10 尚为 SOP 草案，必须在前置版本通过后结合真实 Trace 冻结，不能描述为已经实现。
 
 ## 既有项目参考
 
@@ -26,6 +28,15 @@
 - 查阅这些项目时优先复用已经验证的思路、契约、测试方法和失败经验，避免重复踩坑。
 - 参考不等于直接复制：迁移代码或设计前必须核对许可证、依赖、数据契约、接口语义和 PaperClaw 当前边界。
 - PaperClaw 的 Context、Permission、Tool、Session、Trace 和 Eval 仍须保持独立，不能与任一参考项目形成不必要的运行时强耦合。
+- 详细模块、路径、许可证风险和分版本阅读清单见 `docs/reference/PaperClaw_参考项目与可复用模块索引.md`。
+
+## 参考优先规则
+
+- 编写或执行新的 SOP 前，必须先阅读 `docs/reference/PaperClaw_参考项目与可复用模块索引.md`，再选择与当前版本直接相关的参考文件。
+- 每份新 SOP 必须包含“既有实现参考（执行前必读）”，列出具体项目、具体文件、借鉴目标和禁止照搬项；禁止只写“参考某项目”。
+- 实施开始时记录参考仓库的 commit 和 worktree 状态；dirty 文件、日志和临时输出不得当作上游稳定实现。
+- Implementation Summary 必须说明实际借鉴了哪些契约、状态机、测试或失败策略，以及为何没有直接复制原模块。
+- substantial code migration 必须核对 license、attribution、商标和商业使用限制；不确定时只借鉴思想并独立实现。
 
 ## 核心工程约束
 

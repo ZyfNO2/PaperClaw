@@ -55,14 +55,25 @@ class AgentRuntime:
         self.enable_verification_gate = enable_verification_gate
         self.flow = build_react_flow(model, registry, enable_verification_gate=enable_verification_gate)
 
-    def run(self, task: str, workspace: Path | str, max_steps: int = 12, event_handler=None) -> dict:
+    def run(
+        self,
+        task: str,
+        workspace: Path | str,
+        max_steps: int = 12,
+        event_handler=None,
+        cancel_event=None,
+        timeout_seconds: int = 0,
+    ) -> dict:
         if not task.strip():
             raise ValueError("task must not be empty")
         if max_steps < 1:
             raise ValueError("max_steps must be positive")
-        shared = initial_state(task, Path(workspace), max_steps)
+        shared = initial_state(task, Path(workspace), max_steps, timeout_seconds=timeout_seconds)
         shared["verification_gate_enabled"] = self.enable_verification_gate
         # Event handlers are observational only; runtime state remains authoritative even if no observer is attached.
         shared["event_handler"] = event_handler
+        # Cancellation is cooperative: the runtime checks the event between steps
+        # so a long-running tool call may still complete before the loop exits.
+        shared["cancel_event"] = cancel_event
         self.flow.run(shared)
         return shared

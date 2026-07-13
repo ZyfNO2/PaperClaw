@@ -23,7 +23,7 @@ def test_bash_success_failure_timeout_and_deny(tmp_path: Path) -> None:
     denied = safe_execute(tool, {"command": "pip install example"}, ToolContext(tmp_path))
     assert success.ok and "OK" in success.output
     assert not failed.ok and failed.metadata["exit_code"] != 0
-    assert not timed.ok and timed.error_code == "timeout"
+    assert not timed.ok and timed.error_code == "unknown_outcome"
     assert not denied.ok and denied.error_code == "validation_error"
 
 
@@ -33,7 +33,7 @@ def test_bash_timeout_kills_child_process_tree(tmp_path: Path) -> None:
     child = "import time; time.sleep(2); open('late.txt','w').write('escaped')"
     script.write_text(f"import subprocess, sys, time\nsubprocess.Popen([sys.executable, '-c', {child!r}])\ntime.sleep(5)\n", encoding="utf-8")
     result = safe_execute(BashTool(), {"command": "python parent.py", "timeout_seconds": 0.2}, ToolContext(tmp_path))
-    assert not result.ok and result.error_code == "timeout"
+    assert not result.ok and result.error_code == "unknown_outcome"
     import time
     time.sleep(2.2)
     assert not marker.exists()

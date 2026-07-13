@@ -27,6 +27,21 @@ class DecideActionNode(Node):
     def prep(self, shared: dict) -> str | None:
         if shared["step_count"] >= shared["max_steps"]:
             return None
+        cancel_event = shared.get("cancel_event")
+        if cancel_event is not None and cancel_event.is_set():
+            shared["stop_reason"] = "cancelled"
+            return None
+        # Task-level wall-clock timeout: checked between steps so the Agent
+        # loop exits cooperatively when the deadline is exceeded. A value of 0
+        # means no timeout is enforced (preserves v0.01/v0.02 behavior).
+        timeout = shared.get("timeout_seconds", 0)
+        if timeout and timeout > 0:
+            import time as _time
+            elapsed = _time.monotonic() - shared.get("run_start_time", _time.monotonic())
+            if elapsed > timeout:
+                shared["stop_reason"] = "timeout"
+                emit_event(shared, "stop", reason="timeout", step=shared["step_count"], elapsed=round(elapsed, 2))
+                return None
         return build_prompt(shared, self.registry)
 
     def exec(self, prompt: str | None):
@@ -37,12 +52,21 @@ class DecideActionNode(Node):
 
     def post(self, shared: dict, prep_res, exec_res) -> str:
         if prep_res is None:
-            shared["stop_reason"] = "max_steps"
-            emit_event(shared, "stop", reason="max_steps", step=shared["step_count"])
+            if shared.get("stop_reason") == "cancelled":
+                emit_event(shared, "stop", reason="cancelled", step=shared["step_count"])
+                return "done"
+            # Preserve a stop_reason already set in prep (e.g. "timeout"). Only
+            # fall back to "max_steps" when prep returned None without setting a
+            # specific reason. Previously this unconditionally overwrote timeout
+            # with max_steps, hiding the real cause and breaking M-06 semantics.
+            if not shared.get("stop_reason"):
+                shared["stop_reason"] = "max_steps"
+            emit_event(shared, "stop", reason=shared["stop_reason"], step=shared["step_count"])
             return "done"
         shared["step_count"] += 1
         raw = exec_res.content
         # Reasoning is surfaced for debug visibility only; the runtime never treats it as trusted structured state.
+        emit_event(shared, "model_call", step=shared["step_count"], model="decide")
         if exec_res.reasoning:
             emit_event(shared, "reasoning", step=shared["step_count"], reasoning=exec_res.reasoning)
         try:
@@ -189,6 +213,7 @@ class ReflectNode(Node):
         if isinstance(exec_res, ReflectionDecision):
             decision = exec_res
         else:
+            emit_event(shared, "model_call", step=shared["step_count"], model="reflect")
             try:
                 decision = parse_reflection_decision(exec_res.content)
                 decision = validate_reflection_decision(decision, shared["verification_result"])

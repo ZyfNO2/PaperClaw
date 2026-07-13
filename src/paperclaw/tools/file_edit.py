@@ -8,7 +8,12 @@ from .paths import resolve_workspace_path
 
 class FileEditTool:
     name = "file_edit"
-    description = "Replace one exact, uniquely occurring text fragment in a workspace file."
+    description = (
+        "Replace one exact, uniquely occurring text fragment in a workspace file. "
+        "Arguments: path (str), old_text (str), new_text (str), expected_hash (str, required). "
+        "expected_hash must equal the content_hash returned by a prior file_read of the same file. "
+        "Omitting expected_hash returns cas_missing. Always file_read before file_edit to obtain the hash."
+    )
 
     def validate(self, arguments: dict[str, Any]) -> None:
         require_string(arguments, "path")
