@@ -467,6 +467,8 @@ run.blocked
 每个事件包含：
 
 ```text
+schema_version
+event_id
 run_id
 sequence
 step
@@ -475,7 +477,7 @@ timestamp
 payload
 ```
 
-事件暂时可保存在内存并导出 JSON；SQLite Session 和完整 EventBus 延后到 Harness 版本。
+事件暂时可保存在内存并导出 JSON；SQLite Session 和完整 EventBus 延后到 Harness 版本。`EventEnvelope v1` 从本版本开始只允许增加可选字段，不允许在后续版本静默改变既有事件语义。Replay 只能重放状态 reducer，不能重新执行真实工具副作用。
 
 ---
 
@@ -544,6 +546,12 @@ payload
 ---
 
 ## 11. 测试与验收
+
+### 11.1 首批跨领域修复型题集
+
+后续回归增加 [`PaperClaw_跨领域修复型测试题集_v0.01.md`](testsets/PaperClaw_跨领域修复型测试题集_v0.01.md)，首批包含图像识别、大语言模型和三维重建各 1 题。三题用于验证跨领域的失败—修复—重验能力，不追溯改变 v0.02 已完成状态；在 fixture、private verifier 和独立运行 Trace 落地前只能描述为题集设计。
+
+题集执行必须保持 Setter、Runner、Verifier 隔离，最多 3 次 repair attempt，并把 public/private tests、受保护文件 hash、最后写入时序和 failure signature 纳入完成 Gate。
 
 | 编号 | 场景 | 通过标准 |
 |---|---|---|

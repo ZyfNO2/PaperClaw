@@ -160,7 +160,9 @@ def _parse_checkboxes(sop_path: Path) -> dict:
 
 # ----------------- 交接包产物检查 -----------------
 
-EXPECTED_HANDOFF_FILES = [
+# Per-version handoff manifests. The list evolves with each SOP; the default
+# set is kept for older ReN.M packages that were created before versioning.
+DEFAULT_HANDOFF_FILES = [
     "implementation_summary.md",
     "verification_contract.md",
     "test_report.md",
@@ -168,6 +170,30 @@ EXPECTED_HANDOFF_FILES = [
     "failure_cases.md",
     "file_manifest.txt",
 ]
+
+VERSION_HANDOFF_FILES: dict[str, list[str]] = {
+    "v0.02": [
+        "implementation_summary.md",
+        "verification_contract.md",
+        "test_report.md",
+        "verify_reflection_trace.json",
+        "failure_cases.md",
+        "file_manifest.txt",
+    ],
+    "v0.03": [
+        "implementation_summary.md",
+        "multiagent_contract.md",
+        "task_dag_examples.json",
+        "collaboration_trace.json",
+        "conflict_test_report.md",
+        "reviewer_findings.json",
+        "file_manifest.txt",
+    ],
+}
+
+
+def _handoff_files_for(version_tag: str) -> list[str]:
+    return VERSION_HANDOFF_FILES.get(version_tag.lower(), DEFAULT_HANDOFF_FILES)
 
 
 def _find_handoff_dirs(version_tag: str) -> list[Path]:
@@ -183,23 +209,25 @@ def _find_handoff_dirs(version_tag: str) -> list[Path]:
     artifact_root = ARTIFACTS_DIR / f"v{m.group(1)}_{m.group(2)}"
     if not artifact_root.exists():
         return []
-    # 所有子目录都算交接包 (eval/ 除外, 它是评测产物)
-    subdirs = [p for p in artifact_root.iterdir() if p.is_dir() and p.name != "eval"]
-    # 若无子目录, 但根目录有 decision.md → 视为根目录本身是一个交接包
-    if not subdirs and any((artifact_root / name).exists() for name in EXPECTED_HANDOFF_FILES):
+    expected_files = set(_handoff_files_for(version_tag))
+    # 子目录必须包含至少一个该版本的清单文件才视为交接包 (排除 demo_workspace 等产物目录)
+    subdirs = [
+        p for p in artifact_root.iterdir()
+        if p.is_dir() and p.name != "eval" and any((p / name).exists() for name in expected_files)
+    ]
+    # 若无子目录, 但根目录有任一清单文件 → 视为根目录本身是一个交接包
+    if not subdirs and any((artifact_root / name).exists() for name in expected_files):
         return [artifact_root]
     return subdirs
 
 
-def _check_handoff_completeness(handoff_dirs: list[Path]) -> dict:
+def _check_handoff_completeness(handoff_dirs: list[Path], version_tag: str) -> dict:
     """每个交接包目录是否齐备产物文件. 根目录布局可缺 trace/metrics."""
     if not handoff_dirs:
         return {"has_handoff": False, "dirs": []}
+    expected = _handoff_files_for(version_tag)
     result = []
     for d in handoff_dirs:
-        # 根目录布局 (artifacts/reN_M/ 本身) 容许缺 trace/metrics 等
-        is_root_layout = d.parent == ARTIFACTS_DIR
-        expected = EXPECTED_HANDOFF_FILES
         present = [f for f in expected if (d / f).exists()]
         missing = [f for f in expected if not (d / f).exists()]
         result.append({
@@ -264,7 +292,7 @@ def main() -> int:
 
     # 查交接包
     handoff_dirs = _find_handoff_dirs(target_tag)
-    handoff = _check_handoff_completeness(handoff_dirs)
+    handoff = _check_handoff_completeness(handoff_dirs, target_tag)
 
     # 汇总输出
     _emit("")

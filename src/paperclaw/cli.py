@@ -9,6 +9,8 @@ from pathlib import Path
 
 from paperclaw.agent.flow import AgentRuntime
 from paperclaw.models.adapters import OpenAICompatibleModel
+from paperclaw.multiagent.contracts import AgentTask, TeamBudget
+from paperclaw.multiagent.coordinator import Coordinator
 
 
 def load_dotenv(dotenv_path: Path) -> None:
@@ -51,19 +53,9 @@ def json_ready(value):
     return value
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the PaperClaw coding agent")
-    parser.add_argument("task")
-    parser.add_argument("--workspace", type=Path, default=Path.cwd())
-    parser.add_argument("--max-steps", type=int, default=12)
-    parser.add_argument("--verbose-events", action="store_true")
-    parser.add_argument("--enable-verification-gate", action="store_true")
-    args = parser.parse_args()
-    # Keep local runs zero-config while still allowing the shell to override any value explicitly.
-    load_dotenv(Path.cwd() / ".env")
-
+def _build_print_event(verbose: bool):
     def print_event(event: str, payload: dict) -> None:
-        if not args.verbose_events:
+        if not verbose:
             return
         if event == "reasoning":
             console_print(f"[step {payload['step']}] thinking")
@@ -111,12 +103,80 @@ def main() -> int:
             console_print(json.dumps(payload["decision"], ensure_ascii=False, indent=2))
         elif event == "stop":
             console_print(f"stopped: {payload['reason']}")
+    return print_event
 
-    state = AgentRuntime(OpenAICompatibleModel.from_env(), enable_verification_gate=args.enable_verification_gate).run(args.task, args.workspace, args.max_steps, event_handler=print_event)
+
+def _run_agent(args: argparse.Namespace) -> int:
+    load_dotenv(Path.cwd() / ".env")
+    state = AgentRuntime(OpenAICompatibleModel.from_env(), enable_verification_gate=args.enable_verification_gate).run(
+        args.task, args.workspace, args.max_steps, event_handler=_build_print_event(args.verbose_events)
+    )
     safe_state = {key: value for key, value in state.items() if key not in {"workspace", "current_tool_call", "event_handler"}}
     safe_state["history"] = [entry.to_dict() for entry in state["history"]]
     console_print(json.dumps(json_ready(safe_state), ensure_ascii=False, indent=2))
     return 0 if state["stop_reason"] in {"done", "completed_verified"} else 1
+
+
+def _load_team_plan(plan_path: Path) -> tuple[str, list[AgentTask], TeamBudget]:
+    """Load a JSON team plan: {goal, tasks: [...], budget: {...}}."""
+
+    data = json.loads(plan_path.read_text(encoding="utf-8"))
+    goal = data["goal"]
+    tasks = [AgentTask(**task) for task in data["tasks"]]
+    budget = TeamBudget(**data.get("budget", {}))
+    return goal, tasks, budget
+
+
+def _run_team(args: argparse.Namespace) -> int:
+    load_dotenv(Path.cwd() / ".env")
+    goal, tasks, budget = _load_team_plan(args.plan)
+    workspace = Path(args.workspace).resolve(strict=True)
+
+    def team_event_handler(event_type: str, envelope: dict) -> None:
+        if not args.verbose_events:
+            return
+        console_print(f"[{event_type}] agent={envelope['agent_id']} task={envelope['task_id']} seq={envelope['sequence']}")
+        payload = envelope.get("payload")
+        if payload:
+            console_print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+    coord = Coordinator(
+        lambda _agent_id: OpenAICompatibleModel.from_env(),
+        workspace,
+        budget=budget,
+        enable_verification_gate=args.enable_verification_gate,
+        event_handler=team_event_handler,
+    )
+    result = coord.run(goal, tasks)
+    console_print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 0 if result.stop_reason.value in {"completed", "all_tasks_completed"} else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run the PaperClaw coding agent")
+    subparsers = parser.add_subparsers(dest="command")
+
+    agent_parser = subparsers.add_parser("agent", help="Run a single AgentRuntime (default)")
+    agent_parser.add_argument("task")
+    agent_parser.add_argument("--workspace", type=Path, default=Path.cwd())
+    agent_parser.add_argument("--max-steps", type=int, default=12)
+    agent_parser.add_argument("--verbose-events", action="store_true")
+    agent_parser.add_argument("--enable-verification-gate", action="store_true")
+
+    team_parser = subparsers.add_parser("team", help="Run a MultiAgent Coordinator team from a JSON plan")
+    team_parser.add_argument("--plan", type=Path, required=True)
+    team_parser.add_argument("--workspace", type=Path, default=Path.cwd())
+    team_parser.add_argument("--verbose-events", action="store_true")
+    team_parser.add_argument("--enable-verification-gate", action="store_true")
+
+    args = parser.parse_args()
+    # Keep local runs zero-config while still allowing the shell to override any value explicitly.
+    load_dotenv(Path.cwd() / ".env")
+
+    if args.command == "team":
+        return _run_team(args)
+    # Default to single-agent path for backward compatibility.
+    return _run_agent(args)
 
 
 if __name__ == "__main__":
