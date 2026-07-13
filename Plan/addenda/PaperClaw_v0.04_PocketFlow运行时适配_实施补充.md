@@ -496,11 +496,11 @@ class RuntimeServices:
 
 ### Addendum Phase P0-A：Node Identity
 
-- [ ] PA1. 建立 NodeRegistry；
-- [ ] PA2. 为 Agent Flow 所有节点分配稳定 node ID；
-- [ ] PA3. 新增 `CompletedNode`；
-- [ ] PA4. 移除 Agent Flow 中匿名终点；
-- [ ] PA5. 生成 node registry hash。
+- [x] PA1. 建立 NodeRegistry；
+- [x] PA2. 为 Agent Flow 所有节点分配稳定 node ID；
+- [x] PA3. 新增 `CompletedNode`；
+- [x] PA4. 移除 Agent Flow 中匿名终点；
+- [x] PA5. 生成 node registry hash。
 
 ### Addendum Phase P0-B：Instrumented Runner
 

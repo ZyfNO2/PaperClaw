@@ -70,6 +70,11 @@ class RuntimeServices:
       ``node.completed`` / ``transition.selected`` / ``checkpoint.committed``
       / ``flow.stopped`` events go. ``None`` disables persistence
       (parity mode).
+    - ``checkpoint_writer``: object responsible for committing Checkpoints
+      at safe step boundaries. P0-A declares the field to match §4.3; P0-C
+      wires it. Typed as ``Any`` for now because the concrete
+      ``CheckpointWriter`` Protocol lands in P0-C — using ``Any`` avoids
+      importing a not-yet-existing type.
     - ``node_registry``: the stable identity registry for this Flow. The
       runner uses it to resolve ``next_node_id`` from a resume point.
     - ``cancellation_token``: cooperative cancellation. ``None`` = no
@@ -81,6 +86,7 @@ class RuntimeServices:
     """
 
     event_sink: "EventSink | None" = None
+    checkpoint_writer: Any = None
     node_registry: "NodeRegistry | None" = None
     cancellation_token: Any = None
     extra: dict[str, Any] = field(default_factory=dict)
