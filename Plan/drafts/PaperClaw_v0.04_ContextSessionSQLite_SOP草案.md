@@ -567,12 +567,12 @@ recommended_action
 
 ### Phase C：ContextBuilder 与 RoleContextView
 
-- [ ] C1. 六层 Context 收集；
-- [ ] C2. trust / priority / scope / expiry；
-- [ ] C3. Coordinator / Worker / Reviewer View；
-- [ ] C4. conflict / supersedes / stale 规则；
-- [ ] C5. inclusion / exclusion reason；
-- [ ] C6. Prompt injection 数据边界。
+- [x] C1. 六层 Context 收集；
+- [x] C2. trust / priority / scope / expiry；
+- [x] C3. Coordinator / Worker / Reviewer View；
+- [x] C4. conflict / supersedes / stale 规则；
+- [x] C5. inclusion / exclusion reason；
+- [x] C6. Prompt injection 数据边界。
 
 ### Phase D：Budget 与 Compaction
 
