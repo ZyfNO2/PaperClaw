@@ -306,8 +306,8 @@ Task DAG 必须：
 
 ### 6.3 并发上限
 
-- 默认最多 2 个 Worker 并发；
-- 系统硬上限 3 个活跃 Agent（不含用户）；
+- 默认最多 3 个 Worker 并发（含非用户 Agent）；
+- 硬上限由 `TeamBudget.max_agents` 控制，当前默认 3；
 - v0.03 禁止 Worker 再生成子 Agent；
 - 独立测试可以并行，依赖性测试必须串行；
 - Coordinator 在 Worker 运行时处理其他 ready task、文档一致性和结果准备，不空转等待。

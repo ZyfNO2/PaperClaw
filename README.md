@@ -55,7 +55,7 @@ python -m pytest -q --basetemp=tmp/pytest
 
 当前基线测试结果：
 
-- `57 passed, 1 skipped`
+- `78 passed, 1 skipped`
 
 ## 运行
 

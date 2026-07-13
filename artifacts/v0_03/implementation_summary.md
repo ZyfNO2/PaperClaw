@@ -33,4 +33,4 @@
 ## 测试基线
 
 - 全量命令：`python -m pytest tests -v --basetemp=.pytest_tmp`
-- 结果：`73 passed, 1 skipped`
+- 结果：`78 passed, 1 skipped`

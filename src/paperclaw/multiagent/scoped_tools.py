@@ -310,7 +310,7 @@ class ScopedFileWriteTool:
             if actual != expected_hash:
                 snapshot = FileSnapshot.read(resolved)
                 emit_team_event(
-                    self._runtime_state,
+                    _team_state(self._runtime_state),
                     "tool.cas_conflict",
                     self._agent_id,
                     self._task.task_id,
@@ -429,7 +429,7 @@ class ScopedFileEditTool:
             if actual != expected_hash:
                 snapshot = FileSnapshot.read(resolved)
                 emit_team_event(
-                    self._runtime_state,
+                    _team_state(self._runtime_state),
                     "tool.cas_conflict",
                     self._agent_id,
                     self._task.task_id,

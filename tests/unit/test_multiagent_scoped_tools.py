@@ -95,3 +95,42 @@ def test_cas_conflict_includes_snapshot(write_tool: ScopedFileWriteTool, tmp_wor
     assert result.metadata["snapshot"]["content_hash"] == snapshot.content_hash
     # File must not be overwritten.
     assert target.read_text(encoding="utf-8") == "original"
+
+
+def test_cas_conflict_event_routes_to_team_state(tmp_workspace: Path):
+    """CAS conflict events must land in the shared team trace, not the Worker's local trace."""
+
+    team_state = {"run_id": "run-team", "event_sequence": 0, "trace_events": []}
+    task = AgentTask(
+        task_id="t1",
+        title="write",
+        objective="write a file",
+        acceptance_criteria=["file exists"],
+        allowed_paths=["."],
+        writable_paths=["src"],
+        allowed_tools=["file_write"],
+    )
+    tool = ScopedFileWriteTool(
+        task=task,
+        guard=PermissionGuardLite(tmp_workspace),
+        lease_manager=LeaseManager(tmp_workspace),
+        agent_id="agent-1",
+        runtime_state={
+            "run_id": "run-worker",
+            "_team_state": team_state,
+            "event_sequence": 0,
+            "trace_events": [],
+        },
+        counters=WorkerRuntimeCounters(),
+    )
+    target = tmp_workspace / "src" / "cas.txt"
+    target.write_text("original", encoding="utf-8")
+
+    result = tool.execute(
+        {"path": "src/cas.txt", "content": "new", "expected_hash": "wrong-hash"},
+        ToolContext(tmp_workspace),
+    )
+    assert not result.ok
+    assert result.error_code == "cas_conflict"
+    assert any(e["event_type"] == "tool.cas_conflict" for e in team_state["trace_events"])
+    assert target.read_text(encoding="utf-8") == "original"
