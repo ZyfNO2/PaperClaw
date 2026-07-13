@@ -16,7 +16,13 @@ from .verification import DoneProposal, ReflectionDecision
 
 
 class DecideActionNode(Node):
-    """Ask the model for exactly one next action and normalize malformed output into bounded retry behavior."""
+    """Ask the model for exactly one next action and normalize malformed output into bounded retry behavior.
+
+    Stable node identity (Addendum §3.2): ``node_id = "decide"``. Recorded in
+    Checkpoints and trace events; renaming is a replay-compatibility change.
+    """
+
+    node_id = "decide"
 
     def __init__(self, model: ChatModel, registry: ToolRegistry, max_invalid_outputs: int = 2) -> None:
         super().__init__()
@@ -117,11 +123,22 @@ class DecideActionNode(Node):
 
 
 class ExecuteToolNode(Node):
-    """Run one validated tool call and feed its structured result back into history for the next decision step."""
+    """Run one validated tool call and feed its structured result back into history for the next decision step.
 
-    def __init__(self, registry: ToolRegistry) -> None:
+    Stable node identity (Addendum §3.2): ``node_id = f"tool:{tool_name}"``.
+    Each tool gets its own ExecuteToolNode instance so the Flow graph can
+    wire per-tool transitions and a Checkpoint can record which tool node
+    is the ``next_node_id``. The ``tool_name`` is required because the
+    identity is meaningless without it.
+    """
+
+    def __init__(self, registry: ToolRegistry, *, tool_name: str) -> None:
         super().__init__()
         self.registry = registry
+        self.tool_name = tool_name
+        # Instance attribute identity per Addendum §3.3 — class-attribute
+        # cannot express the per-tool naming convention ``tool:<name>``.
+        self.node_id = f"tool:{tool_name}"
 
     def prep(self, shared: dict):
         return shared["current_tool_call"], ToolContext(shared["workspace"])
@@ -148,7 +165,12 @@ class ExecuteToolNode(Node):
 
 
 class VerifyDoneProposalNode(Node):
-    """Convert a completion proposal into deterministic local evidence before the run is accepted."""
+    """Convert a completion proposal into deterministic local evidence before the run is accepted.
+
+    Stable node identity (Addendum §3.2): ``node_id = "verify_done"``.
+    """
+
+    node_id = "verify_done"
 
     def prep(self, shared: dict):
         proposal = shared["done_proposal"]
@@ -177,7 +199,12 @@ class VerifyDoneProposalNode(Node):
 
 
 class ReflectNode(Node):
-    """Consume deterministic verification evidence and decide whether to accept, retry, or block the run."""
+    """Consume deterministic verification evidence and decide whether to accept, retry, or block the run.
+
+    Stable node identity (Addendum §3.2): ``node_id = "reflect"``.
+    """
+
+    node_id = "reflect"
 
     def __init__(self, model: ChatModel) -> None:
         super().__init__()

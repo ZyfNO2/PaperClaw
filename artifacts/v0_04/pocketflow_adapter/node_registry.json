@@ -1,0 +1,52 @@
+{
+  "node_count": 9,
+  "nodes": [
+    {
+      "module": "paperclaw.runtime.node_registry",
+      "node_id": "completed",
+      "node_type": "CompletedNode"
+    },
+    {
+      "module": "paperclaw.agent.nodes",
+      "node_id": "decide",
+      "node_type": "DecideActionNode"
+    },
+    {
+      "module": "paperclaw.agent.nodes",
+      "node_id": "reflect",
+      "node_type": "ReflectNode"
+    },
+    {
+      "module": "paperclaw.agent.nodes",
+      "node_id": "tool:bash",
+      "node_type": "ExecuteToolNode"
+    },
+    {
+      "module": "paperclaw.agent.nodes",
+      "node_id": "tool:file_edit",
+      "node_type": "ExecuteToolNode"
+    },
+    {
+      "module": "paperclaw.agent.nodes",
+      "node_id": "tool:file_read",
+      "node_type": "ExecuteToolNode"
+    },
+    {
+      "module": "paperclaw.agent.nodes",
+      "node_id": "tool:file_write",
+      "node_type": "ExecuteToolNode"
+    },
+    {
+      "module": "paperclaw.agent.nodes",
+      "node_id": "tool:grep",
+      "node_type": "ExecuteToolNode"
+    },
+    {
+      "module": "paperclaw.agent.nodes",
+      "node_id": "verify_done",
+      "node_type": "VerifyDoneProposalNode"
+    }
+  ],
+  "registry_hash": "387743433fbd82ba20c27d0f4499f3174a207723168190abdcba6194423deec7",
+  "schema_version": 1
+}
