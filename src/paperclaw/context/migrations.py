@@ -34,8 +34,16 @@ from typing import Any
 
 SCHEMA_VERSION_V1 = 1
 
+#: v2 adds the missing UNIQUE(conversation_id, sequence) constraint on
+#: ``messages``. Without it, concurrent ``SessionService.append_message``
+#: callers can race on max+1 sequence and silently corrupt message order.
+#: SQLite cannot add a UNIQUE constraint to an existing table in-place, so
+#: the migration rebuilds ``messages`` via temp-table swap. Fresh databases
+#: already get the constraint from V2_SCHEMA_SQL below.
+SCHEMA_VERSION_V2 = 2
+
 #: Current target schema version after applying all known migrations.
-CURRENT_SCHEMA_VERSION = SCHEMA_VERSION_V1
+CURRENT_SCHEMA_VERSION = SCHEMA_VERSION_V2
 
 
 @dataclass
@@ -203,9 +211,53 @@ V1_SCHEMA_SQL: tuple[str, ...] = (
 )
 
 
+#: v2 migration: rebuild messages table with UNIQUE(conversation_id, sequence).
+#:
+#: SQLite cannot ALTER TABLE ADD CONSTRAINT, so we use the canonical
+#: temp-table swap: create new table under temp name, copy rows, drop old,
+#: rename. This must run inside the migration's BEGIN IMMEDIATE transaction
+#: so a half-finished swap rolls back. The IF NOT EXISTS guards make this
+#: idempotent for fresh databases that just created the v1 messages table
+#: without the constraint (rare but possible if a caller manually creates
+#: v1 then upgrades).
+V2_MESSAGES_UNIQUE_SQL: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS messages_v2 (
+        message_id          TEXT PRIMARY KEY,
+        conversation_id     TEXT NOT NULL,
+        run_id              TEXT NOT NULL,
+        role                TEXT NOT NULL,
+        content             TEXT NOT NULL,
+        sequence            INTEGER NOT NULL,
+        created_at          TEXT NOT NULL,
+        metadata            TEXT NOT NULL DEFAULT '{}',
+        UNIQUE (conversation_id, sequence),
+        FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id),
+        FOREIGN KEY (run_id) REFERENCES runs(run_id)
+    )
+    """,
+    """
+    INSERT INTO messages_v2 (message_id, conversation_id, run_id, role,
+        content, sequence, created_at, metadata)
+    SELECT message_id, conversation_id, run_id, role, content, sequence,
+        created_at, metadata FROM messages
+    """,
+    "DROP TABLE messages",
+    "ALTER TABLE messages_v2 RENAME TO messages",
+    """
+    CREATE INDEX IF NOT EXISTS idx_messages_conv_seq
+        ON messages (conversation_id, sequence)
+    """,
+)
+
+
 #: Map schema_version -> (description, DDL tuple). Used by MigrationRunner.
 MIGRATIONS: dict[int, tuple[str, tuple[str, ...]]] = {
     SCHEMA_VERSION_V1: ("initial v0.04 context runtime schema", V1_SCHEMA_SQL),
+    SCHEMA_VERSION_V2: (
+        "add UNIQUE(conversation_id, sequence) on messages via temp-table swap",
+        V2_MESSAGES_UNIQUE_SQL,
+    ),
 }
 
 

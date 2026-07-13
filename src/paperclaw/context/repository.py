@@ -109,6 +109,17 @@ class Repository(Protocol):
         metadata: dict[str, Any] | None = None,
     ) -> None: ...
 
+    def append_message_with_auto_sequence(
+        self,
+        *,
+        message_id: str,
+        conversation_id: str,
+        run_id: str,
+        role: str,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[str, int]: ...
+
     def list_messages(self, conversation_id: str) -> list[dict[str, Any]]: ...
 
     # -- task state -----------------------------------------------------
@@ -478,6 +489,14 @@ class SQLiteRepository:
         sequence: int,
         metadata: dict[str, Any] | None = None,
     ) -> None:
+        """Append with caller-supplied sequence. NOT concurrency-safe.
+
+        Callers that race on the same sequence will hit the v2 UNIQUE
+        constraint and one INSERT will fail. Use
+        :meth:`append_message_with_auto_sequence` instead — it allocates
+        the sequence under the writer lock so concurrent callers cannot
+        collide.
+        """
         with self._write_lock:
             self._exec_txn(
                 "INSERT INTO messages (message_id, conversation_id, run_id, role, "
@@ -493,6 +512,49 @@ class SQLiteRepository:
                     json.dumps(metadata or {}),
                 ),
             )
+
+    def append_message_with_auto_sequence(
+        self,
+        *,
+        message_id: str,
+        conversation_id: str,
+        run_id: str,
+        role: str,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[str, int]:
+        """Atomically allocate the next message sequence and append.
+
+        Sequence allocation and INSERT happen under the writer lock so
+        concurrent ``SessionService.append_message`` callers cannot race
+        on the same sequence number. Messages have their own sequence
+        space, distinct from SessionEvent sequences.
+
+        Returns ``(message_id, sequence)``.
+        """
+        with self._write_lock:
+            cur = self._conn.execute(
+                "SELECT MAX(sequence) FROM messages WHERE conversation_id = ?",
+                (conversation_id,),
+            )
+            row = cur.fetchone()
+            current = int(row[0]) if row and row[0] is not None else 0
+            sequence = current + 1
+            self._exec_txn(
+                "INSERT INTO messages (message_id, conversation_id, run_id, role, "
+                "content, sequence, created_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    message_id,
+                    conversation_id,
+                    run_id,
+                    role,
+                    content,
+                    sequence,
+                    utc_now_iso(),
+                    json.dumps(metadata or {}),
+                ),
+            )
+            return (message_id, sequence)
 
     def list_messages(self, conversation_id: str) -> list[dict[str, Any]]:
         cur = self._conn.execute(

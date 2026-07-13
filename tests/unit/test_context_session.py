@@ -245,19 +245,22 @@ class TestIdempotencyViaService:
         assert ok is False
 
     def test_record_side_effect_isolated_per_run(self, repo: SQLiteRepository):
-        # Same operation_id in different runs should both return True.
+        # Same operation_id in different runs: the ledger's PK is just
+        # ``operation_id`` (no run_id component), so dedup is GLOBAL across
+        # runs by design. Callers that need per-run isolation MUST encode the
+        # run_id into the operation_id themselves (e.g.
+        # ``f"bash:{run_id}:{hash_of_command_cwd}"``).
+        #
+        # This is a deliberate v0.04 simplification. Phase E may extend the
+        # ledger to a two-phase lifecycle (started/committed) per SOP §5.3,
+        # at which point the schema can grow a ``run_id`` column in the PK
+        # without breaking existing callers.
         svc1 = SessionService.open(repo, conversation_id="conv-ie", agent_id="coord")
         ok1 = svc1.record_side_effect("op-shared", "bash.execute", "h")
         svc1.close()
 
         svc2 = SessionService.open(repo, conversation_id="conv-ie", agent_id="coord")
-        # Different run_id passed to ledger; idempotency is per (operation_id,
-        # run_id) — but the ledger table's PK is just operation_id.
-        # The SessionService binds the operation to its run_id, but the
-        # ledger is global. So a second call with the same op_id returns False
-        # even across runs. This is intentional: replay detection is global.
         ok2 = svc2.record_side_effect("op-shared", "bash.execute", "h")
-        # Caller MUST use run-scoped operation_ids if they want per-run isolation.
         assert ok2 is False
         svc2.close()
 
@@ -434,6 +437,47 @@ class TestEvidenceSeparation:
 
 
 # ---------------------------------------------------------------------------
+# Close lifecycle: idempotency and post-close guards (HIGH-2, LOW-2)
+# ---------------------------------------------------------------------------
+
+
+class TestCloseLifecycle:
+    def test_close_is_idempotent(self, repo: SQLiteRepository):
+        svc = SessionService.open(repo, conversation_id="conv-cl", agent_id="coord")
+        svc.emit("flow.started", {"plan": "p"})
+        svc.close(stop_reason="done")
+        first_event_count = len(svc.list_events())
+        # Second close: must be a no-op, no new flow.stopped event.
+        svc.close(stop_reason="done")
+        svc.close(stop_reason="really_done")
+        assert len(svc.list_events()) == first_event_count
+        events = svc.list_events()
+        # Exactly one flow.stopped.
+        stopped = [e for e in events if e.event_type == "flow.stopped"]
+        assert len(stopped) == 1
+        assert stopped[0].payload["stop_reason"] == "done"
+
+    def test_emit_after_close_raises(self, repo: SQLiteRepository):
+        svc = SessionService.open(repo, conversation_id="conv-ec", agent_id="coord")
+        svc.close(stop_reason="done")
+        with pytest.raises(RuntimeError, match="is closed"):
+            svc.emit("node.started", {"node_id": "decide"})
+
+    def test_append_message_after_close_does_not_raise_in_service(self, repo: SQLiteRepository):
+        # The Repository will accept the write (we don't forbid post-close
+        # message writes at the storage layer), but SessionService does not
+        # guard append_message either. This test documents the current
+        # behavior: messages CAN be appended after close (e.g. for post-run
+        # audit logging). If we want to forbid this, add a guard in
+        # SessionService.append_message similar to emit().
+        svc = SessionService.open(repo, conversation_id="conv-am-ac", agent_id="coord")
+        svc.close(stop_reason="done")
+        # No exception expected.
+        mid = svc.append_message("user", "post-close audit note")
+        assert mid.startswith("msg-")
+
+
+# ---------------------------------------------------------------------------
 # Concurrency: SessionService is thread-safe for emit
 # ---------------------------------------------------------------------------
 
@@ -473,5 +517,72 @@ class TestSessionConcurrency:
         events = svc.list_events()
         assert len(events) == expected
         seqs = sorted(e.sequence for e in events)
+        assert seqs == list(range(1, expected + 1))
+        svc.close()
+
+    def test_concurrent_emit_same_event_id_returns_same_sequence(self, repo: SQLiteRepository):
+        """N threads emit the SAME event_id concurrently. Exactly one row is
+        written; every thread must observe the same sequence number
+        (idempotent success)."""
+        svc = SessionService.open(repo, conversation_id="conv-same-id", agent_id="coord")
+        N_THREADS = 8
+        observed: list[int] = []
+        errors: list[BaseException] = []
+        barrier = threading.Barrier(N_THREADS)
+
+        def worker():
+            try:
+                barrier.wait()
+                seq = svc.emit(
+                    "task.progress",
+                    {"event_id": "evt-shared-1", "n": 1},
+                )
+                observed.append(seq)
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, daemon=True) for _ in range(N_THREADS)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        assert errors == [], f"concurrent same-event_id emit raised: {errors}"
+        # Exactly one row was persisted.
+        events = svc.list_events()
+        assert len(events) == 1
+        # Every thread observed the same sequence (the original INSERT's).
+        assert all(s == events[0].sequence for s in observed)
+        svc.close()
+
+    def test_concurrent_append_message_no_loss(self, repo: SQLiteRepository):
+        """Messages appended concurrently must not collide on sequence."""
+        svc = SessionService.open(repo, conversation_id="conv-cm", agent_id="coord")
+        N_THREADS = 5
+        N_PER_THREAD = 10
+        errors: list[BaseException] = []
+
+        def worker(idx: int):
+            try:
+                for j in range(N_PER_THREAD):
+                    svc.append_message(
+                        "user",
+                        f"t{idx}-m{j}",
+                        message_id=f"msg-t{idx}-{j}",
+                    )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(i,), daemon=True) for i in range(N_THREADS)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        assert errors == [], f"concurrent append_message raised: {errors}"
+        msgs = svc.list_messages()
+        expected = N_THREADS * N_PER_THREAD
+        assert len(msgs) == expected
+        seqs = sorted(m["sequence"] for m in msgs)
         assert seqs == list(range(1, expected + 1))
         svc.close()

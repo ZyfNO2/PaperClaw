@@ -219,6 +219,10 @@ class SessionService:
             run_id=run_id,
             agent_id=agent_id,
         )
+        # Closed flag makes close() idempotent. A second close() is a no-op
+        # so the audit log never gets two flow.stopped events for the same
+        # run and the Repository's runs.ended_at is not overwritten.
+        self._closed = False
 
     # ------------------------------------------------------------------
     # Constructors
@@ -318,7 +322,13 @@ class SessionService:
         """Emit one Runtime event via the bound sink.
 
         Returns the assigned sequence number (0 for NullEventSink).
+        Raises ``RuntimeError`` if the session has been closed. This guard
+        prevents the audit log from gaining events after ``flow.stopped``.
         """
+        if self._closed:
+            raise RuntimeError(
+                f"session {self._run_id} is closed; cannot emit {event_type}"
+            )
         return self._sink.emit(
             event_type,
             payload or {},
@@ -426,22 +436,19 @@ class SessionService:
     ) -> str:
         """Append one raw message to the conversation log.
 
-        Sequence is allocated via ``last_committed_sequence + 1``. Messages
-        do NOT share the SessionEvent sequence; they have their own monotonic
-        sequence within a conversation.
+        Uses ``append_message_with_auto_sequence`` so concurrent callers
+        (e.g. MultiAgent Workers in the same conversation) cannot race on
+        the sequence number. Messages have their own monotonic sequence
+        within a conversation, distinct from the SessionEvent sequence.
         """
         mid = message_id or f"msg-{uuid4().hex[:12]}"
-        # Messages have their own sequence space, distinct from events.
-        existing = self._repo.list_messages(self._conversation_id)
-        next_seq = (max((m["sequence"] for m in existing), default=0)) + 1
-        self._repo.append_message(
-            mid,
-            self._conversation_id,
-            self._run_id,
-            role,
-            content,
-            next_seq,
-            metadata,
+        self._repo.append_message_with_auto_sequence(
+            message_id=mid,
+            conversation_id=self._conversation_id,
+            run_id=self._run_id,
+            role=role,
+            content=content,
+            metadata=metadata,
         )
         return mid
 
@@ -455,15 +462,26 @@ class SessionService:
     def close(self, stop_reason: str | None = None) -> None:
         """End the run with a stop_reason.
 
-        Idempotent: calling close twice is a no-op. The Repository's
-        ``end_run`` updates the ``runs.ended_at`` and ``runs.stop_reason``
-        columns.
+        Idempotent: a second call is a no-op. The first call records
+        ``runs.ended_at`` and emits one ``flow.stopped`` event so the audit
+        log has exactly one terminal event per run.
+
+        Ordering rationale (crash-safe): ``end_run`` is recorded BEFORE the
+        ``flow.stopped`` event. If the process dies between the two writes,
+        the run is marked ended but no terminal event exists — resume logic
+        that inspects ``last_committed_sequence`` will treat this as
+        "already stopped" rather than silently continuing. The reverse order
+        (emit then end_run) would be more dangerous: a crash after emit
+        would leave a ``flow.stopped`` event with ``runs.ended_at IS NULL``,
+        and resume might think the run is still active.
         """
+        if self._closed:
+            return
+        self._closed = True
         self._repo.end_run(self._run_id, stop_reason=stop_reason)
-        # If the sink is a SqliteEventSink, emit a final flow.stopped event
-        # BEFORE end_run is recorded — but we already ended the run above.
-        # Compromise: emit then end. Restructure if needed for ordering.
-        # For now, just emit a terminal event.
+        # Emit the terminal event AFTER end_run so runs.ended_at is already
+        # persisted. If emit fails, the run is still marked ended; we swallow
+        # the sink error so close() itself never raises.
         try:
             self._sink.emit(
                 "flow.stopped",
