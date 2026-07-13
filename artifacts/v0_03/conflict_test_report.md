@@ -2,7 +2,7 @@
 
 ## 测试环境
 
-- 命令：`python -m pytest -q --basetemp=tmp/pytest`
+- 命令：`$env:TEMP="g:\PaperClaw\tmp\pytest_temp"; $env:TMP="g:\PaperClaw\tmp\pytest_temp"; python -m pytest -q`
 - 结果：`101 passed, 1 skipped`
 
 ## 覆盖场景
@@ -16,7 +16,7 @@
 | M-05 | Worker 越权路径返回 scope_violation | PASS |
 | M-06 | Worker 协作式取消事件传播 | PASS |
 | M-07 | 父任务取消级联到子任务 | PASS |
-| M-08 | Team 模式默认启用 Verify Gate | PASS |
+| M-08 | Team 模式默认启用 Verify Gate（仅配置传递） | PARTIAL |
 | M-09 | Reviewer blocker/high 创建 Fix Task | PASS |
 | M-10 | Reviewer 多轮不通过达到上限后返回 reflection_limit | PASS |
 | M-11 | 简单任务保持单 Agent 路径 | PASS |

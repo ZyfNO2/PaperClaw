@@ -726,7 +726,12 @@ def test_cancel_does_not_release_lease_immediately(tmp_workspace: Path):
     can still write to files that another Worker has already acquired a lease
     for. Leases should only be released by Worker.run() after the runtime
     has naturally exited.
+
+    Regression guard: if someone adds ``release_all_for_task`` back to
+    ``Worker.cancel()``, the post-cancel lease assertion below will fail.
     """
+
+    import time as _time
 
     from paperclaw.multiagent.lease import LeaseManager
     from paperclaw.multiagent.permissions import PermissionGuardLite
@@ -734,8 +739,8 @@ def test_cancel_does_not_release_lease_immediately(tmp_workspace: Path):
 
     task = AgentTask(
         task_id="cancel-test",
-        title="slow bash",
-        objective="run a slow bash command",
+        title="write then slow bash",
+        objective="write a file then run a slow bash command",
         acceptance_criteria=["done"],
         allowed_paths=["."],
         writable_paths=["src"],
@@ -746,6 +751,7 @@ def test_cancel_does_not_release_lease_immediately(tmp_workspace: Path):
     team_state = {"run_id": "test", "event_sequence": 0, "trace_events": []}
 
     model = FakeModel([
+        _action("file_write", {"path": "src/cancel_test.py", "content": "x = 1\n"}),
         _action("bash", {"command": "sleep 5"}),
         _done("done"),
     ])
@@ -758,22 +764,49 @@ def test_cancel_does_not_release_lease_immediately(tmp_workspace: Path):
 
     t = threading.Thread(target=run_worker)
     t.start()
-    # Give the Worker time to acquire a lease and start the bash command.
-    t.join(timeout=0.5)
 
-    # Cancel the worker.
+    # Poll until the Worker has acquired the lease for src/cancel_test.py.
+    # This guarantees cancel() is called only after a lease exists to protect,
+    # so the post-cancel assertion is meaningful rather than vacuously true.
+    poll_deadline = _time.monotonic() + 3.0
+    while _time.monotonic() < poll_deadline:
+        if lease_mgr.owner("src/cancel_test.py") is not None:
+            break
+        _time.sleep(0.02)
+    else:
+        pytest.fail("Worker did not acquire lease for src/cancel_test.py within 3s")
+
+    # Snapshot the lease holder before cancel so we can verify it survives.
+    lease_before = lease_mgr.owner("src/cancel_test.py")
+    assert lease_before is not None
+    assert lease_before.task_id == "cancel-test"
+
+    # Cancel the worker. cancel() must NOT release the lease — only Worker.run()
+    # releases it when the thread naturally exits.
     cancel_result = worker.cancel(task)
-
-    # Right after cancel(), the lease should NOT have been released by cancel().
-    # (It will be released by Worker.run() when the thread finishes.)
-    # We verify the cancel result is correct.
     assert cancel_result.status == "cancelled"
 
-    # Wait for the Worker thread to finish (bash process should be killed).
+    # Core invariant: immediately after cancel(), the lease must still be held
+    # by the task. If cancel() released it here, another Worker could acquire
+    # the lease while the cancelled Worker's bash subprocess is still writing,
+    # producing a write-after-free race.
+    lease_after_cancel = lease_mgr.owner("src/cancel_test.py")
+    assert lease_after_cancel is not None, (
+        "cancel() released the lease before the Worker thread stopped — "
+        "this creates a write-after-free window for parallel Workers"
+    )
+    assert lease_after_cancel.task_id == "cancel-test"
+
+    # Wait for the Worker thread to finish (bash process should be killed by
+    # _kill_process_tree in cancel()).
     t.join(timeout=10)
     assert not t.is_alive(), "Worker thread should have terminated after cancel"
 
-    # After the Worker thread finishes, leases should be released.
+    # After the Worker thread naturally exits, Worker.run() releases the lease.
+    assert lease_mgr.owner("src/cancel_test.py") is None, (
+        "lease was not released after Worker thread terminated"
+    )
+
     result = result_holder.get("result")
     assert result is not None
     assert result.status != "completed"

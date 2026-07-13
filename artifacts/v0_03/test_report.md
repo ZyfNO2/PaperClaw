@@ -2,7 +2,7 @@
 
 ## 自动化测试
 
-- 全量命令：`python -m pytest -q --basetemp=tmp/pytest`
+- 全量命令：`$env:TEMP="g:\PaperClaw\tmp\pytest_temp"; $env:TMP="g:\PaperClaw\tmp\pytest_temp"; python -m pytest -q`
 - 结果：`101 passed, 1 skipped`
 
 ### MultiAgent 新增测试
@@ -14,7 +14,7 @@
 | test_multiagent_lease.py | 5 | lease 获取/冲突/释放、越界拒绝 |
 | test_multiagent_permissions.py | 5 | 工具白名单、路径逃逸、Bash 危险命令、symlink/junction 逃逸 |
 | test_multiagent_scoped_tools.py | 9 | 幂等写入、FileSnapshot、CAS 冲突、外部编辑、TOCTOU 重验证、强制 CAS（无 hash 写已有文件被拒绝、新文件 sentinel）、file_edit 强制 CAS |
-| test_multiagent_coordinator.py | 17 | 单 Agent 回退、顺序 DAG 执行、依赖失败阻塞下游、并行读/写、DAG 拒绝、scope violation、运行时 lease 冲突、取消级联、Fix-Review 闭环、团队预算聚合、model-call reservation、Task timeout、绝对 wall-time deadline、取消不提前释放 lease |
+| test_multiagent_coordinator.py | 19 | 单 Agent 回退、顺序 DAG 执行、依赖失败阻塞下游、并行读/写、DAG 拒绝、scope violation、运行时 lease 冲突、取消级联、Fix-Review 闭环、团队预算聚合、model-call reservation、Task timeout、绝对 wall-time deadline、取消不提前释放 lease |
 
 ### 关键通过场景
 
@@ -25,7 +25,7 @@
 - M-05：Worker 越权路径返回 scope_violation
 - M-06：Worker 协作式取消事件传播
 - M-07：父任务取消级联到子任务
-- M-08：Team 模式默认启用 Verify Gate
+- M-08：Team 模式默认启用 Verify Gate（部分通过：仅验证配置传递，全局失败阻断尚未实现）
 - M-09：Reviewer blocker/high 创建 Fix Task
 - M-10：Reviewer 多轮不通过达到上限后返回 reflection_limit
 - M-11：简单任务保持单 Agent 路径
