@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "phase": "C",
+  "title": "ContextBuilder + RoleContextView",
+  "sop_reference": "Plan/drafts/PaperClaw_v0.04_ContextSessionSQLite_SOP草案.md §6-§9, §11-Phase C, §12-C series",
+  "implementation": {
+    "module": "src/paperclaw/context/builder.py",
+    "tests": "tests/unit/test_context_builder.py",
+    "test_count": 20,
+    "test_status": "all passing"
+  },
+  "public_api": {
+    "RoleContextView": {
+      "type": "frozen dataclass",
+      "fields": [
+        {"name": "role", "type": "str", "values": ["coordinator", "worker", "reviewer"]},
+        {"name": "task_id", "type": "str | None", "required_for": "worker role"}
+      ],
+      "validation": "rejects unknown role; worker requires non-empty task_id"
+    },
+    "ContextBuilder": {
+      "type": "class",
+      "constructor": "ContextBuilder(repo: Repository)",
+      "methods": [
+        {
+          "name": "build",
+          "signature": "build(*, run_id, view: RoleContextView, budget: ContextBudget, agent_id, at_sequence, estimator='char4') -> ContextSnapshot",
+          "steps": [
+            "collect (repo.list_context_items)",
+            "validate source/trust (validate_item)",
+            "enforce trust boundary (external_untrusted in L0/L1 rejected)",
+            "apply role scope (shared / coordinator / reviewer / worker:<task_id>)",
+            "remove expired (valid_to_sequence) and superseded (supersedes_item_id)",
+            "deduplicate by item_id",
+            "resolve conflicts (two facts with same layer/task_id, different content)",
+            "estimate tokens (sum estimated_tokens)",
+            "select within budget (protected + keep-priority sorted evictable)",
+            "compact if required (Phase D injection point — stub in Phase C)",
+            "render (deterministic JSON payload, sha256 hash)",
+            "persist ContextSnapshot via repo.insert_snapshot"
+          ]
+        }
+      ]
+    },
+    "ContextBudgetExhausted": {
+      "type": "exception",
+      "raised_when": "protected items alone exceed budget.usable_input()",
+      "fields": ["run_id", "required_tokens", "usable_tokens"]
+    }
+  },
+  "exclusion_reasons": {
+    "scope_mismatch": "item scope does not match role view",
+    "expired": "valid_to_sequence <= at_sequence",
+    "superseded": "superseded by a newer item in candidate set",
+    "trust_violation": "external_untrusted in L0/L1 (prompt injection boundary)",
+    "budget_overflow": "dropped to fit usable_input",
+    "deduplication": "duplicate item_id in candidate set",
+    "conflict": "two active fact items with same layer/task_id but different content"
+  },
+  "protected_set": {
+    "description": "Items never evicted by budget pressure (SOP §8.1)",
+    "rules": [
+      "layer in (L0, L1) — Constitution and Role",
+      "kind == constraint — hard constraints",
+      "kind == evidence_ref — Evidence ID / source reference",
+      "kind == todo AND valid_to_sequence is None — unresolved todos"
+    ],
+    "behavior": "If protected total exceeds usable_input, raises ContextBudgetExhausted (never silently drops)"
+  },
+  "eviction_priority": {
+    "description": "Non-protected items sorted by keep_key (reverse=True) so highest keep-priority is added first",
+    "tiers": [
+      {"tier": 2, "name": "normal", "kept_priority": "highest (kept first)"},
+      {"tier": 1, "name": "large_file", "condition": "source.source_type=='file' AND estimated_tokens > 500"},
+      {"tier": 0, "name": "observation", "kept_priority": "lowest (evicted first)"}
+    ],
+    "within_tier_tiebreakers": ["priority DESC", "valid_from_sequence DESC", "item_id DESC"]
+  },
+  "prompt_injection_boundary": {
+    "rule": "external_untrusted MUST NOT enter L0 (Constitution) or L1 (Role)",
+    "enforcement_point": "after validation, before scope filtering",
+    "exclusion_reason": "trust_violation"
+  },
+  "scope_matching_rule": {
+    "shared": "visible to every role",
+    "coordinator": "visible only when role == coordinator",
+    "reviewer": "visible only when role == reviewer",
+    "worker:<task_id>": "visible only when role == worker AND view.task_id == <task_id>"
+  },
+  "test_matrix_coverage": {
+    "C-01": "Worker isolation (Worker A cannot see Worker B private items)",
+    "C-02": "Reviewer isolation (Reviewer cannot see Worker hypothesis)",
+    "C-03": "Provenance (every included item traceable via source_ref)",
+    "C-04": "Exclusion reason (every excluded item has non-empty reason)",
+    "C-05": "Budget overflow (deterministic eviction fits usable_input)",
+    "C-06": "Constraint retention (100% required constraint IDs retained)",
+    "C-07": "Evidence integrity (no fabricated evidence_ref)",
+    "C-08": "Hypothesis safety (kind never mutated)",
+    "C-09": "Repeated compaction (required IDs stable across builds)",
+    "C-10": "Injection boundary (external_untrusted rejected from L0 AND L1)"
+  },
+  "deferred_to_phase_d": [
+    "Real CompactionPolicy (current _maybe_compact_stub records demand only)",
+    "Real token estimator with tokenizer (current default: char4 = 1 token per 4 chars)",
+    "Prompt renderer with <instructions> vs <untrusted_data> block separation"
+  ],
+  "full_suite_status": "269 passed, 1 skipped (no regression vs P0-B)"
+}

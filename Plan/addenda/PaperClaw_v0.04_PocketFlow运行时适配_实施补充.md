@@ -496,20 +496,20 @@ class RuntimeServices:
 
 ### Addendum Phase P0-A：Node Identity
 
-- [ ] PA1. 建立 NodeRegistry；
-- [ ] PA2. 为 Agent Flow 所有节点分配稳定 node ID；
-- [ ] PA3. 新增 `CompletedNode`；
-- [ ] PA4. 移除 Agent Flow 中匿名终点；
-- [ ] PA5. 生成 node registry hash。
+- [x] PA1. 建立 NodeRegistry；
+- [x] PA2. 为 Agent Flow 所有节点分配稳定 node ID；
+- [x] PA3. 新增 `CompletedNode`；
+- [x] PA4. 移除 Agent Flow 中匿名终点；
+- [x] PA5. 生成 node registry hash。
 
 ### Addendum Phase P0-B：Instrumented Runner
 
-- [ ] PB1. 新增 `InstrumentedFlowRunner`；
-- [ ] PB2. 保持 PocketFlow prep/exec/post 和 transition 语义；
-- [ ] PB3. 发出 flow/node/transition 事件；
-- [ ] PB4. 对接 v0.04 SessionEvent sequence；
-- [ ] PB5. 支持关闭持久化的 parity 模式；
-- [ ] PB6. 失败时保留异常和稳定 error code。
+- [x] PB1. 新增 `InstrumentedFlowRunner`；
+- [x] PB2. 保持 PocketFlow prep/exec/post 和 transition 语义；
+- [x] PB3. 发出 flow/node/transition 事件；
+- [x] PB4. 对接 v0.04 SessionEvent sequence；
+- [x] PB5. 支持关闭持久化的 parity 模式；
+- [x] PB6. 失败时保留异常和稳定 error code。
 
 ### Addendum Phase P0-C：Checkpoint Wiring
 
