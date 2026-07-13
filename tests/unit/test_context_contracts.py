@@ -817,3 +817,156 @@ class TestRepositoryConcurrency:
         ids = [e.event_id for e in events]
         assert len(set(ids)) == len(ids)
         repo.close()
+
+
+# ---------------------------------------------------------------------------
+# Composite commit (SOP §5.3 atomic step)
+# ---------------------------------------------------------------------------
+
+
+class TestCommitRuntimeStep:
+    """SOP §5.3: a Runtime state commit must be atomic.
+
+    Covers:
+    - normal path: event + task_state + items + snapshot + checkpoint all
+      persisted in one transaction.
+    - idempotency: duplicate event_id returns False without re-applying other
+      writes.
+    - atomicity: if any step fails mid-transaction, the whole step rolls back
+      (event, task_state, items, snapshot, checkpoint all absent).
+    """
+
+    def _setup_run(self, repo: SQLiteRepository) -> None:
+        repo.create_conversation("conv-1")
+        repo.start_run("run-1", "conv-1", "agent-1", "coordinator")
+
+    def test_normal_path_persists_all_components(self, repo: SQLiteRepository):
+        self._setup_run(repo)
+        event = _make_event(event_id="e-1", run_id="run-1", sequence=1)
+        item = _make_item(item_id="ci-1", run_id="run-1", valid_from_sequence=1)
+        snap = ContextSnapshot(
+            snapshot_id="s1",
+            run_id="run-1",
+            agent_id="a1",
+            role="coordinator",
+            source_item_ids=("ci-1",),
+            excluded_items=(),
+            rendered_hash="h",
+            estimated_tokens=10,
+            estimator="char4",
+            created_sequence=1,
+        )
+        cp = Checkpoint(
+            checkpoint_id="cp1",
+            run_id="run-1",
+            last_committed_sequence=1,
+            task_state_revision=0,
+            budget_state={"steps_used": 1},
+            pending_operations=(),
+            file_snapshots=(),
+            state_hash="h-1",
+            schema_version=SCHEMA_VERSION_V1,
+            created_at=utc_now_iso(),
+        )
+        appended = repo.commit_runtime_step(
+            run_id="run-1",
+            conversation_id="conv-1",
+            event=event,
+            task_state_updates=[("task-1", "running", {"assignee": "w1"})],
+            context_items=[item],
+            snapshot=snap,
+            checkpoint=cp,
+        )
+        assert appended is True
+        # All four components persisted.
+        events = repo.list_events("run-1")
+        assert len(events) == 1 and events[0].event_id == "e-1"
+        ts = repo.get_task_state("task-1")
+        assert ts is not None and ts["status"] == "running"
+        ci = repo.get_context_item("ci-1")
+        assert ci is not None
+        snaps = repo.list_snapshots("run-1")
+        assert len(snaps) == 1
+        latest = repo.latest_checkpoint("run-1")
+        assert latest is not None and latest.checkpoint_id == "cp1"
+
+    def test_idempotent_duplicate_event_id_skips_other_writes(self, repo: SQLiteRepository):
+        self._setup_run(repo)
+        event = _make_event(event_id="e-dup", run_id="run-1", sequence=1)
+        # First commit: full payload.
+        appended1 = repo.commit_runtime_step(
+            run_id="run-1",
+            conversation_id="conv-1",
+            event=event,
+            task_state_updates=[("task-1", "running", {"v": 1})],
+            context_items=[_make_item(item_id="ci-1", run_id="run-1", valid_from_sequence=1)],
+        )
+        assert appended1 is True
+
+        # Second commit with same event_id but different task_state/items.
+        # Must NOT re-apply other writes.
+        appended2 = repo.commit_runtime_step(
+            run_id="run-1",
+            conversation_id="conv-1",
+            event=event,
+            task_state_updates=[("task-1", "completed", {"v": 2})],
+            context_items=[_make_item(item_id="ci-2", run_id="run-1", valid_from_sequence=1)],
+        )
+        assert appended2 is False
+        # task_state must still reflect the first commit (running, v=1), not
+        # the second (completed, v=2).
+        ts = repo.get_task_state("task-1")
+        assert ts["status"] == "running"
+        assert ts["payload"]["v"] == 1
+        # ci-2 must not have been inserted.
+        assert repo.get_context_item("ci-2") is None
+        # No duplicate events.
+        assert len(repo.list_events("run-1")) == 1
+
+    def test_atomic_rollback_on_duplicate_item_id(self, repo: SQLiteRepository):
+        """If a context_item INSERT fails (duplicate item_id), the entire
+        commit_runtime_step must roll back: no event, no task_state, no
+        snapshot, no checkpoint. Partial state is forbidden by SOP §5.3.
+        """
+        self._setup_run(repo)
+        # Pre-seed ci-conflict so the commit's context_items INSERT will hit
+        # a UNIQUE constraint violation mid-transaction.
+        repo.insert_context_item(
+            _make_item(item_id="ci-conflict", run_id="run-1", valid_from_sequence=0)
+        )
+
+        event = _make_event(event_id="e-rollback", run_id="run-1", sequence=1)
+        # Same item_id as the pre-seeded one → will trigger IntegrityError
+        # after the event and task_state inserts have already executed.
+        bad_item = _make_item(item_id="ci-conflict", run_id="run-1", valid_from_sequence=1)
+        cp = Checkpoint(
+            checkpoint_id="cp-rollback",
+            run_id="run-1",
+            last_committed_sequence=1,
+            task_state_revision=0,
+            budget_state={},
+            pending_operations=(),
+            file_snapshots=(),
+            state_hash="h-rb",
+            schema_version=SCHEMA_VERSION_V1,
+            created_at=utc_now_iso(),
+        )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            repo.commit_runtime_step(
+                run_id="run-1",
+                conversation_id="conv-1",
+                event=event,
+                task_state_updates=[("task-rb", "running", {"k": "v"})],
+                context_items=[bad_item],
+                checkpoint=cp,
+            )
+
+        # Atomicity: nothing from this commit may exist.
+        assert repo.list_events("run-1") == []
+        assert repo.get_task_state("task-rb") is None
+        assert repo.latest_checkpoint("run-1") is None
+        # The pre-seeded ci-conflict remains (it was committed in its own
+        # transaction earlier); nothing else was added.
+        items = repo.list_context_items("run-1")
+        assert [i.item_id for i in items] == ["ci-conflict"]

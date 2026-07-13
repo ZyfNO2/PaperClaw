@@ -29,8 +29,9 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Protocol
+from typing import Any, Iterable, Iterator, Protocol
 
 from paperclaw.context.contracts import (
     Checkpoint,
@@ -165,6 +166,20 @@ class Repository(Protocol):
         run_id: str | None = None,
     ) -> bool: ...
 
+    # -- composite commit (SOP §5.3) -----------------------------------
+
+    def commit_runtime_step(
+        self,
+        *,
+        run_id: str,
+        conversation_id: str,
+        event: SessionEvent,
+        task_state_updates: Iterable[tuple[str, str, dict[str, Any]]] | None = None,
+        context_items: Iterable[ContextItem] | None = None,
+        snapshot: ContextSnapshot | None = None,
+        checkpoint: Checkpoint | None = None,
+    ) -> bool: ...
+
     # -- lifecycle ------------------------------------------------------
 
     def close(self) -> None: ...
@@ -206,6 +221,9 @@ class SQLiteRepository:
             runner = MigrationRunner(self._conn, backup_dir=backup_dir)
             result = runner.migrate(make_backup=backup_dir is not None)
             if not result.ok:
+                # LOW-2 fix: mark closed so a later close() is a no-op rather
+                # than raising "cannot operate on a closed connection".
+                self._closed = True
                 self._conn.close()
                 raise RuntimeError(
                     f"schema migration failed: {result.error}"
@@ -518,25 +536,48 @@ class SQLiteRepository:
         an existing event log into a fresh materialized view.
         """
         with self._write_lock:
-            existing = self._conn.execute(
-                "SELECT revision FROM task_states WHERE task_id = ?",
-                (task_id,),
-            ).fetchone()
-            if existing is None:
-                revision = 0
-                self._exec_txn(
-                    "INSERT INTO task_states (task_id, run_id, status, revision, "
-                    "payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    (task_id, run_id, status, revision, json.dumps(payload), utc_now_iso()),
-                )
-            else:
-                revision = int(existing["revision"]) + (1 if bump_revision else 0)
-                self._exec_txn(
-                    "UPDATE task_states SET run_id = ?, status = ?, revision = ?, "
-                    "payload = ?, updated_at = ? WHERE task_id = ?",
-                    (run_id, status, revision, json.dumps(payload), utc_now_iso(), task_id),
-                )
-            return revision
+            return self._upsert_task_state_locked(
+                task_id, run_id, status, payload, bump_revision=bump_revision
+            )
+
+    def _upsert_task_state_locked(
+        self,
+        task_id: str,
+        run_id: str,
+        status: str,
+        payload: dict[str, Any],
+        *,
+        bump_revision: bool = True,
+    ) -> int:
+        """Same as ``upsert_task_state`` but assumes the caller already holds
+        ``_write_lock`` and is inside an existing transaction (e.g. when called
+        from ``commit_runtime_step``). Does NOT open its own BEGIN/COMMIT.
+
+        The INSERT/UPDATE here use the connection's current transaction state;
+        if no transaction is active, sqlite3 will autocommit per statement,
+        which is incorrect for composite commits. Callers must ensure they are
+        inside a ``BEGIN IMMEDIATE`` block.
+        """
+        existing = self._conn.execute(
+            "SELECT revision FROM task_states WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        now = utc_now_iso()
+        if existing is None:
+            revision = 0
+            self._conn.execute(
+                "INSERT INTO task_states (task_id, run_id, status, revision, "
+                "payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (task_id, run_id, status, revision, json.dumps(payload), now),
+            )
+        else:
+            revision = int(existing["revision"]) + (1 if bump_revision else 0)
+            self._conn.execute(
+                "UPDATE task_states SET run_id = ?, status = ?, revision = ?, "
+                "payload = ?, updated_at = ? WHERE task_id = ?",
+                (run_id, status, revision, json.dumps(payload), now, task_id),
+            )
+        return revision
 
     def get_task_state(self, task_id: str) -> dict[str, Any] | None:
         row = self._conn.execute(
@@ -789,6 +830,169 @@ class SQLiteRepository:
             self._conn.close()
 
     # ------------------------------------------------------------------
+    # Composite commit (SOP §5.3 atomic step)
+    # ------------------------------------------------------------------
+
+    def commit_runtime_step(
+        self,
+        *,
+        run_id: str,
+        conversation_id: str,
+        event: SessionEvent,
+        task_state_updates: Iterable[tuple[str, str, dict[str, Any]]] | None = None,
+        context_items: Iterable[ContextItem] | None = None,
+        snapshot: ContextSnapshot | None = None,
+        checkpoint: Checkpoint | None = None,
+    ) -> bool:
+        """Apply one Runtime state commit atomically per SOP §5.3.
+
+        The canonical order — event → task_state → context_items/snapshot →
+        checkpoint — runs inside a single ``BEGIN IMMEDIATE ... COMMIT``
+        transaction. If any step fails, the whole commit rolls back; partial
+        state never reaches the database.
+
+        Model calls, Bash, and file I/O MUST happen before this method is
+        called; they must not hold the write transaction.
+
+        Returns ``True`` if the event was newly committed, ``False`` if a
+        duplicate ``event_id`` was detected (idempotent success — the prior
+        commit's state is preserved, no other writes are applied).
+        """
+        validate_event(event)
+        updates_list = list(task_state_updates) if task_state_updates else []
+        items_list = list(context_items) if context_items else []
+        for item in items_list:
+            validate_item(item)
+
+        with self._write_lock:
+            # Idempotency precheck: if the event_id already exists, this is a
+            # replay. Return False WITHOUT entering a transaction; the prior
+            # commit's state is the source of truth.
+            existing = self._conn.execute(
+                "SELECT 1 FROM session_events WHERE event_id = ?",
+                (event.event_id,),
+            ).fetchone()
+            if existing is not None:
+                return False
+
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+
+                # 1. Append SessionEvent.
+                self._conn.execute(
+                    "INSERT INTO session_events (event_id, conversation_id, run_id, "
+                    "sequence, event_type, payload, created_at, schema_version) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        event.event_id,
+                        event.conversation_id,
+                        event.run_id,
+                        event.sequence,
+                        event.event_type,
+                        json.dumps(event.payload),
+                        event.created_at,
+                        int(event.payload.get("schema_version", 1)),
+                    ),
+                )
+
+                # 2. Update materialized TaskState rows.
+                for task_id, status, payload in updates_list:
+                    self._upsert_task_state_locked(task_id, run_id, status, payload)
+
+                # 3. Insert ContextItems and Snapshot (if produced this step).
+                if items_list:
+                    self._conn.executemany(
+                        "INSERT INTO context_items (item_id, run_id, task_id, layer, kind, "
+                        "content, source_type, source_ref, trust_level, source_created_sequence, "
+                        "priority, scope, valid_from_sequence, valid_to_sequence, "
+                        "supersedes_item_id, estimated_tokens, metadata, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [self._item_to_row(item) for item in items_list],
+                    )
+
+                if snapshot is not None:
+                    self._conn.execute(
+                        "INSERT INTO context_snapshots (snapshot_id, run_id, agent_id, role, "
+                        "task_id, source_item_ids, excluded_items, rendered_hash, "
+                        "estimated_tokens, estimator, created_sequence, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            snapshot.snapshot_id,
+                            snapshot.run_id,
+                            snapshot.agent_id,
+                            snapshot.role,
+                            snapshot.task_id,
+                            json.dumps(list(snapshot.source_item_ids)),
+                            json.dumps(list(snapshot.excluded_items)),
+                            snapshot.rendered_hash,
+                            int(snapshot.estimated_tokens),
+                            snapshot.estimator,
+                            int(snapshot.created_sequence),
+                            utc_now_iso(),
+                        ),
+                    )
+
+                # 4. Insert Checkpoint (only at safe step boundary).
+                if checkpoint is not None:
+                    self._conn.execute(
+                        "INSERT INTO checkpoints (checkpoint_id, run_id, last_committed_sequence, "
+                        "task_state_revision, budget_state, pending_operations, file_snapshots, "
+                        "state_hash, schema_version, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            checkpoint.checkpoint_id,
+                            checkpoint.run_id,
+                            int(checkpoint.last_committed_sequence),
+                            int(checkpoint.task_state_revision),
+                            json.dumps(checkpoint.budget_state),
+                            json.dumps(list(checkpoint.pending_operations)),
+                            json.dumps(list(checkpoint.file_snapshots)),
+                            checkpoint.state_hash,
+                            int(checkpoint.schema_version),
+                            checkpoint.created_at,
+                        ),
+                    )
+
+                self._conn.execute("COMMIT")
+            except sqlite3.Error:
+                # Roll back the whole step. If rollback itself fails (connection
+                # in a bad state), swallow so we always surface the original
+                # error to the caller.
+                try:
+                    self._conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                raise
+            return True
+
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        """Yield the connection inside a single BEGIN IMMEDIATE transaction.
+
+        Use this for composite writes that the granular methods do not cover.
+        Long operations (model call, Bash, file I/O) MUST NOT run inside the
+        yielded block; the writer lock is held for the whole context manager.
+
+        RLock allows nesting, so a ``transaction()`` inside another
+        ``transaction()`` reuses the outer transaction (no nested savepoints).
+        """
+        with self._write_lock:
+            already_in_txn = self._conn.in_transaction
+            if not already_in_txn:
+                self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield self._conn
+                if not already_in_txn:
+                    self._conn.execute("COMMIT")
+            except sqlite3.Error:
+                if not already_in_txn:
+                    try:
+                        self._conn.execute("ROLLBACK")
+                    except sqlite3.Error:
+                        pass
+                raise
+
+    # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
@@ -868,53 +1072,3 @@ class SQLiteRepository:
             estimated_tokens=int(row["estimated_tokens"]),
             metadata=json.loads(row["metadata"]),
         )
-
-
-# ---------------------------------------------------------------------------
-# Composite commit (SOP §5.3)
-# ---------------------------------------------------------------------------
-
-
-def commit_runtime_step(
-    repo: Repository,
-    *,
-    run_id: str,
-    conversation_id: str,
-    event: SessionEvent,
-    task_state_updates: Iterable[tuple[str, str, dict[str, Any]]] | None = None,
-    context_items: Iterable[ContextItem] | None = None,
-    snapshot: ContextSnapshot | None = None,
-    checkpoint: Checkpoint | None = None,
-) -> bool:
-    """Apply a single Runtime state commit in SOP §5.3 ordering.
-
-    The Repository interface exposes granular methods so callers can compose
-    transactions. This helper enforces the canonical order:
-
-    1. Append SessionEvent.
-    2. Update materialized TaskState rows.
-    3. Insert ContextItems / Snapshot (if produced this step).
-    4. Insert Checkpoint (only at safe step boundary).
-
-    Returns ``True`` if the event was newly committed, ``False`` if a
-    duplicate ``event_id`` was detected (idempotent success).
-    """
-    appended = repo.append_event(event)
-    if not appended:
-        return False
-
-    if task_state_updates:
-        for task_id, status, payload in task_state_updates:
-            repo.upsert_task_state(task_id, run_id, status, payload)
-
-    if context_items:
-        # SQLiteRepository.insert_context_items takes any iterable
-        repo.insert_context_items(context_items)
-
-    if snapshot is not None:
-        repo.insert_snapshot(snapshot)
-
-    if checkpoint is not None:
-        repo.insert_checkpoint(checkpoint)
-
-    return True
