@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from unittest.mock import patch
 from pathlib import Path
 
@@ -181,10 +182,73 @@ def test_toctou_revalidation_denies_write_when_path_escapes(write_tool: ScopedFi
 
     with patch.object(write_tool._guard, "_resolve_path", side_effect=_flaky_resolve):
         result = write_tool.execute(
-            {"path": "src/toctou.txt", "content": "malicious"},
+            {
+                "path": "src/toctou.txt",
+                "content": "malicious",
+                "expected_hash": hashlib.sha256(target.read_bytes()).hexdigest(),
+            },
             ToolContext(tmp_workspace),
         )
 
     assert not result.ok
     assert "escapes" in result.output.lower()
     assert target.read_text(encoding="utf-8") == "safe"
+
+
+def test_write_existing_file_without_expected_hash_rejected(write_tool: ScopedFileWriteTool, tmp_workspace: Path):
+    """D6/M-14: writing an existing file without expected_hash is denied."""
+
+    target = tmp_workspace / "src" / "existing.txt"
+    target.write_text("original", encoding="utf-8")
+
+    result = write_tool.execute(
+        {"path": "src/existing.txt", "content": "overwrite"},
+        ToolContext(tmp_workspace),
+    )
+    assert not result.ok
+    assert result.error_code == "cas_missing"
+    assert target.read_text(encoding="utf-8") == "original"
+
+
+def test_write_new_file_allows_empty_sentinel(write_tool: ScopedFileWriteTool, tmp_workspace: Path):
+    """D6: new files can be created with the explicit empty-string sentinel."""
+
+    result = write_tool.execute(
+        {"path": "src/new.txt", "content": "created", "expected_hash": ""},
+        ToolContext(tmp_workspace),
+    )
+    assert result.ok
+    assert (tmp_workspace / "src" / "new.txt").read_text(encoding="utf-8") == "created"
+
+
+def test_file_edit_without_expected_hash_rejected(tmp_workspace: Path):
+    """D6/M-14: file_edit must carry expected_hash for the current version."""
+
+    target = tmp_workspace / "src" / "edit.txt"
+    target.write_text("hello world", encoding="utf-8")
+    task = AgentTask(
+        task_id="t1",
+        title="edit",
+        objective="edit a file",
+        acceptance_criteria=["file edited"],
+        allowed_paths=["."],
+        writable_paths=["src"],
+        allowed_tools=["file_edit"],
+    )
+    from paperclaw.multiagent.scoped_tools import ScopedFileEditTool
+
+    tool = ScopedFileEditTool(
+        task=task,
+        guard=PermissionGuardLite(tmp_workspace),
+        lease_manager=LeaseManager(tmp_workspace),
+        agent_id="agent-1",
+        runtime_state={"run_id": "run-test", "event_sequence": 0, "trace_events": []},
+        counters=WorkerRuntimeCounters(),
+    )
+    result = tool.execute(
+        {"path": "src/edit.txt", "old_text": "hello", "new_text": "goodbye"},
+        ToolContext(tmp_workspace),
+    )
+    assert not result.ok
+    assert result.error_code == "cas_missing"
+    assert target.read_text(encoding="utf-8") == "hello world"

@@ -26,7 +26,8 @@ from paperclaw.multiagent.events import emit_team_event
 from paperclaw.multiagent.lease import LeaseManager
 from paperclaw.multiagent.permissions import PermissionGuardLite
 from paperclaw.tools import BashTool, FileEditTool, FileReadTool, FileWriteTool, GrepTool
-from paperclaw.tools.base import ToolContext, ToolResult
+from paperclaw.tools.base import ToolContext, ToolResult, safe_execute, truncate
+from paperclaw.tools.bash import _classify_command
 from paperclaw.tools.registry import ToolRegistry
 
 
@@ -314,7 +315,27 @@ class ScopedFileWriteTool:
 
         resolved = (context.workspace / path).resolve()
         expected_hash = arguments.get("expected_hash")
-        if expected_hash is not None:
+
+        # Mandatory CAS: an existing file must be written with the hash observed at
+        # read time. New files use the empty-string sentinel to declare intent. This
+        # closes the bypass where a Worker omits expected_hash and silently overwrites
+        # a file that changed since it was last read.
+        if resolved.is_file():
+            if expected_hash is None:
+                return _deny_result(
+                    f"expected_hash required for existing file: {path}",
+                    "cas_missing",
+                )
+        else:
+            if expected_hash is None:
+                expected_hash = ""
+            elif expected_hash != "":
+                return _deny_result(
+                    f"expected_hash for a new file must be empty sentinel '', got {expected_hash}",
+                    "cas_missing",
+                )
+
+        if expected_hash != "":
             actual = _content_hash(resolved)
             if actual != expected_hash:
                 snapshot = FileSnapshot.read(resolved)
@@ -442,35 +463,44 @@ class ScopedFileEditTool:
 
         resolved = (context.workspace / path).resolve()
         expected_hash = arguments.get("expected_hash")
-        if expected_hash is not None:
-            actual = _content_hash(resolved)
-            if actual != expected_hash:
-                snapshot = FileSnapshot.read(resolved)
-                emit_team_event(
-                    _team_state(self._runtime_state),
-                    "tool.cas_conflict",
-                    self._agent_id,
-                    self._task.task_id,
-                    path=path,
-                    expected=expected_hash,
-                    actual=actual,
-                    snapshot_path=snapshot.path,
-                    snapshot_hash=snapshot.content_hash,
-                )
-                return _deny_result(
-                    f"expected_hash mismatch for {path}; file was modified externally",
-                    "cas_conflict",
-                    {
-                        "path": str(resolved),
-                        "expected": expected_hash,
-                        "actual": actual,
-                        "snapshot": {"path": snapshot.path, "content_hash": snapshot.content_hash},
-                    },
-                )
 
         # Read, replace exactly once, atomic write.
         if not resolved.is_file():
             return _deny_result(f"path is not a file: {path}", "not_found")
+
+        # Mandatory CAS for edits: the caller must prove they read the current
+        # version before modifying it. Omitting expected_hash is not allowed.
+        if expected_hash is None:
+            return _deny_result(
+                f"expected_hash required for file_edit: {path}",
+                "cas_missing",
+            )
+
+        actual = _content_hash(resolved)
+        if actual != expected_hash:
+            snapshot = FileSnapshot.read(resolved)
+            emit_team_event(
+                _team_state(self._runtime_state),
+                "tool.cas_conflict",
+                self._agent_id,
+                self._task.task_id,
+                path=path,
+                expected=expected_hash,
+                actual=actual,
+                snapshot_path=snapshot.path,
+                snapshot_hash=snapshot.content_hash,
+            )
+            return _deny_result(
+                f"expected_hash mismatch for {path}; file was modified externally",
+                "cas_conflict",
+                {
+                    "path": str(resolved),
+                    "expected": expected_hash,
+                    "actual": actual,
+                    "snapshot": {"path": snapshot.path, "content_hash": snapshot.content_hash},
+                },
+            )
+
         text = resolved.read_text(encoding="utf-8", errors="strict")
         count = text.count(arguments["old_text"])
         if count != 1:
@@ -519,7 +549,7 @@ class ScopedBashTool:
         self._agent_id = agent_id
         self._runtime_state = runtime_state
         self._counters = counters
-        self._inner = BashTool()
+        self._inner = _CancellableBashTool(runtime_state, task.task_id)
 
     def validate(self, arguments: dict[str, Any]) -> None:
         self._inner.validate(arguments)
@@ -552,6 +582,118 @@ class ScopedBashTool:
             return _deny_result(check.reason)
         self._counters.tool_call_count += 1
         return self._inner.execute(arguments, context)
+
+
+class _CancellableBashTool(BashTool):
+    """BashTool variant that registers its subprocess for external cancellation.
+
+    The process Popen object is stored in the Worker's process registry so that
+    ``Worker.cancel()`` can kill the entire process tree when the task is
+    cancelled, rather than waiting for ``communicate()`` to return naturally.
+    """
+
+    def __init__(self, runtime_state: dict, task_id: str) -> None:
+        self._runtime_state = runtime_state
+        self._task_id = task_id
+
+    def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
+        import subprocess as _sp
+        import time as _time
+        from datetime import datetime, timezone
+
+        started = _time.perf_counter()
+        started_at = datetime.now(timezone.utc)
+        env = {key: value for key, value in os.environ.items() if key.upper() in self._env_allowlist}
+        env["PYTHONUTF8"] = "1"
+        process = _sp.Popen(
+            ["powershell", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", arguments["command"]],
+            cwd=context.workspace,
+            env=env,
+            stdout=_sp.PIPE,
+            stderr=_sp.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdin=_sp.DEVNULL,
+            creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0) | getattr(_sp, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
+
+        # Register the process so cancel() can kill it.
+        registry = self._runtime_state.get("_process_registry")
+        if registry is not None:
+            with registry["lock"]:
+                registry["processes"].setdefault(self._task_id, []).append(process)
+
+        try:
+            stdout, stderr = process.communicate(timeout=arguments.get("timeout_seconds", 30))
+        except _sp.TimeoutExpired:
+            _kill_process_tree_safe(process.pid)
+            try:
+                stdout, stderr = process.communicate(timeout=2)
+            except _sp.TimeoutExpired:
+                process.kill()
+                stdout, stderr = process.communicate(timeout=2)
+            duration = int((_time.perf_counter() - started) * 1000)
+            output, truncated_flag = truncate((stdout or "") + (stderr or ""), context.output_limit)
+            return ToolResult(
+                False,
+                output or "command timed out",
+                "unknown_outcome",
+                {
+                    "command": arguments["command"],
+                    "command_class": _classify_command(arguments["command"]),
+                    "cwd": str(context.workspace),
+                    "started_at": started_at.isoformat(),
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "timed_out": True,
+                    "duration_ms": duration,
+                    "truncated": truncated_flag,
+                },
+            )
+        finally:
+            # Always unregister, even on timeout or cancellation.
+            if registry is not None:
+                with registry["lock"]:
+                    procs = registry["processes"].get(self._task_id, [])
+                    if process in procs:
+                        procs.remove(process)
+                    if not procs:
+                        registry["processes"].pop(self._task_id, None)
+
+        duration = int((_time.perf_counter() - started) * 1000)
+        combined = stdout + (f"\n[stderr]\n{stderr}" if stderr else "")
+        output, truncated_flag = truncate(combined.rstrip(), context.output_limit)
+        return ToolResult(
+            process.returncode == 0,
+            output,
+            None if process.returncode == 0 else "command_failed",
+            {
+                "command": arguments["command"],
+                "command_class": _classify_command(arguments["command"]),
+                "cwd": str(context.workspace),
+                "started_at": started_at.isoformat(),
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "exit_code": process.returncode,
+                "timed_out": False,
+                "duration_ms": duration,
+                "truncated": truncated_flag,
+            },
+        )
+
+
+def _kill_process_tree_safe(pid: int) -> None:
+    """Best-effort process tree termination."""
+
+    try:
+        import subprocess as _sp
+        _sp.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            timeout=5,
+            creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        pass
 
 
 def build_scoped_registry(

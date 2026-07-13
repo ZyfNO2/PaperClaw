@@ -19,6 +19,12 @@
 - 扩展 CLI：`paperclaw agent`（默认单 Agent）与 `paperclaw team --plan plan.json`（MultiAgent）。
 - Worker 状态推导增强：模型 `done` 提议不能覆盖 scope/lease/cas 失败；最终状态确定后再发出 task.completed/failed 事件。
 - 在 v0.03 SOP 收尾阶段修复 `ReflectNode` 中事件发射引用了未定义的 `shared` 变量导致的 `NameError`，保证 Verify/Reflection gate 在启用时正常运行。
+- 修复 Coordinator 顺序 DAG 执行漏洞：单 Agent 路径现在按拓扑顺序执行全部任务，并在依赖失败时阻塞下游任务。
+- 强制 CAS：已存在文件的 `file_write` / `file_edit` 必须携带 `expected_hash`；新文件使用空字符串 sentinel；缺失时返回 `cas_missing` 且文件不被覆盖。
+- 团队 model-call 预算：并行调度时悲观预留 `max_steps` 作为 model-call 上限，超额任务被取消，防止并发 Worker 瞬时突破限制。
+- Task 级 timeout：`AgentTask.timeout_seconds` 传入 AgentRuntime，`DecideActionNode` 在步骤间检查 wall-clock 超时。
+- 绝对 wall-time deadline：`run_deadline` 在 `_run_parallel` 入口计算，所有 fix-review 轮次共享同一截止时间。
+- 取消安全：`Worker.cancel()` 不再立即释放 lease；改为杀死注册子进程 + 设置 cancel event；lease 由 `Worker.run()` 在线程自然退出后释放；线程未终止时返回 `unknown_outcome`。
 
 ## 兼容性
 
@@ -34,4 +40,4 @@
 ## 测试基线
 
 - 全量命令：`python -m pytest -q --basetemp=tmp/pytest`
-- 结果：`92 passed, 1 skipped`
+- 结果：`101 passed, 1 skipped`

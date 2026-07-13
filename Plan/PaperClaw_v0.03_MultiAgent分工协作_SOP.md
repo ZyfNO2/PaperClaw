@@ -1,7 +1,7 @@
 # PaperClaw v0.03：MultiAgent 分工协作 SOP
 
 > 版本：v0.03  
-> 状态：**已完成**（所有 Phase 清单与完成定义已勾选，completion hook 49/49，测试基线 92 passed / 1 skipped）  
+> 状态：**部分完成 / NO-GO**（核心 MVP 已落地；P0 阻断项已修复：顺序 DAG、强制 CAS、团队 model-call 预算、Task timeout、取消安全；P1 遗留：Global Verify、Reviewer 语义收紧）  
 > 类型：第三个工程实施 SOP  
 > 前置：v0.02 Verify / Reflection 通过验收  
 > 目标：引入 Coordinator、Worker、Reviewer，实现可控拆解、并行执行、证据交接和独立验收
@@ -490,7 +490,7 @@ class TeamBudget:
 - [x] D3. 任务结束和取消时释放 lease。
 - [x] D4. 实现冲突检测和 FileSnapshot 重读。
 - [x] D5. 测试两个 Worker 争用同一文件。
-- [x] D6. 实现 atomic replace 与 expected_hash CAS。
+- [x] D6. 实现 atomic replace 与强制 expected_hash CAS（已存在文件的 write/edit 必须携带 expected_hash，缺失时拒绝；新文件使用空字符串 sentinel）。
 - [x] D7. 覆盖用户外部编辑、junction/symlink 和 TOCTOU 测试。
 
 ### Phase E：Reviewer
@@ -535,7 +535,7 @@ class TeamBudget:
 | M-11 | 简单任务 | 保持单 Agent，不强拆 |
 | M-12 | 普通文本未发消息 | 其他 Agent 不应收到 |
 | M-13 | Worker 提交越权 Bash | PermissionGuard Lite 拒绝 |
-| M-14 | 用户在 Worker 写前修改文件 | expected_hash 冲突，不覆盖 |
+| M-14 | 用户在 Worker 写前修改文件 / 无 expected_hash 写已有文件 | expected_hash 冲突或 cas_missing，不覆盖 |
 | M-15 | Tool 超时且结果未知 | 标记 unknown_outcome，不自动重试 |
 
 验收门槛：

@@ -55,7 +55,7 @@ python -m pytest -q --basetemp=tmp/pytest
 
 当前基线测试结果：
 
-- `83 passed, 1 skipped`
+- `101 passed, 1 skipped`
 
 ## 运行
 
@@ -103,8 +103,10 @@ paperclaw "修复当前目录代码并运行验证" --workspace . --max-steps 10
 - 当前 `bash` 安全策略只是 v0.01/v0.03 的最小边界，不是完整 Permission Engine；
 - v0.02 Verify 仍主要依赖本地可确定性检查，尚未接入完整 Session / Memory / 持久 Trace；
 - v0.03 MultiAgent 是进程内协作基线，不支持 crash 后自动恢复、跨机器分布式执行或自动 PR/push；
-- Worker 取消为协作式：长耗时 `bash` 调用可能在取消信号后仍执行完当前步；
-- Reviewer Fix Task 闭环、`TeamBudget` 团队级步数/模型调用上限、D7（junction/symlink/TOCTOU）等边界能力已预留接口，未完全闭环；
+- Worker 取消为协作式：长耗时 `bash` 调用通过进程注册 + `taskkill /T /F` 终止子进程树；lease 在 Worker 线程自然退出后释放，不提前释放；
+- 强制 CAS（write/edit 已有文件必须携带 `expected_hash`）已落地；新文件使用空字符串 sentinel；
+- 顺序 DAG 执行、团队 model-call 预留预算、Task timeout、绝对 wall-time deadline 已落地；
+- Reviewer Fix Task 闭环已落地；Global Verify、Reviewer 语义收紧、完整消息通道仍在后续 SOP 中；
 - Context、Permission Engine、Eval、RAG 仍在后续 SOP 中。
 
 ## 上游

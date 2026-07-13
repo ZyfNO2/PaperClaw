@@ -91,6 +91,7 @@ class Coordinator:
             "total_model_calls": 0,
             "total_tool_calls": 0,
             "reserved_steps": 0,
+            "reserved_model_calls": 0,
             "fix_round_count": 0,
         }
 
@@ -139,8 +140,9 @@ class Coordinator:
                 trace_events=list(self._team_state["trace_events"]),
             )
 
+        topo_order = dag_check.topological_order or [t.task_id for t in tasks]
         if not self._worth_parallelizing(tasks):
-            return self._run_single_agent(user_goal, tasks[0])
+            return self._run_single_agent(user_goal, tasks, topo_order)
 
         return self._run_parallel(user_goal, tasks)
 
@@ -163,22 +165,60 @@ class Coordinator:
                     independent_pairs += 1
         return independent_pairs > 0
 
-    def _run_single_agent(self, user_goal: str, task: AgentTask) -> CoordinatorResult:
-        """Fallback path for tasks that do not benefit from parallelization."""
+    def _run_single_agent(
+        self,
+        user_goal: str,
+        tasks: list[AgentTask],
+        topo_order: list[str],
+    ) -> CoordinatorResult:
+        """Fallback path for tasks that do not benefit from parallelization.
+
+        Even when tasks are not worth running in parallel, the Coordinator must
+        still execute every task in topological order and respect dependencies.
+        A failure blocks downstream tasks; the final stop reason reflects the
+        overall outcome.
+        """
 
         emit_team_event(
             self._team_state,
             "team.single_agent_path",
             AgentRole.COORDINATOR.value,
-            task.task_id,
+            "root",
             reason="not worth parallelizing",
+            task_count=len(tasks),
         )
+        task_by_id = {t.task_id: t for t in tasks}
+        results: dict[str, WorkerResult] = {}
+        failed_or_blocked = False
         worker = self._make_worker("worker-0")
-        result = worker.run(task, self.workspace)
+
+        for task_id in topo_order:
+            task = task_by_id[task_id]
+            # If any dependency failed, this task is blocked without running.
+            if any(
+                results.get(dep).status != WorkerStatus.COMPLETED
+                for dep in task.dependencies
+                if dep in results
+            ):
+                results[task_id] = WorkerResult(
+                    task_id=task_id,
+                    status=WorkerStatus.BLOCKED,
+                    summary="blocked because a dependency failed",
+                )
+                failed_or_blocked = True
+                continue
+
+            result = worker.run(task, self.workspace)
+            results[task_id] = result
+            if result.status != WorkerStatus.COMPLETED:
+                failed_or_blocked = True
+
+        stop_reason = TeamStopReason.ALL_TASKS_COMPLETED if not failed_or_blocked else TeamStopReason.BLOCKED
+        summary = f"Single-agent path: {len([r for r in results.values() if r.status == WorkerStatus.COMPLETED])}/{len(tasks)} tasks completed"
         return CoordinatorResult(
-            stop_reason=TeamStopReason.COMPLETED if result.status == WorkerStatus.COMPLETED else TeamStopReason.BLOCKED,
-            task_results={task.task_id: result},
-            summary=f"Single-agent path: {result.summary}",
+            stop_reason=stop_reason,
+            task_results=results,
+            summary=summary,
             trace_events=list(self._team_state["trace_events"]),
         )
 
@@ -190,9 +230,14 @@ class Coordinator:
         review_findings: list[ReviewFinding] = []
         stop_reason: TeamStopReason | None = None
 
+        # Single absolute wall-clock deadline shared across all rounds. This
+        # prevents fix-review rounds from resetting the timer and exceeding the
+        # team budget.
+        run_deadline = time.monotonic() + self.budget.max_wall_time_seconds
+
         # Initial task execution round.
         round_results, round_statuses, stop_reason = self._execute_task_round(
-            user_goal, all_tasks, time.monotonic()
+            user_goal, all_tasks, run_deadline
         )
         all_results.update(round_results)
 
@@ -248,7 +293,7 @@ class Coordinator:
             all_tasks.extend(fix_tasks)
             completed_so_far = {tid for tid, r in all_results.items() if r.status == WorkerStatus.COMPLETED}
             round_results, round_statuses, stop_reason = self._execute_task_round(
-                user_goal, fix_tasks, time.monotonic(), already_completed=completed_so_far
+                user_goal, fix_tasks, run_deadline, already_completed=completed_so_far
             )
             all_results.update(round_results)
             # If fix round itself did not complete, stop trying.
@@ -276,7 +321,7 @@ class Coordinator:
         self,
         user_goal: str,
         tasks: list[AgentTask],
-        start_time: float,
+        run_deadline: float,
         already_completed: set[str] | None = None,
     ) -> tuple[dict[str, WorkerResult], dict[str, TaskStatus], TeamStopReason | None]:
         """Run one round of tasks to a terminal state.
@@ -285,6 +330,10 @@ class Coordinator:
         used for both the initial task set and subsequent Fix Task rounds.
         `already_completed` contains task ids from previous rounds that satisfy
         dependencies of tasks in this round.
+
+        ``run_deadline`` is the absolute monotonic deadline shared across all
+        rounds — it is NOT reset per round, so fix-review cycles cannot extend
+        the team wall-time budget.
         """
 
         completed_ids = already_completed or set()
@@ -294,6 +343,7 @@ class Coordinator:
         cancelled: set[str] = set()
         active_workers: dict[str, WorkerThread] = {}
         task_reserved_steps: dict[str, int] = {}
+        task_reserved_model_calls: dict[str, int] = {}
         result_queue: Queue[tuple[str, WorkerResult]] = Queue()
         lock = threading.Lock()
         stop_reason: TeamStopReason | None = None
@@ -304,8 +354,8 @@ class Coordinator:
             return statuses.get(task_id) == TaskStatus.COMPLETED
 
         while True:
-            # Budget checks
-            if self._budget_exhausted(start_time):
+            # Budget checks — wall time uses the absolute run deadline.
+            if self._deadline_exceeded(run_deadline):
                 stop_reason = TeamStopReason.BUDGET_EXHAUSTED
                 break
             if self._team_steps_exhausted():
@@ -343,8 +393,10 @@ class Coordinator:
                     if self._is_task_cancelled(task_id) and thread.is_alive():
                         thread.result = self._cancel_active_worker(task_id, thread)
 
-            # Schedule ready tasks. Pessimistically reserve the task's step
-            # budget so parallel scheduling does not overshoot the team total.
+            # Schedule ready tasks. Pessimistically reserve both step and
+            # model-call budgets so parallel scheduling does not overshoot the
+            # team total. The model-call reservation uses max_steps as an upper
+            # bound because each step makes at most one model call.
             with lock:
                 for task in tasks:
                     if statuses[task.task_id] != TaskStatus.PENDING:
@@ -354,19 +406,29 @@ class Coordinator:
                     if len(active_workers) >= self.budget.max_agents:
                         continue
                     capped_task = self._cap_task_to_remaining_budget(task)
-                    projected = (
+                    projected_steps = (
                         self._team_state["total_steps"]
                         + self._team_state["reserved_steps"]
                         + capped_task.max_steps
                     )
-                    if projected > self.budget.max_total_steps:
-                        # No step budget left for this task.
+                    projected_model_calls = (
+                        self._team_state["total_model_calls"]
+                        + self._team_state["reserved_model_calls"]
+                        + capped_task.max_steps
+                    )
+                    if projected_steps > self.budget.max_total_steps:
+                        statuses[task.task_id] = TaskStatus.CANCELLED
+                        cancelled.add(task.task_id)
+                        continue
+                    if projected_model_calls > self.budget.max_total_model_calls:
                         statuses[task.task_id] = TaskStatus.CANCELLED
                         cancelled.add(task.task_id)
                         continue
                     statuses[task.task_id] = TaskStatus.RUNNING
                     self._team_state["reserved_steps"] += capped_task.max_steps
+                    self._team_state["reserved_model_calls"] += capped_task.max_steps
                     task_reserved_steps[task.task_id] = capped_task.max_steps
+                    task_reserved_model_calls[task.task_id] = capped_task.max_steps
                     worker = self._make_worker(f"worker-{len(active_workers)}")
                     thread = WorkerThread(worker, capped_task, self.workspace, result_queue)
                     active_workers[task.task_id] = thread
@@ -380,6 +442,9 @@ class Coordinator:
                         active_workers.pop(task_id, None)
                         results[task_id] = result
                         self._team_state["reserved_steps"] -= task_reserved_steps.pop(
+                            task_id, 0
+                        )
+                        self._team_state["reserved_model_calls"] -= task_reserved_model_calls.pop(
                             task_id, 0
                         )
                         self._accumulate_counters(result)
@@ -426,6 +491,7 @@ class Coordinator:
                 thread.result = self._cancel_active_worker(task_id, thread)
             results[task_id] = thread.result
             self._team_state["reserved_steps"] -= task_reserved_steps.pop(task_id, 0)
+            self._team_state["reserved_model_calls"] -= task_reserved_model_calls.pop(task_id, 0)
             self._accumulate_counters(thread.result)
             statuses[task_id] = TaskStatus.CANCELLED
 
@@ -461,11 +527,15 @@ class Coordinator:
             enable_verification_gate=self.enable_verification_gate,
         )
 
-    def _budget_exhausted(self, start_time: float) -> bool:
-        """Check wall time budget. Step/model budgets are enforced per Worker."""
+    def _deadline_exceeded(self, run_deadline: float) -> bool:
+        """Check if the absolute wall-clock deadline has been reached.
 
-        elapsed = time.monotonic() - start_time
-        return elapsed > self.budget.max_wall_time_seconds
+        The deadline is set once at the start of ``_run_parallel`` and shared
+        across all fix-review rounds. This prevents each round from resetting
+        the timer and silently exceeding the team wall-time budget.
+        """
+
+        return time.monotonic() > run_deadline
 
     def _team_steps_exhausted(self) -> bool:
         """True when the aggregated step count reaches the team limit."""
@@ -522,18 +592,38 @@ class Coordinator:
                     stack.append(dependent)
 
     def _cancel_active_worker(self, task_id: str, thread: WorkerThread) -> WorkerResult:
-        """Signal cancellation to a running Worker and wait for it to stop."""
+        """Signal cancellation to a running Worker and wait for it to stop.
+
+        The Worker's ``cancel()`` method kills any running subprocesses and
+        sets the cooperative cancel event. Leases are NOT released by
+        ``cancel()`` — they are released by ``Worker.run()`` when the runtime
+        naturally exits. This method waits up to 10 seconds for that to happen.
+
+        If the thread does not terminate within the timeout, the result is
+        marked ``unknown_outcome`` because we cannot guarantee the Worker has
+        stopped producing side effects. The leases remain held until the thread
+        eventually finishes, preventing another Worker from writing to the same
+        files while the old process might still be active.
+        """
 
         thread.worker.cancel(thread.task)
-        thread.join(timeout=3)
+        thread.join(timeout=10)
         if thread.is_alive():
             emit_team_event(
                 self._team_state,
                 "worker.cancel_failed",
                 thread.worker.agent_id,
                 task_id,
-                reason="thread did not terminate after cooperative cancel",
+                reason="thread did not terminate after cooperative cancel and process kill",
             )
+            return WorkerResult(
+                task_id=task_id,
+                status=WorkerStatus.CANCELLED,
+                summary="unknown_outcome: worker thread did not terminate within timeout; leases remain held",
+            )
+        # Thread finished — Worker.run() has already released leases.
+        if thread.result and thread.result.status == WorkerStatus.COMPLETED:
+            return thread.result
         return WorkerResult(
             task_id=task_id,
             status=WorkerStatus.CANCELLED,

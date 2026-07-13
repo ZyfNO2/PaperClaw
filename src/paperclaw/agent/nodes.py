@@ -31,6 +31,17 @@ class DecideActionNode(Node):
         if cancel_event is not None and cancel_event.is_set():
             shared["stop_reason"] = "cancelled"
             return None
+        # Task-level wall-clock timeout: checked between steps so the Agent
+        # loop exits cooperatively when the deadline is exceeded. A value of 0
+        # means no timeout is enforced (preserves v0.01/v0.02 behavior).
+        timeout = shared.get("timeout_seconds", 0)
+        if timeout and timeout > 0:
+            import time as _time
+            elapsed = _time.monotonic() - shared.get("run_start_time", _time.monotonic())
+            if elapsed > timeout:
+                shared["stop_reason"] = "timeout"
+                emit_event(shared, "stop", reason="timeout", step=shared["step_count"], elapsed=round(elapsed, 2))
+                return None
         return build_prompt(shared, self.registry)
 
     def exec(self, prompt: str | None):

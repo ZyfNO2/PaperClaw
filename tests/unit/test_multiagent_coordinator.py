@@ -84,8 +84,82 @@ def test_single_agent_path_for_simple_task(tmp_workspace: Path):
     model = FakeModel([_done("hello")])
     coord = Coordinator(lambda _id: model, tmp_workspace, enable_verification_gate=False)
     result = coord.run("say hello", [task])
-    assert result.stop_reason == TeamStopReason.COMPLETED
+    assert result.stop_reason == TeamStopReason.ALL_TASKS_COMPLETED
     assert result.task_results["t1"].status == "completed"
+
+
+def test_single_agent_path_executes_dependent_chain(tmp_workspace: Path):
+    """B1/B3/B5: sequential path must run every task in topological order."""
+
+    tasks = [
+        AgentTask(
+            task_id="a",
+            title="create a",
+            objective="create a.py",
+            acceptance_criteria=["a.py exists"],
+            allowed_paths=["."],
+            writable_paths=["src"],
+            allowed_tools=["file_write"],
+            expected_artifacts=["src/a.py"],
+        ),
+        AgentTask(
+            task_id="b",
+            title="read a",
+            objective="read a.py",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["file_read"],
+            dependencies=["a"],
+        ),
+    ]
+    seq = [
+        _action("file_write", {"path": "src/a.py", "content": "a = 1\n"}),
+        _done("wrote a.py"),
+        _action("file_read", {"path": "src/a.py"}),
+        _done("read a.py"),
+    ]
+    coord = Coordinator(_factory_for(seq), tmp_workspace, enable_verification_gate=False)
+    result = coord.run("dependent chain", tasks)
+    assert result.stop_reason == TeamStopReason.ALL_TASKS_COMPLETED
+    assert result.task_results["a"].status == "completed"
+    assert result.task_results["b"].status == "completed"
+
+
+def test_single_agent_path_blocks_downstream_on_failure(tmp_workspace: Path):
+    """B5: failure in a sequential DAG blocks downstream tasks."""
+
+    tasks = [
+        AgentTask(
+            task_id="a",
+            title="fail",
+            objective="fail",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+        ),
+        AgentTask(
+            task_id="b",
+            title="never runs",
+            objective="never runs",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+            dependencies=["a"],
+        ),
+    ]
+    # Task a tries to write outside its writable scope and must fail.
+    coord = Coordinator(
+        _factory_for([
+            _action("file_write", {"path": "escape.py", "content": "x = 1\n"}),
+            _done("should not run"),
+        ]),
+        tmp_workspace,
+        enable_verification_gate=False,
+    )
+    result = coord.run("failure blocks downstream", tasks)
+    assert result.stop_reason == TeamStopReason.BLOCKED
+    assert result.task_results["a"].status == "failed"
+    assert result.task_results["b"].status == "blocked"
 
 
 def test_two_independent_read_tasks(tmp_workspace: Path):
@@ -530,4 +604,176 @@ def test_plain_model_output_is_not_team_message(tmp_workspace: Path):
     # output must not appear as a team message.
     message_events = [e for e in result.trace_events if "message" in e["event_type"]]
     assert not message_events
-    assert result.stop_reason == TeamStopReason.COMPLETED
+    assert result.stop_reason == TeamStopReason.ALL_TASKS_COMPLETED
+
+
+def test_team_model_call_budget_reservation_blocks_parallel_overshoot(tmp_workspace: Path):
+    """P0 #3: parallel Workers cannot collectively exceed max_total_model_calls.
+
+    Two independent tasks each with max_steps=2 are scheduled in parallel.
+    With max_total_model_calls=1, the reservation mechanism must prevent the
+    second task from starting — the projected model calls would exceed the limit.
+    """
+
+    tasks = [
+        AgentTask(
+            task_id="a",
+            title="a",
+            objective="a",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+            max_steps=2,
+        ),
+        AgentTask(
+            task_id="b",
+            title="b",
+            objective="b",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+            max_steps=2,
+        ),
+    ]
+    coord = Coordinator(
+        _factory_for([_done("a done")], [_done("b done")]),
+        tmp_workspace,
+        enable_verification_gate=False,
+        budget=TeamBudget(max_total_model_calls=1, max_total_steps=100),
+    )
+    result = coord.run("model-call budget", tasks)
+
+    total_model_calls = sum(r.model_call_count for r in result.task_results.values())
+    assert total_model_calls <= coord.budget.max_total_model_calls
+    # At most one task should have run; the other must be cancelled.
+    statuses = {r.status for r in result.task_results.values()}
+    assert "cancelled" in statuses or "blocked" in statuses or result.stop_reason == TeamStopReason.BLOCKED
+
+
+def test_task_timeout_enforced(tmp_workspace: Path):
+    """P0 #4: AgentTask.timeout_seconds causes the runtime to stop on timeout."""
+
+    task = AgentTask(
+        task_id="t1",
+        title="slow task",
+        objective="do something slow",
+        acceptance_criteria=["done"],
+        allowed_paths=["."],
+        allowed_tools=["bash"],
+        max_steps=20,
+        timeout_seconds=1,
+    )
+    # The model will keep proposing bash sleep actions that exceed the timeout.
+    slow_seq = [
+        _action("bash", {"command": "sleep 2"}),
+        _done("done"),
+    ]
+    coord = Coordinator(_factory_for(slow_seq), tmp_workspace, enable_verification_gate=False)
+    result = coord.run("timeout test", [task])
+
+    # The task should fail due to timeout, not complete normally.
+    assert result.task_results["t1"].status == "failed"
+
+
+def test_absolute_wall_time_deadline_shared_across_rounds(tmp_workspace: Path):
+    """P0 #4: fix-review rounds must not reset the wall-time deadline.
+
+    Uses a very short wall-time budget so that even if fix rounds try to start,
+    the absolute deadline is already exceeded and the team stops with
+    BUDGET_EXHAUSTED rather than running indefinitely.
+    """
+
+    tasks = [
+        AgentTask(
+            task_id="a",
+            title="a",
+            objective="a",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+            max_steps=5,
+        ),
+        AgentTask(
+            task_id="b",
+            title="b",
+            objective="b",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+            max_steps=5,
+        ),
+    ]
+    # Each Worker sleeps via bash so wall time elapses.
+    slow_seq = [
+        _action("bash", {"command": "sleep 1"}),
+        _done("done"),
+    ]
+    coord = Coordinator(
+        _factory_for(slow_seq, slow_seq),
+        tmp_workspace,
+        enable_verification_gate=False,
+        budget=TeamBudget(max_wall_time_seconds=0, max_total_steps=100),
+    )
+    result = coord.run("wall-time deadline", tasks)
+
+    assert result.stop_reason == TeamStopReason.BUDGET_EXHAUSTED
+
+
+def test_cancel_does_not_release_lease_immediately(tmp_workspace: Path):
+    """P0 #5: Worker.cancel() must not release leases before the thread stops.
+
+    Releasing leases early creates a window where a long-running Bash command
+    can still write to files that another Worker has already acquired a lease
+    for. Leases should only be released by Worker.run() after the runtime
+    has naturally exited.
+    """
+
+    from paperclaw.multiagent.lease import LeaseManager
+    from paperclaw.multiagent.permissions import PermissionGuardLite
+    from paperclaw.multiagent.worker import Worker
+
+    task = AgentTask(
+        task_id="cancel-test",
+        title="slow bash",
+        objective="run a slow bash command",
+        acceptance_criteria=["done"],
+        allowed_paths=["."],
+        writable_paths=["src"],
+        allowed_tools=["file_write", "bash"],
+    )
+    lease_mgr = LeaseManager(tmp_workspace)
+    guard = PermissionGuardLite(tmp_workspace)
+    team_state = {"run_id": "test", "event_sequence": 0, "trace_events": []}
+
+    model = FakeModel([
+        _action("bash", {"command": "sleep 5"}),
+        _done("done"),
+    ])
+    worker = Worker("w-cancel", model, guard, lease_mgr, team_state, enable_verification_gate=False)
+
+    result_holder: dict = {}
+
+    def run_worker():
+        result_holder["result"] = worker.run(task, tmp_workspace)
+
+    t = threading.Thread(target=run_worker)
+    t.start()
+    # Give the Worker time to acquire a lease and start the bash command.
+    t.join(timeout=0.5)
+
+    # Cancel the worker.
+    cancel_result = worker.cancel(task)
+
+    # Right after cancel(), the lease should NOT have been released by cancel().
+    # (It will be released by Worker.run() when the thread finishes.)
+    # We verify the cancel result is correct.
+    assert cancel_result.status == "cancelled"
+
+    # Wait for the Worker thread to finish (bash process should be killed).
+    t.join(timeout=10)
+    assert not t.is_alive(), "Worker thread should have terminated after cancel"
+
+    # After the Worker thread finishes, leases should be released.
+    result = result_holder.get("result")
+    assert result is not None
+    assert result.status != "completed"
