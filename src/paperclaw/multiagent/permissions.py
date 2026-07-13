@@ -7,6 +7,7 @@ isolation are deliberately out of scope until v0.05.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -136,7 +137,12 @@ class PermissionGuardLite:
         )
 
     def _resolve_path(self, raw_path: str) -> Path | None:
-        """Resolve a path relative to workspace and ensure it stays inside."""
+        """Resolve a path relative to workspace and ensure it stays inside.
+
+        Also rejects paths that contain a symlink or junction component pointing
+        outside the workspace. This is a check-time guard; the write path re-
+        validates right before modification to reduce the TOCTOU window.
+        """
 
         candidate = Path(raw_path)
         if candidate.is_absolute():
@@ -147,7 +153,32 @@ class PermissionGuardLite:
             resolved.relative_to(self.workspace)
         except ValueError:
             return None
+        if self._path_contains_link_escape(resolved):
+            return None
         return resolved
+
+    def _path_contains_link_escape(self, resolved: Path) -> bool:
+        """Return True if any component of resolved is a symlink/junction escaping workspace."""
+
+        for part in resolved.parents:
+            if part == self.workspace:
+                break
+            if os.path.islink(part):
+                real = Path(os.path.realpath(part))
+                try:
+                    real.relative_to(self.workspace)
+                except ValueError:
+                    return True
+            # Python 3.12+ exposes os.path.isjunction; silently skip on older versions.
+            if hasattr(os.path, "isjunction") and os.path.isjunction(part):
+                target = Path(os.readlink(part))
+                if not target.is_absolute():
+                    target = part.parent / target
+                try:
+                    target.resolve(strict=False).relative_to(self.workspace)
+                except ValueError:
+                    return True
+        return False
 
     def _path_under_any(self, resolved: Path, scopes: list[str]) -> bool:
         """Check whether resolved is under any of the scope prefixes.

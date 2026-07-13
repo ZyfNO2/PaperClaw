@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from unittest.mock import patch
 
 from paperclaw.multiagent.permissions import PermissionGuardLite
 
@@ -37,3 +39,45 @@ def test_allows_read_in_scope():
     guard = PermissionGuardLite(Path("/tmp"))
     check = guard.check("file_read", {"path": "src/main.py"}, ["src"], [], ["file_read"])
     assert check.decision.value == "allow"
+
+
+def test_denies_symlink_escape(tmp_path: Path):
+    """D7: a path component that is a symlink pointing outside the workspace is rejected."""
+
+    guard = PermissionGuardLite(tmp_path)
+    with patch.object(os.path, "islink", return_value=True), patch.object(
+        os.path, "realpath", return_value=str(Path("/outside").resolve())
+    ):
+        check = guard.check(
+            "file_write",
+            {"path": "src/main.py"},
+            ["."],
+            ["src"],
+            ["file_write"],
+        )
+    assert check.decision.value == "deny"
+    assert "escapes" in check.reason
+
+
+def test_denies_junction_escape(tmp_path: Path):
+    """D7: a junction component pointing outside the workspace is rejected."""
+
+    guard = PermissionGuardLite(tmp_path)
+    outside = Path("C:/outside") if os.name == "nt" else Path("/outside")
+    with patch.object(os.path, "islink", return_value=False):
+        with patch.object(
+            os.path,
+            "isjunction",
+            return_value=True,
+            create=True,
+        ):
+            with patch.object(os, "readlink", return_value=str(outside)):
+                check = guard.check(
+                    "file_write",
+                    {"path": "src/main.py"},
+                    ["."],
+                    ["src"],
+                    ["file_write"],
+                )
+    assert check.decision.value == "deny"
+    assert "escapes" in check.reason

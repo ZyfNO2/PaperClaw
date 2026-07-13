@@ -73,7 +73,7 @@ class BashTool:
             return ToolResult(
                 False,
                 output or "command timed out",
-                "timeout",
+                "unknown_outcome",
                 {
                     "command": arguments["command"],
                     "command_class": _classify_command(arguments["command"]),

@@ -1,7 +1,8 @@
-"""Tests for scoped tool wrappers: idempotency, CAS, and FileSnapshot."""
+"""Tests for scoped tool wrappers: idempotency, CAS, TOCTOU, and FileSnapshot."""
 
 from __future__ import annotations
 
+from unittest.mock import patch
 from pathlib import Path
 
 import pytest
@@ -134,3 +135,56 @@ def test_cas_conflict_event_routes_to_team_state(tmp_workspace: Path):
     assert result.error_code == "cas_conflict"
     assert any(e["event_type"] == "tool.cas_conflict" for e in team_state["trace_events"])
     assert target.read_text(encoding="utf-8") == "original"
+
+
+def test_external_edit_detected_by_expected_hash(write_tool: ScopedFileWriteTool, tmp_workspace: Path):
+    """D7: a file modified externally between snapshot and write triggers a CAS conflict."""
+
+    target = tmp_workspace / "src" / "external.txt"
+    target.write_text("original", encoding="utf-8")
+    snapshot = FileSnapshot.read(target)
+
+    # Simulate an external edit after the snapshot was captured.
+    target.write_text("tampered", encoding="utf-8")
+
+    result = write_tool.execute(
+        {
+            "path": "src/external.txt",
+            "content": "new",
+            "expected_hash": snapshot.content_hash,
+        },
+        ToolContext(tmp_workspace),
+    )
+    assert not result.ok
+    assert result.error_code == "cas_conflict"
+    # The external edit must remain intact; we do not clobber it.
+    assert target.read_text(encoding="utf-8") == "tampered"
+
+
+def test_toctou_revalidation_denies_write_when_path_escapes(write_tool: ScopedFileWriteTool, tmp_workspace: Path):
+    """D7: path revalidation right before write catches a symlink/junction switch."""
+
+    target = tmp_workspace / "src" / "toctou.txt"
+    target.write_text("safe", encoding="utf-8")
+
+    call_count = 0
+    original_resolve = write_tool._guard._resolve_path
+
+    def _flaky_resolve(raw_path: str):
+        nonlocal call_count
+        call_count += 1
+        # First call is from the permission check; second call is the TOCTOU
+        # revalidation right before the write. Make the second one fail.
+        if call_count == 2:
+            return None
+        return original_resolve(raw_path)
+
+    with patch.object(write_tool._guard, "_resolve_path", side_effect=_flaky_resolve):
+        result = write_tool.execute(
+            {"path": "src/toctou.txt", "content": "malicious"},
+            ToolContext(tmp_workspace),
+        )
+
+    assert not result.ok
+    assert "escapes" in result.output.lower()
+    assert target.read_text(encoding="utf-8") == "safe"

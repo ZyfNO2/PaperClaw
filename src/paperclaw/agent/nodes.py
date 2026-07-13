@@ -50,6 +50,7 @@ class DecideActionNode(Node):
         shared["step_count"] += 1
         raw = exec_res.content
         # Reasoning is surfaced for debug visibility only; the runtime never treats it as trusted structured state.
+        emit_event(shared, "model_call", step=shared["step_count"], model="decide")
         if exec_res.reasoning:
             emit_event(shared, "reasoning", step=shared["step_count"], reasoning=exec_res.reasoning)
         try:
@@ -196,6 +197,7 @@ class ReflectNode(Node):
         if isinstance(exec_res, ReflectionDecision):
             decision = exec_res
         else:
+            emit_event(shared, "model_call", step=shared["step_count"], model="reflect")
             try:
                 decision = parse_reflection_decision(exec_res.content)
                 decision = validate_reflection_decision(decision, shared["verification_result"])

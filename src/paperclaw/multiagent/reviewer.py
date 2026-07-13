@@ -129,6 +129,60 @@ class Reviewer:
         )
         return report
 
+    def create_fix_tasks(
+        self,
+        findings: list[ReviewFinding],
+        original_tasks: list[AgentTask],
+    ) -> list[AgentTask]:
+        """Convert blocker/high findings into bounded Fix Tasks.
+
+        Each Fix Task references the original task it is repairing and carries
+        the Reviewer's requested change as its objective. The Coordinator is
+        responsible for scheduling and re-reviewing after they complete.
+        """
+
+        task_by_id = {t.task_id: t for t in original_tasks}
+        fix_tasks: list[AgentTask] = []
+        for idx, finding in enumerate(findings):
+            if finding.severity not in {"blocker", "high"}:
+                continue
+            # Heuristic: if the finding references a task that failed, depend on
+            # a new fix task rather than the failed task.
+            parent_task_id = None
+            for tid in task_by_id:
+                if tid in finding.evidence or tid in finding.title:
+                    parent_task_id = tid
+                    break
+            fix_id = f"fix-{finding.finding_id}"
+            fix_tasks.append(
+                AgentTask(
+                    task_id=fix_id,
+                    title=f"Fix: {finding.title}",
+                    objective=finding.requested_change or f"Resolve {finding.title}",
+                    acceptance_criteria=[
+                        finding.requested_change or "issue resolved",
+                        f"finding {finding.finding_id} no longer reproduces",
+                    ],
+                    allowed_paths=["."],
+                    writable_paths=[str(Path(finding.file).parent) if finding.file else "."],
+                    allowed_tools=["file_read", "file_write", "file_edit", "bash"],
+                    dependencies=[parent_task_id] if parent_task_id else [],
+                    parent_task_id=parent_task_id,
+                    # Fix Tasks do not inherit the missing artifact as their own
+                    # expected_artifact. Doing so causes the Reviewer to re-report
+                    # the same missing file for every previous fix task, leading
+                    # to an exponential growth of findings and fix tasks. The
+                    # original task keeps the expected_artifact check; the fix
+                    # task's acceptance criteria already require the issue to be
+                    # resolved.
+                    expected_artifacts=[],
+                    max_steps=8,
+                    timeout_seconds=120,
+                    priority=10,
+                )
+            )
+        return fix_tasks
+
     def _derive_verdict(self, findings: list[ReviewFinding]) -> ReviewVerdict:
         """Map finding severities to a verdict."""
 

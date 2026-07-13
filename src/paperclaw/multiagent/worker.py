@@ -134,6 +134,9 @@ class Worker:
             verification_result=verification_result,
             unresolved_items=final_state.get("remaining_issues", []),
             handoff_notes=[f"steps={final_state.get('step_count', 0)}"],
+            step_count=final_state.get("step_count", 0),
+            model_call_count=counters.model_call_count,
+            tool_call_count=counters.tool_call_count,
         )
 
     def cancel(self, task: AgentTask) -> WorkerResult:
@@ -197,7 +200,7 @@ class Worker:
 
         if event == "tool_call":
             counters.tool_call_count += 1
-        elif event in {"reasoning", "model_output"}:
+        elif event == "model_call":
             counters.model_call_count += 1
 
     def _derive_worker_status(self, final_state: dict) -> WorkerStatus:

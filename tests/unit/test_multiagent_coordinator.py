@@ -308,3 +308,226 @@ def test_runtime_lease_conflict_between_workers(tmp_workspace: Path):
     # The lease-conflict event must be recorded in the team trace.
     event_types = {e["event_type"] for e in result.trace_events}
     assert "tool.lease_conflict" in event_types
+
+
+class SharedFakeModel:
+    """Fake model that draws from a single shared iterator across Workers.
+
+    Useful for fix-review tests where the original Worker and the Fix Task
+    Worker must consume different scripted actions in order.
+    """
+
+    def __init__(self, shared_iterator: iter) -> None:
+        self._iterator = shared_iterator
+        self.prompts: list[str] = []
+
+    def complete(self, prompt: str) -> ModelTurn:
+        self.prompts.append(prompt)
+        value = next(self._iterator)
+        content = value if isinstance(value, str) else json.dumps(value)
+        return ModelTurn(content=content)
+
+
+def test_parent_task_cancel_cascades_to_child(tmp_workspace: Path):
+    """M-07: cancelling a parent task stops its dependent child tasks."""
+
+    # Add an independent task so the Coordinator chooses the parallel path.
+    tasks = [
+        AgentTask(
+            task_id="parent",
+            title="parent",
+            objective="sleep then finish",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+        ),
+        AgentTask(
+            task_id="child",
+            title="child",
+            objective="run after parent",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+            dependencies=["parent"],
+        ),
+        AgentTask(
+            task_id="independent",
+            title="independent",
+            objective="finish quickly",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+        ),
+    ]
+    parent_seq = [
+        _action("bash", {"command": "sleep 2"}),
+        _done("parent done"),
+    ]
+    coord = Coordinator(
+        _factory_for(parent_seq, [_done("child done")], [_done("independent done")]),
+        tmp_workspace,
+        enable_verification_gate=False,
+    )
+
+    result_container: dict[str, CoordinatorResult] = {}
+
+    def run_coordinator() -> None:
+        result_container["result"] = coord.run("cancel cascade", tasks)
+
+    thread = threading.Thread(target=run_coordinator)
+    thread.start()
+    # Give the parent Worker time to start before cancelling it.
+    thread.join(timeout=0.3)
+    coord.cancel("parent", tasks)
+    thread.join(timeout=10)
+
+    result = result_container["result"]
+    assert result.task_results["child"].status == "cancelled"
+    assert result.stop_reason in {TeamStopReason.BLOCKED, TeamStopReason.CANCELLED}
+
+
+def test_reviewer_blocker_creates_fix_task(tmp_workspace: Path):
+    """M-09: a blocker/high Reviewer finding creates a Fix Task that can resolve it."""
+
+    # Two independent tasks force the parallel path; one leaves a missing artifact.
+    tasks = [
+        AgentTask(
+            task_id="good",
+            title="good",
+            objective="good",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+        ),
+        AgentTask(
+            task_id="incomplete",
+            title="incomplete",
+            objective="incomplete",
+            acceptance_criteria=["artifact exists"],
+            allowed_paths=["."],
+            writable_paths=["src"],
+            allowed_tools=["file_write"],
+            expected_artifacts=["src/missing.py"],
+        ),
+    ]
+    # Original Workers both say done; Fix Task Worker creates the missing file.
+    shared = iter([
+        _done("good done"),
+        _done("incomplete done"),
+        _action("file_write", {"path": "src/missing.py", "content": "x = 1\n"}),
+        _done("fixed"),
+    ])
+    coord = Coordinator(
+        lambda _id: SharedFakeModel(shared),
+        tmp_workspace,
+        enable_verification_gate=False,
+        budget=TeamBudget(max_fix_rounds=2),
+    )
+    result = coord.run("fix missing artifact", tasks)
+
+    # A fix task should have been created and completed.
+    fix_tasks = [tid for tid in result.task_results if tid.startswith("fix-")]
+    assert fix_tasks
+    assert result.task_results[fix_tasks[0]].status == "completed"
+    assert (tmp_workspace / "src" / "missing.py").exists()
+    assert result.stop_reason == TeamStopReason.ALL_TASKS_COMPLETED
+
+
+def test_reviewer_fix_round_limit(tmp_workspace: Path):
+    """M-10: Reviewer stays unsatisfied until the fix-review round limit is hit."""
+
+    tasks = [
+        AgentTask(
+            task_id="good",
+            title="good",
+            objective="good",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+        ),
+        AgentTask(
+            task_id="incomplete",
+            title="incomplete",
+            objective="incomplete",
+            acceptance_criteria=["artifact exists"],
+            allowed_paths=["."],
+            writable_paths=["src"],
+            allowed_tools=["file_write"],
+            expected_artifacts=["src/missing.py"],
+        ),
+    ]
+    # Original and every Fix Task just say done without creating the file.
+    shared = iter([
+        _done("good done"),
+        _done("incomplete done"),
+        _done("still no file"),
+        _done("still no file"),
+    ])
+    coord = Coordinator(
+        lambda _id: SharedFakeModel(shared),
+        tmp_workspace,
+        enable_verification_gate=False,
+        budget=TeamBudget(max_fix_rounds=2),
+    )
+    result = coord.run("fix round limit", tasks)
+
+    assert result.stop_reason == TeamStopReason.REFLECTION_LIMIT
+    assert any(tid.startswith("fix-") for tid in result.task_results)
+
+
+def test_team_step_budget_aggregated_across_workers(tmp_workspace: Path):
+    """Team budget: total steps across Workers must respect max_total_steps."""
+
+    tasks = [
+        AgentTask(
+            task_id="a",
+            title="a",
+            objective="a",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+            max_steps=10,
+        ),
+        AgentTask(
+            task_id="b",
+            title="b",
+            objective="b",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["bash"],
+            max_steps=10,
+        ),
+    ]
+    coord = Coordinator(
+        _factory_for([_done("a done")], [_done("b done")]),
+        tmp_workspace,
+        enable_verification_gate=False,
+        budget=TeamBudget(max_total_steps=1),
+    )
+    result = coord.run("budget test", tasks)
+
+    # The team should stop because the step budget is exhausted or capped.
+    total_steps = sum(r.step_count for r in result.task_results.values())
+    assert total_steps <= coord.budget.max_total_steps
+    assert result.summary.startswith("stop=budget_exhausted") or "steps=1/1" in result.summary
+
+
+def test_plain_model_output_is_not_team_message(tmp_workspace: Path):
+    """M-12: free-form model text does not automatically become an AgentMessage."""
+
+    task = AgentTask(
+        task_id="t1",
+        title="say hello",
+        objective="say hello",
+        acceptance_criteria=["produces hello"],
+        allowed_paths=["."],
+        allowed_tools=["bash"],
+    )
+    coord = Coordinator(lambda _id: FakeModel([_done("hello")]), tmp_workspace, enable_verification_gate=False)
+    result = coord.run("say hello", [task])
+
+    # AgentMessage events are explicit runtime message channel events; model
+    # output must not appear as a team message.
+    message_events = [e for e in result.trace_events if "message" in e["event_type"]]
+    assert not message_events
+    assert result.stop_reason == TeamStopReason.COMPLETED

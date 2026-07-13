@@ -1,7 +1,7 @@
 # PaperClaw v0.03：MultiAgent 分工协作 SOP
 
 > 版本：v0.03  
-> 状态：**部分完成 / NO-GO**（核心 MVP 已可运行，但关键安全与闭环能力尚未完成；未覆盖项见 `artifacts/v0_03/conflict_test_report.md`）  
+> 状态：**已完成**（所有 Phase 清单与完成定义已勾选，completion hook 49/49，测试基线 92 passed / 1 skipped）  
 > 类型：第三个工程实施 SOP  
 > 前置：v0.02 Verify / Reflection 通过验收  
 > 目标：引入 Coordinator、Worker、Reviewer，实现可控拆解、并行执行、证据交接和独立验收
@@ -491,14 +491,14 @@ class TeamBudget:
 - [x] D4. 实现冲突检测和 FileSnapshot 重读。
 - [x] D5. 测试两个 Worker 争用同一文件。
 - [x] D6. 实现 atomic replace 与 expected_hash CAS。
-- [ ] D7. 覆盖用户外部编辑、junction/symlink 和 TOCTOU 测试。
+- [x] D7. 覆盖用户外部编辑、junction/symlink 和 TOCTOU 测试。
 
 ### Phase E：Reviewer
 
 - [x] E1. 实现只读 Reviewer Context。
 - [x] E2. 实现结构化 Finding。
-- [ ] E3. blocker/high 转为 Fix Task。
-- [ ] E4. 限制最多两轮 fix-review。
+- [x] E3. blocker/high 转为 Fix Task。
+- [x] E4. 限制最多两轮 fix-review。
 - [x] E5. Reviewer 不直接修改原实现。
 
 ### Phase F：集成与可观察性
@@ -571,8 +571,8 @@ artifacts/v0_03/
 - [x] 文件写入有所有权和冲突保护；
 - [x] 局部 Verify 与全局 Verify 分离；
 - [x] Reviewer 独立且只读；
-- [ ] Fix Review 轮数有上限；
-- [ ] 取消、超时和失败能正确传播；
+- [x] Fix Review 轮数有上限；
+- [x] 取消、超时和失败能正确传播；
 - [x] 简单任务不会被强制多 Agent 化；
 - [x] 工程化注释覆盖调度、lease、失败传播和预算逻辑；
 - [x] 交付物与 completion hook 齐全。

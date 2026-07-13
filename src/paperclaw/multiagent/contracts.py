@@ -131,7 +131,8 @@ class WorkerResult:
     """Structured output from a Worker after running one task.
 
     The Worker does not own global completion. It only reports what it changed,
-    what it verified, and what remains unresolved.
+    what it verified, and what remains unresolved. Counters are reported so the
+    Coordinator can enforce the team-wide step and model-call budgets.
     """
 
     task_id: str
@@ -142,6 +143,9 @@ class WorkerResult:
     verification_result: VerificationResult | None = None
     unresolved_items: list[str] = field(default_factory=list)
     handoff_notes: list[str] = field(default_factory=list)
+    step_count: int = 0
+    model_call_count: int = 0
+    tool_call_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

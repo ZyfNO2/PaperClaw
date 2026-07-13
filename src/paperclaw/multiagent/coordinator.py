@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Callable
@@ -90,8 +90,15 @@ class Coordinator:
             "total_steps": 0,
             "total_model_calls": 0,
             "total_tool_calls": 0,
+            "reserved_steps": 0,
             "fix_round_count": 0,
         }
+
+    def _reset_run_state(self) -> None:
+        """Initialize per-run mutable state."""
+
+        self._cancelled_task_ids: set[str] = set()
+        self._cancel_lock = threading.Lock()
 
     def run(self, user_goal: str, tasks: list[AgentTask]) -> CoordinatorResult:
         """Run the team on a goal and task DAG.
@@ -100,6 +107,7 @@ class Coordinator:
         Coordinator falls back to sequential single-agent execution.
         """
 
+        self._reset_run_state()
         emit_team_event(
             self._team_state,
             "team.started",
@@ -175,38 +183,194 @@ class Coordinator:
         )
 
     def _run_parallel(self, user_goal: str, tasks: list[AgentTask]) -> CoordinatorResult:
-        """Parallel execution with bounded Workers and independent Review."""
+        """Parallel execution with bounded Workers, Review, and fix-review loop."""
 
+        all_results: dict[str, WorkerResult] = {}
+        all_tasks: list[AgentTask] = list(tasks)
+        review_findings: list[ReviewFinding] = []
+        stop_reason: TeamStopReason | None = None
+
+        # Initial task execution round.
+        round_results, round_statuses, stop_reason = self._execute_task_round(
+            user_goal, all_tasks, time.monotonic()
+        )
+        all_results.update(round_results)
+
+        # Review/fix loop: keep creating Fix Tasks for blocker/high findings
+        # until the Reviewer approves or we hit the round limit.
+        while stop_reason == TeamStopReason.ALL_TASKS_COMPLETED:
+            reviewer = Reviewer("reviewer-0", self._team_state)
+            report = reviewer.review(user_goal, all_tasks, all_results, self.workspace)
+            review_findings = report.findings
+            emit_team_event(
+                self._team_state,
+                "review.completed",
+                reviewer.agent_id,
+                "review",
+                verdict=report.verdict.value,
+                finding_count=len(report.findings),
+                fix_round=self._team_state["fix_round_count"],
+            )
+
+            if report.verdict == ReviewVerdict.APPROVE:
+                stop_reason = TeamStopReason.ALL_TASKS_COMPLETED
+                break
+
+            if report.verdict == ReviewVerdict.REQUEST_CHANGES:
+                if self._team_state["fix_round_count"] >= self.budget.max_fix_rounds:
+                    stop_reason = TeamStopReason.REFLECTION_LIMIT
+                    break
+            elif report.verdict == ReviewVerdict.BLOCKED:
+                if self._team_state["fix_round_count"] >= self.budget.max_fix_rounds:
+                    stop_reason = TeamStopReason.BLOCKED
+                    break
+
+            # Start a new fix round.
+            self._team_state["fix_round_count"] += 1
+            fix_tasks = reviewer.create_fix_tasks(report.findings, all_tasks)
+            if not fix_tasks:
+                # No actionable blocker/high findings; treat as blocked.
+                stop_reason = (
+                    TeamStopReason.REFLECTION_LIMIT
+                    if self._team_state["fix_round_count"] >= self.budget.max_fix_rounds
+                    else TeamStopReason.BLOCKED
+                )
+                break
+
+            emit_team_event(
+                self._team_state,
+                "team.fix_round_started",
+                AgentRole.COORDINATOR.value,
+                "root",
+                fix_round=self._team_state["fix_round_count"],
+                fix_task_count=len(fix_tasks),
+            )
+            all_tasks.extend(fix_tasks)
+            completed_so_far = {tid for tid, r in all_results.items() if r.status == WorkerStatus.COMPLETED}
+            round_results, round_statuses, stop_reason = self._execute_task_round(
+                user_goal, fix_tasks, time.monotonic(), already_completed=completed_so_far
+            )
+            all_results.update(round_results)
+            # If fix round itself did not complete, stop trying.
+            if stop_reason != TeamStopReason.ALL_TASKS_COMPLETED:
+                break
+
+        summary = self._build_summary(stop_reason, all_results, review_findings)
+        emit_team_event(
+            self._team_state,
+            "team.stopped",
+            AgentRole.COORDINATOR.value,
+            "root",
+            stop_reason=str(stop_reason),
+            summary=summary,
+        )
+        return CoordinatorResult(
+            stop_reason=stop_reason,
+            task_results=all_results,
+            review_findings=review_findings,
+            summary=summary,
+            trace_events=list(self._team_state["trace_events"]),
+        )
+
+    def _execute_task_round(
+        self,
+        user_goal: str,
+        tasks: list[AgentTask],
+        start_time: float,
+        already_completed: set[str] | None = None,
+    ) -> tuple[dict[str, WorkerResult], dict[str, TaskStatus], TeamStopReason | None]:
+        """Run one round of tasks to a terminal state.
+
+        Returns the results, final statuses, and the stop reason. This helper is
+        used for both the initial task set and subsequent Fix Task rounds.
+        `already_completed` contains task ids from previous rounds that satisfy
+        dependencies of tasks in this round.
+        """
+
+        completed_ids = already_completed or set()
         results: dict[str, WorkerResult] = {}
         statuses: dict[str, TaskStatus] = {t.task_id: TaskStatus.PENDING for t in tasks}
         failed: set[str] = set()
         cancelled: set[str] = set()
         active_workers: dict[str, WorkerThread] = {}
+        task_reserved_steps: dict[str, int] = {}
         result_queue: Queue[tuple[str, WorkerResult]] = Queue()
         lock = threading.Lock()
-
-        start_time = time.monotonic()
         stop_reason: TeamStopReason | None = None
+
+        def _dependency_satisfied(task_id: str) -> bool:
+            if task_id in completed_ids:
+                return True
+            return statuses.get(task_id) == TaskStatus.COMPLETED
 
         while True:
             # Budget checks
             if self._budget_exhausted(start_time):
                 stop_reason = TeamStopReason.BUDGET_EXHAUSTED
                 break
+            if self._team_steps_exhausted():
+                emit_team_event(
+                    self._team_state,
+                    "team.budget_exhausted",
+                    AgentRole.COORDINATOR.value,
+                    "root",
+                    reason="max_total_steps",
+                    limit=self.budget.max_total_steps,
+                    consumed=self._team_state["total_steps"],
+                )
+                stop_reason = TeamStopReason.BUDGET_EXHAUSTED
+                break
+            if self._team_model_calls_exhausted():
+                emit_team_event(
+                    self._team_state,
+                    "team.budget_exhausted",
+                    AgentRole.COORDINATOR.value,
+                    "root",
+                    reason="max_total_model_calls",
+                    limit=self.budget.max_total_model_calls,
+                    consumed=self._team_state["total_model_calls"],
+                )
+                stop_reason = TeamStopReason.BUDGET_EXHAUSTED
+                break
 
-            # Schedule ready tasks
+            # Apply external cancellation requests before scheduling.
+            with lock:
+                for task in tasks:
+                    if statuses[task.task_id] == TaskStatus.PENDING and self._is_task_cancelled(task.task_id):
+                        statuses[task.task_id] = TaskStatus.CANCELLED
+                        cancelled.add(task.task_id)
+                for task_id, thread in list(active_workers.items()):
+                    if self._is_task_cancelled(task_id) and thread.is_alive():
+                        thread.result = self._cancel_active_worker(task_id, thread)
+
+            # Schedule ready tasks. Pessimistically reserve the task's step
+            # budget so parallel scheduling does not overshoot the team total.
             with lock:
                 for task in tasks:
                     if statuses[task.task_id] != TaskStatus.PENDING:
                         continue
-                    if all(
-                        statuses.get(dep) == TaskStatus.COMPLETED for dep in task.dependencies
-                    ) and len(active_workers) < self.budget.max_agents:
-                        statuses[task.task_id] = TaskStatus.RUNNING
-                        worker = self._make_worker(f"worker-{len(active_workers)}")
-                        thread = WorkerThread(worker, task, self.workspace, result_queue)
-                        active_workers[task.task_id] = thread
-                        thread.start()
+                    if not all(_dependency_satisfied(dep) for dep in task.dependencies):
+                        continue
+                    if len(active_workers) >= self.budget.max_agents:
+                        continue
+                    capped_task = self._cap_task_to_remaining_budget(task)
+                    projected = (
+                        self._team_state["total_steps"]
+                        + self._team_state["reserved_steps"]
+                        + capped_task.max_steps
+                    )
+                    if projected > self.budget.max_total_steps:
+                        # No step budget left for this task.
+                        statuses[task.task_id] = TaskStatus.CANCELLED
+                        cancelled.add(task.task_id)
+                        continue
+                    statuses[task.task_id] = TaskStatus.RUNNING
+                    self._team_state["reserved_steps"] += capped_task.max_steps
+                    task_reserved_steps[task.task_id] = capped_task.max_steps
+                    worker = self._make_worker(f"worker-{len(active_workers)}")
+                    thread = WorkerThread(worker, capped_task, self.workspace, result_queue)
+                    active_workers[task.task_id] = thread
+                    thread.start()
 
             # Collect finished Workers
             try:
@@ -215,11 +379,17 @@ class Coordinator:
                     with lock:
                         active_workers.pop(task_id, None)
                         results[task_id] = result
+                        self._team_state["reserved_steps"] -= task_reserved_steps.pop(
+                            task_id, 0
+                        )
+                        self._accumulate_counters(result)
                         if result.status == WorkerStatus.COMPLETED:
                             statuses[task_id] = TaskStatus.COMPLETED
                         elif result.status == WorkerStatus.CANCELLED:
                             cancelled.add(task_id)
                             statuses[task_id] = TaskStatus.CANCELLED
+                            # Cancel downstream tasks
+                            self._cascade_cancel(task_id, tasks, statuses, cancelled)
                         else:
                             failed.add(task_id)
                             statuses[task_id] = TaskStatus.FAILED
@@ -247,61 +417,39 @@ class Coordinator:
             if active_workers:
                 time.sleep(0.05)
 
-        # Wait for any stragglers and cancel if needed
+        # Wait for any stragglers and cancel if needed. When the team stopped
+        # because of budget exhaustion or an external cancellation, every active
+        # Worker must be brought to a terminal state and its counters recorded.
         for task_id, thread in list(active_workers.items()):
             thread.join(timeout=5)
             if thread.is_alive():
-                # Cooperative cancellation: signal the Worker, then give it a
-                # short grace period to finish the current step.
-                thread.worker.cancel(thread.task)
-                thread.join(timeout=3)
-                if thread.is_alive():
-                    emit_team_event(
-                        self._team_state,
-                        "worker.cancel_failed",
-                        thread.worker.agent_id,
-                        task_id,
-                        reason="thread did not terminate after cooperative cancel",
-                    )
-                thread.result = WorkerResult(
-                    task_id=task_id,
-                    status=WorkerStatus.CANCELLED,
-                    summary="cancelled during shutdown",
-                )
+                thread.result = self._cancel_active_worker(task_id, thread)
             results[task_id] = thread.result
+            self._team_state["reserved_steps"] -= task_reserved_steps.pop(task_id, 0)
+            self._accumulate_counters(thread.result)
+            statuses[task_id] = TaskStatus.CANCELLED
 
-        # Review if all tasks completed
-        review_findings: list[ReviewFinding] = []
-        if stop_reason == TeamStopReason.ALL_TASKS_COMPLETED:
-            reviewer = Reviewer("reviewer-0", self._team_state)
-            report = reviewer.review(user_goal, tasks, results, self.workspace)
-            review_findings = report.findings
-            if report.verdict == ReviewVerdict.BLOCKED:
-                stop_reason = TeamStopReason.BLOCKED
-            elif report.verdict == ReviewVerdict.REQUEST_CHANGES:
-                if self._team_state["fix_round_count"] < self.budget.max_fix_rounds:
-                    self._team_state["fix_round_count"] += 1
-                    # TODO: create Fix Tasks and re-run; for v0.03 report blocked.
-                    stop_reason = TeamStopReason.BLOCKED
+        # Mark any task that never started as blocked/cancelled so the final
+        # state is fully terminal.
+        for task in tasks:
+            if statuses[task.task_id] == TaskStatus.PENDING:
+                if stop_reason == TeamStopReason.BUDGET_EXHAUSTED:
+                    statuses[task.task_id] = TaskStatus.CANCELLED
+                elif stop_reason == TeamStopReason.CANCELLED:
+                    statuses[task.task_id] = TaskStatus.CANCELLED
                 else:
-                    stop_reason = TeamStopReason.REFLECTION_LIMIT
+                    statuses[task.task_id] = TaskStatus.BLOCKED
 
-        summary = self._build_summary(stop_reason, results, review_findings)
-        emit_team_event(
-            self._team_state,
-            "team.stopped",
-            AgentRole.COORDINATOR.value,
-            "root",
-            stop_reason=str(stop_reason),
-            summary=summary,
-        )
-        return CoordinatorResult(
-            stop_reason=stop_reason,
-            task_results=results,
-            review_findings=review_findings,
-            summary=summary,
-            trace_events=list(self._team_state["trace_events"]),
-        )
+        # Ensure every terminal task has a WorkerResult in the returned map.
+        for task in tasks:
+            if statuses.get(task.task_id) == TaskStatus.CANCELLED and task.task_id not in results:
+                results[task.task_id] = WorkerResult(
+                    task_id=task.task_id,
+                    status=WorkerStatus.CANCELLED,
+                    summary="cancelled before execution",
+                )
+
+        return results, statuses, stop_reason
 
     def _make_worker(self, agent_id: str) -> Worker:
         return Worker(
@@ -319,6 +467,106 @@ class Coordinator:
         elapsed = time.monotonic() - start_time
         return elapsed > self.budget.max_wall_time_seconds
 
+    def _team_steps_exhausted(self) -> bool:
+        """True when the aggregated step count reaches the team limit."""
+
+        return self._team_state["total_steps"] >= self.budget.max_total_steps
+
+    def _team_model_calls_exhausted(self) -> bool:
+        """True when the aggregated model-call count reaches the team limit."""
+
+        return self._team_state["total_model_calls"] >= self.budget.max_total_model_calls
+
+    def _cap_task_to_remaining_budget(self, task: AgentTask) -> AgentTask:
+        """Return a task copy whose max_steps does not exceed the remaining team budget.
+
+        This prevents a single Worker from consuming the entire team step budget
+        and leaves headroom for other tasks. Model-call budgets cannot be capped
+        ahead of time because they depend on runtime reflection; they are checked
+        after each Worker finishes.
+        """
+
+        remaining_steps = max(0, self.budget.max_total_steps - self._team_state["total_steps"])
+        if task.max_steps > remaining_steps:
+            return replace(task, max_steps=max(1, remaining_steps))
+        return task
+
+    def _accumulate_counters(self, result: WorkerResult) -> None:
+        """Add a Worker's consumed resources to the team totals."""
+
+        self._team_state["total_steps"] += result.step_count
+        self._team_state["total_model_calls"] += result.model_call_count
+        self._team_state["total_tool_calls"] += result.tool_call_count
+
+    def _cascade_cancel(
+        self,
+        cancelled_task_id: str,
+        tasks: list[AgentTask],
+        statuses: dict[str, TaskStatus],
+        cancelled: set[str],
+    ) -> None:
+        """Mark every dependent task as cancelled when its ancestor is cancelled."""
+
+        dependents: dict[str, list[str]] = {t.task_id: [] for t in tasks}
+        for task in tasks:
+            for dep in task.dependencies:
+                if dep in dependents:
+                    dependents[dep].append(task.task_id)
+        stack = [cancelled_task_id]
+        while stack:
+            current = stack.pop()
+            for dependent in dependents.get(current, []):
+                if statuses.get(dependent) == TaskStatus.PENDING:
+                    statuses[dependent] = TaskStatus.CANCELLED
+                    cancelled.add(dependent)
+                    stack.append(dependent)
+
+    def _cancel_active_worker(self, task_id: str, thread: WorkerThread) -> WorkerResult:
+        """Signal cancellation to a running Worker and wait for it to stop."""
+
+        thread.worker.cancel(thread.task)
+        thread.join(timeout=3)
+        if thread.is_alive():
+            emit_team_event(
+                self._team_state,
+                "worker.cancel_failed",
+                thread.worker.agent_id,
+                task_id,
+                reason="thread did not terminate after cooperative cancel",
+            )
+        return WorkerResult(
+            task_id=task_id,
+            status=WorkerStatus.CANCELLED,
+            summary="cancelled by coordinator",
+        )
+
+    def cancel(self, task_id: str, tasks: list[AgentTask]) -> None:
+        """Request cancellation of a task and cascade to all dependents.
+
+        This is the entry point for parent-task cancellation (M-07). The running
+        Coordinator loop checks the cancelled set before scheduling new tasks and
+        signals active Workers to stop. Pending dependents are marked cancelled
+        in the next scheduling tick.
+        """
+
+        emit_team_event(
+            self._team_state,
+            "cancel.requested",
+            AgentRole.COORDINATOR.value,
+            task_id,
+            reason="parent task cancelled",
+        )
+        with self._cancel_lock:
+            cancelled: set[str] = {task_id}
+            statuses: dict[str, TaskStatus] = {t.task_id: TaskStatus.PENDING for t in tasks}
+            statuses[task_id] = TaskStatus.CANCELLED
+            self._cascade_cancel(task_id, tasks, statuses, cancelled)
+            self._cancelled_task_ids.update(cancelled)
+
+    def _is_task_cancelled(self, task_id: str) -> bool:
+        with self._cancel_lock:
+            return task_id in self._cancelled_task_ids
+
     def _build_summary(
         self,
         stop_reason: TeamStopReason,
@@ -329,7 +577,9 @@ class Coordinator:
         total = len(results)
         return (
             f"stop={stop_reason.value}, completed={completed}/{total}, "
-            f"findings={len(findings)}, fix_rounds={self._team_state['fix_round_count']}"
+            f"findings={len(findings)}, fix_rounds={self._team_state['fix_round_count']}, "
+            f"steps={self._team_state['total_steps']}/{self.budget.max_total_steps}, "
+            f"model_calls={self._team_state['total_model_calls']}/{self.budget.max_total_model_calls}"
         )
 
 

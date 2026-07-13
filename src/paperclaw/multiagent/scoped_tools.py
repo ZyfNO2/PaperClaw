@@ -303,6 +303,15 @@ class ScopedFileWriteTool:
             )
             return _deny_result(lease_result.reason, "lease_conflict")
 
+        # TOCTOU revalidation: the symlink/junction target could have changed
+        # between the permission check and the lease acquisition.
+        if self._guard._resolve_path(path) is None:
+            self._lease_manager.release(path, self._task.task_id)
+            return _deny_result(
+                f"path escapes workspace after lease acquire: {path}",
+                "scope_violation",
+            )
+
         resolved = (context.workspace / path).resolve()
         expected_hash = arguments.get("expected_hash")
         if expected_hash is not None:
@@ -421,6 +430,15 @@ class ScopedFileEditTool:
                 reason=lease_result.reason,
             )
             return _deny_result(lease_result.reason, "lease_conflict")
+
+        # TOCTOU revalidation: the symlink/junction target could have changed
+        # between the permission check and the lease acquisition.
+        if self._guard._resolve_path(path) is None:
+            self._lease_manager.release(path, self._task.task_id)
+            return _deny_result(
+                f"path escapes workspace after lease acquire: {path}",
+                "scope_violation",
+            )
 
         resolved = (context.workspace / path).resolve()
         expected_hash = arguments.get("expected_hash")

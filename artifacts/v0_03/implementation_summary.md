@@ -8,16 +8,17 @@
 
 - 新增 `paperclaw.multiagent` 包：
   - `contracts.py`：AgentTask、WorkerResult、AgentMessage、FileLease、ReviewFinding、TeamBudget、TeamStopReason 等结构化契约。
-  - `coordinator.py`：团队状态 owner、DAG 验证、并行调度、结果汇总、Reviewer 调用。
-  - `worker.py`：基于现有 AgentRuntime 的作用域包装，输出 WorkerResult。
-  - `reviewer.py`：规则化只读 Reviewer，生成 finding 与 verdict。
+  - `coordinator.py`：团队状态 owner、DAG 验证、并行调度、结果汇总、Reviewer 调用、Fix-Review 闭环、团队预算聚合与取消级联。
+  - `worker.py`：基于现有 AgentRuntime 的作用域包装，输出 WorkerResult 并上报 step / model_call / tool_call 计数。
+  - `reviewer.py`：规则化只读 Reviewer，生成 finding、verdict，并将 blocker/high 转换为 Fix Task。
   - `lease.py`：文件写入 lease 管理，支持 acquire/release/冲突检测。
-  - `permissions.py`：PermissionGuardLite，统一工具与路径权限检查。
-  - `scoped_tools.py`：带作用域、lease、CAS 保护的 file_read/write/edit/grep/bash 包装器。
+  - `permissions.py`：PermissionGuardLite，统一工具与路径权限检查，检测 symlink/junction 逃逸。
+  - `scoped_tools.py`：带作用域、lease、CAS、TOCTOU 重验证的 file_read/write/edit/grep/bash 包装器。
   - `dag.py`：DAG 校验（无环、依赖存在、具体文件写冲突、acceptance criteria、预算）。
   - `events.py`：EventEnvelope v1 与线程安全事件发射。
 - 扩展 CLI：`paperclaw agent`（默认单 Agent）与 `paperclaw team --plan plan.json`（MultiAgent）。
-- Worker 状态推导增强：模型 `done` 提议不能覆盖 scope/lease/cas 失败。
+- Worker 状态推导增强：模型 `done` 提议不能覆盖 scope/lease/cas 失败；最终状态确定后再发出 task.completed/failed 事件。
+- 在 v0.03 SOP 收尾阶段修复 `ReflectNode` 中事件发射引用了未定义的 `shared` 变量导致的 `NameError`，保证 Verify/Reflection gate 在启用时正常运行。
 
 ## 兼容性
 
@@ -26,11 +27,11 @@
 
 ## 风险与现实观察
 
-- 当前 DAG 写冲突只检测具体文件路径/expected_artifacts 重叠；共享目录由运行时 lease 保护。
-- Reviewer 为规则实现，Fix Task 闭环标记 TODO，等待 v0.04+ 结合真实模型与更完整状态机。
-- 测试在 Windows 上需 `--basetemp=.pytest_tmp` 绕过系统临时目录权限限制。
+- 当前 DAG 写冲突只检测具体文件路径 / expected_artifacts 重叠；共享目录由运行时 lease 保护。
+- Reviewer 为规则实现，Fix Task 闭环已落地但复杂语义判断需要后续版本结合真实模型。
+- 测试在 Windows 上需 `--basetemp=tmp/pytest` 绕过系统临时目录权限限制。
 
 ## 测试基线
 
-- 全量命令：`python -m pytest tests -v --basetemp=.pytest_tmp`
-- 结果：`83 passed, 1 skipped`
+- 全量命令：`python -m pytest -q --basetemp=tmp/pytest`
+- 结果：`92 passed, 1 skipped`
