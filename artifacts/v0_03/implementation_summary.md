@@ -50,6 +50,6 @@
 - **N2 provider/contract_id/model 字段缺失**：`model_call` 事件硬编码 `model="decide"`，团队事件无 `provider`、`contract_id`。属于已知债，影响可解释性。
 - **N3 max_wall_time_seconds=0 语义不一致**：`max_wall_time_seconds=0` 会导致立即 BUDGET_EXHAUSTED（deadline = 当前时刻），而 `timeout_seconds=0` 表示禁用。两者对 0 的语义相反，建议统一为"0 = 禁用"或在文档明确 `max_wall_time_seconds` 不接受 0。
 - **N4 TeamStopReason.TIMEOUT/CANCELLED 为死代码**：Coordinator 从未把 `stop_reason` 设为这两个值；Task timeout 映射为 `WorkerStatus.FAILED`，外部取消走 `_cancelled_task_ids`。建议要么产出真实的 TIMEOUT/CANCELLED 团队停止原因，要么从契约删除死枚举。
-- **N5 预留 model-call 上限未覆盖 Reflection 轮**：并行调度时用 `capped_task.max_steps` 同时作为 step 和 model-call 预留上限，但启用 Verify Gate 时 ReflectNode 失败会额外调用 `model.complete`，存在有界超支。Worker 计数器事后校正总额，团队总账最终正确。
+- **N5 预留 model-call 上限未覆盖 Reflection 轮** ~~：并行调度时用 `capped_task.max_steps` 同时作为 step 和 model-call 预留上限，但启用 Verify Gate 时 ReflectNode 失败会额外调用 `model.complete`，存在有界超支。Worker 计数器事后校正总额，团队总账最终正确。~~ **已在 v0.03.1 C5 修复**：`_model_call_upper_bound(task)` 在 `enable_verification_gate=True` 时返回 `task.max_steps + _REFLECTION_RESERVE(=2)`，覆盖 ReflectNode 的额外 model call。遗留：该路径暂无显式测试（`test_team_model_call_budget_reservation_blocks_parallel_overshoot` 使用 `enable_verification_gate=False`），v0.04 补测。
 - **N8 缺少 timeout_seconds=0 legacy 回退路径的显式测试**：代码层面向后兼容正确（`if timeout and timeout > 0` 守卫），但没有测试断言"传 0 时不会因 timeout 停止"。建议补单测锁定该行为。
 - **N9 _cancel_active_worker 在主循环内重复触发**：每个调度 tick 都会对仍 alive 的被取消 task 重新调用 `_cancel_active_worker`，每次 `thread.join(timeout=10)` 阻塞主调度线程最多 10s。建议在首次 cancel 后把该 task 移出 `active_workers` 或标记为"cancelling"避免重复 join。
