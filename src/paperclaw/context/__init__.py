@@ -22,8 +22,16 @@ from paperclaw.context.contracts import (
     ContextSource,
     SessionEvent,
 )
-from paperclaw.context.repository import Repository, SQLiteRepository
 from paperclaw.context.migrations import MigrationRunner, SCHEMA_VERSION_V1
+from paperclaw.context.repository import Repository, SQLiteRepository
+from paperclaw.context.session import (
+    EventSink,
+    NullEventSink,
+    SessionService,
+    SqliteEventSink,
+    open_session,
+    reopen_session,
+)
 
 __all__ = [
     "Checkpoint",
@@ -32,9 +40,15 @@ __all__ = [
     "ContextItem",
     "ContextSnapshot",
     "ContextSource",
+    "EventSink",
     "MigrationRunner",
+    "NullEventSink",
     "Repository",
     "SCHEMA_VERSION_V1",
     "SQLiteRepository",
     "SessionEvent",
+    "SessionService",
+    "SqliteEventSink",
+    "open_session",
+    "reopen_session",
 ]
