@@ -177,6 +177,11 @@ class Coordinator:
         still execute every task in topological order and respect dependencies.
         A failure blocks downstream tasks; the final stop reason reflects the
         overall outcome.
+
+        This path enforces the same TeamBudget, deadline, cancel, and Review
+        semantics as the parallel path. Previously it bypassed all of them,
+        allowing sequential DAGs to exceed max_total_steps / max_total_model_calls
+        / max_wall_time_seconds without notice.
         """
 
         emit_team_event(
@@ -192,8 +197,75 @@ class Coordinator:
         failed_or_blocked = False
         worker = self._make_worker("worker-0")
 
+        # Single absolute wall-clock deadline shared across all tasks and any
+        # fix-review rounds that follow. Mirrors _run_parallel semantics.
+        run_deadline = time.monotonic() + self.budget.max_wall_time_seconds
+
         for task_id in topo_order:
             task = task_by_id[task_id]
+
+            # Budget checks — same guards as _execute_task_round.
+            if self._deadline_exceeded(run_deadline):
+                emit_team_event(
+                    self._team_state,
+                    "team.budget_exhausted",
+                    AgentRole.COORDINATOR.value,
+                    "root",
+                    reason="wall_time",
+                    limit=self.budget.max_wall_time_seconds,
+                )
+                results[task_id] = WorkerResult(
+                    task_id=task_id,
+                    status=WorkerStatus.CANCELLED,
+                    summary="cancelled: team wall-time budget exhausted",
+                )
+                failed_or_blocked = True
+                continue
+            if self._team_steps_exhausted():
+                emit_team_event(
+                    self._team_state,
+                    "team.budget_exhausted",
+                    AgentRole.COORDINATOR.value,
+                    "root",
+                    reason="max_total_steps",
+                    limit=self.budget.max_total_steps,
+                    consumed=self._team_state["total_steps"],
+                )
+                results[task_id] = WorkerResult(
+                    task_id=task_id,
+                    status=WorkerStatus.CANCELLED,
+                    summary="cancelled: team step budget exhausted",
+                )
+                failed_or_blocked = True
+                continue
+            if self._team_model_calls_exhausted():
+                emit_team_event(
+                    self._team_state,
+                    "team.budget_exhausted",
+                    AgentRole.COORDINATOR.value,
+                    "root",
+                    reason="max_total_model_calls",
+                    limit=self.budget.max_total_model_calls,
+                    consumed=self._team_state["total_model_calls"],
+                )
+                results[task_id] = WorkerResult(
+                    task_id=task_id,
+                    status=WorkerStatus.CANCELLED,
+                    summary="cancelled: team model-call budget exhausted",
+                )
+                failed_or_blocked = True
+                continue
+
+            # Cancel check — sequential path must honor external cancel requests.
+            if self._is_task_cancelled(task_id):
+                results[task_id] = WorkerResult(
+                    task_id=task_id,
+                    status=WorkerStatus.CANCELLED,
+                    summary="cancelled by external request",
+                )
+                failed_or_blocked = True
+                continue
+
             # If any dependency failed, this task is blocked without running.
             if any(
                 results.get(dep).status != WorkerStatus.COMPLETED
@@ -208,16 +280,87 @@ class Coordinator:
                 failed_or_blocked = True
                 continue
 
-            result = worker.run(task, self.workspace)
+            # Cap task max_steps to remaining team budget so a single Worker
+            # cannot consume the entire team step allocation.
+            capped_task = self._cap_task_to_remaining_budget(task)
+
+            result = worker.run(capped_task, self.workspace)
             results[task_id] = result
+            # Accumulate counters so subsequent tasks see the updated totals.
+            self._accumulate_counters(result)
             if result.status != WorkerStatus.COMPLETED:
                 failed_or_blocked = True
 
-        stop_reason = TeamStopReason.ALL_TASKS_COMPLETED if not failed_or_blocked else TeamStopReason.BLOCKED
-        summary = f"Single-agent path: {len([r for r in results.values() if r.status == WorkerStatus.COMPLETED])}/{len(tasks)} tasks completed"
+        # Run Reviewer + Fix-Review loop when all tasks completed, mirroring
+        # the parallel path. Previously the sequential path skipped Review
+        # entirely, violating SOP §8 (independent review required).
+        review_findings: list[ReviewFinding] = []
+        stop_reason: TeamStopReason = (
+            TeamStopReason.ALL_TASKS_COMPLETED if not failed_or_blocked else TeamStopReason.BLOCKED
+        )
+
+        if stop_reason == TeamStopReason.ALL_TASKS_COMPLETED:
+            while stop_reason == TeamStopReason.ALL_TASKS_COMPLETED:
+                reviewer = Reviewer("reviewer-0", self._team_state)
+                report = reviewer.review(user_goal, tasks, results, self.workspace)
+                review_findings = report.findings
+                emit_team_event(
+                    self._team_state,
+                    "review.completed",
+                    reviewer.agent_id,
+                    "review",
+                    verdict=report.verdict.value,
+                    finding_count=len(report.findings),
+                    fix_round=self._team_state["fix_round_count"],
+                )
+
+                if report.verdict == ReviewVerdict.APPROVE:
+                    break
+                if self._team_state["fix_round_count"] >= self.budget.max_fix_rounds:
+                    stop_reason = (
+                        TeamStopReason.REFLECTION_LIMIT
+                        if report.verdict == ReviewVerdict.REQUEST_CHANGES
+                        else TeamStopReason.BLOCKED
+                    )
+                    break
+
+                self._team_state["fix_round_count"] += 1
+                fix_tasks = reviewer.create_fix_tasks(report.findings, tasks)
+                if not fix_tasks:
+                    stop_reason = TeamStopReason.REFLECTION_LIMIT
+                    break
+
+                emit_team_event(
+                    self._team_state,
+                    "team.fix_round_started",
+                    AgentRole.COORDINATOR.value,
+                    "root",
+                    fix_round=self._team_state["fix_round_count"],
+                    fix_task_count=len(fix_tasks),
+                )
+                tasks = tasks + fix_tasks
+                for ft in fix_tasks:
+                    capped_ft = self._cap_task_to_remaining_budget(ft)
+                    fr = worker.run(capped_ft, self.workspace)
+                    results[ft.task_id] = fr
+                    self._accumulate_counters(fr)
+                    if fr.status != WorkerStatus.COMPLETED:
+                        stop_reason = TeamStopReason.BLOCKED
+                        break
+
+        summary = self._build_summary(stop_reason, results, review_findings)
+        emit_team_event(
+            self._team_state,
+            "team.stopped",
+            AgentRole.COORDINATOR.value,
+            "root",
+            stop_reason=str(stop_reason),
+            summary=summary,
+        )
         return CoordinatorResult(
             stop_reason=stop_reason,
             task_results=results,
+            review_findings=review_findings,
             summary=summary,
             trace_events=list(self._team_state["trace_events"]),
         )
@@ -406,6 +549,7 @@ class Coordinator:
                     if len(active_workers) >= self.budget.max_agents:
                         continue
                     capped_task = self._cap_task_to_remaining_budget(task)
+                    model_call_bound = self._model_call_upper_bound(capped_task)
                     projected_steps = (
                         self._team_state["total_steps"]
                         + self._team_state["reserved_steps"]
@@ -414,7 +558,7 @@ class Coordinator:
                     projected_model_calls = (
                         self._team_state["total_model_calls"]
                         + self._team_state["reserved_model_calls"]
-                        + capped_task.max_steps
+                        + model_call_bound
                     )
                     if projected_steps > self.budget.max_total_steps:
                         statuses[task.task_id] = TaskStatus.CANCELLED
@@ -426,9 +570,9 @@ class Coordinator:
                         continue
                     statuses[task.task_id] = TaskStatus.RUNNING
                     self._team_state["reserved_steps"] += capped_task.max_steps
-                    self._team_state["reserved_model_calls"] += capped_task.max_steps
+                    self._team_state["reserved_model_calls"] += model_call_bound
                     task_reserved_steps[task.task_id] = capped_task.max_steps
-                    task_reserved_model_calls[task.task_id] = capped_task.max_steps
+                    task_reserved_model_calls[task.task_id] = model_call_bound
                     worker = self._make_worker(f"worker-{len(active_workers)}")
                     thread = WorkerThread(worker, capped_task, self.workspace, result_queue)
                     active_workers[task.task_id] = thread
@@ -560,6 +704,31 @@ class Coordinator:
         if task.max_steps > remaining_steps:
             return replace(task, max_steps=max(1, remaining_steps))
         return task
+
+    # Conservative upper bound on reflection rounds per run. Matches the
+    # hardcoded default in agent/state.py initial_state. When the verification
+    # gate is enabled, each done proposal can trigger up to this many extra
+    # model calls (one per reflection round). Reserving only max_steps would
+    # allow parallel Workers to overshoot max_total_model_calls.
+    _REFLECTION_RESERVE = 2
+
+    def _model_call_upper_bound(self, task: AgentTask) -> int:
+        """Conservative upper bound on model calls one task can consume.
+
+        Each step makes at most one decide model call. With the verification
+        gate enabled, a done proposal can trigger up to ``_REFLECTION_RESERVE``
+        additional reflection model calls. We reserve both to prevent parallel
+        scheduling from overshooting ``max_total_model_calls``.
+
+        Without this padding, a task with ``max_steps=1`` and
+        ``max_total_model_calls=1`` could actually consume 2 model calls
+        (1 decide + 1 reflect), silently breaking the budget guarantee.
+        """
+
+        bound = task.max_steps
+        if self.enable_verification_gate:
+            bound += self._REFLECTION_RESERVE
+        return bound
 
     def _accumulate_counters(self, result: WorkerResult) -> None:
         """Add a Worker's consumed resources to the team totals."""

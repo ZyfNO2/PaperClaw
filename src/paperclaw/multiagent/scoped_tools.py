@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from paperclaw.agent.verification import VerificationResult
+from paperclaw.multiagent.bash_analyzer import analyze_bash_command
 from paperclaw.multiagent.contracts import (
     AgentTask,
     LeaseDecision,
@@ -533,6 +534,23 @@ class ScopedFileEditTool:
 
 
 class ScopedBashTool:
+    """Scoped Bash tool with command analysis, lease enforcement, and scope checks.
+
+    Closes the P0-1 bypass where Bash could write to files outside
+    ``writable_paths`` without acquiring a FileLease or checking CAS.
+
+    The approach uses :func:`analyze_bash_command` to classify each command:
+    - ``dangerous``: denied outright (dynamic execution constructs).
+    - ``write``: for each extracted write target, check scope
+      (``writable_paths``) and acquire a FileLease. CAS for bash writes is a
+      v0.05 item; the lease prevents concurrent Workers from writing the same
+      file but does not detect external modifications.
+    - ``read_only``: allowed without lease.
+    - ``unknown``: allowed only when ``writable_paths == ["."]`` (full
+      workspace); denied otherwise because we cannot verify the command does
+      not write files outside the task's scope.
+    """
+
     name = "bash"
     description = BashTool().description
 
@@ -540,12 +558,14 @@ class ScopedBashTool:
         self,
         task: AgentTask,
         guard: PermissionGuardLite,
+        lease_manager: LeaseManager,
         agent_id: str,
         runtime_state: dict,
         counters: WorkerRuntimeCounters,
     ) -> None:
         self._task = task
         self._guard = guard
+        self._lease_manager = lease_manager
         self._agent_id = agent_id
         self._runtime_state = runtime_state
         self._counters = counters
@@ -580,6 +600,111 @@ class ScopedBashTool:
                 reason=check.reason,
             )
             return _deny_result(check.reason)
+
+        command = arguments.get("command", "")
+        analysis = analyze_bash_command(command)
+
+        if analysis.classification == "dangerous":
+            emit_team_event(
+                _team_state(self._runtime_state),
+                "tool.bash_denied",
+                self._agent_id,
+                self._task.task_id,
+                tool=self.name,
+                reason=analysis.reason,
+                command=command,
+            )
+            return _deny_result(analysis.reason, "dangerous_command")
+
+        if analysis.classification == "write":
+            # Write commands must have extractable targets. If we cannot
+            # determine where the command writes, we deny rather than risk
+            # an out-of-scope modification.
+            if not analysis.write_targets:
+                emit_team_event(
+                    _team_state(self._runtime_state),
+                    "tool.bash_denied",
+                    self._agent_id,
+                    self._task.task_id,
+                    tool=self.name,
+                    reason=analysis.reason,
+                    command=command,
+                )
+                return _deny_result(
+                    f"bash write command has no extractable targets; use file_write/file_edit instead: {analysis.reason}",
+                    "scope_violation",
+                )
+
+            # For each write target: check scope and acquire lease.
+            acquired_leases: list[str] = []
+            for target in analysis.write_targets:
+                # Resolve the target path against the workspace.
+                resolved = self._guard._resolve_path(target)
+                if resolved is None:
+                    emit_team_event(
+                        _team_state(self._runtime_state),
+                        "tool.scope_violation",
+                        self._agent_id,
+                        self._task.task_id,
+                        tool=self.name,
+                        reason=f"bash write target escapes workspace: {target}",
+                        command=command,
+                    )
+                    return _deny_result(
+                        f"bash write target escapes workspace: {target}",
+                        "scope_violation",
+                    )
+                if not self._guard._path_under_any(resolved, self._task.writable_paths):
+                    emit_team_event(
+                        _team_state(self._runtime_state),
+                        "tool.scope_violation",
+                        self._agent_id,
+                        self._task.task_id,
+                        tool=self.name,
+                        reason=f"bash write target not in writable_paths: {target}",
+                        command=command,
+                    )
+                    return _deny_result(
+                        f"bash write target not in writable_paths: {target}",
+                        "scope_violation",
+                    )
+                lease_result = self._lease_manager.acquire(
+                    target,
+                    self._agent_id,
+                    self._task.task_id,
+                )
+                if lease_result.decision not in {LeaseDecision.GRANTED, LeaseDecision.ALREADY_OWNS}:
+                    emit_team_event(
+                        _team_state(self._runtime_state),
+                        "tool.lease_conflict",
+                        self._agent_id,
+                        self._task.task_id,
+                        tool=self.name,
+                        reason=lease_result.reason,
+                        path=target,
+                    )
+                    return _deny_result(lease_result.reason, "lease_conflict")
+                acquired_leases.append(target)
+
+        elif analysis.classification == "unknown":
+            # Unknown commands are allowed only when the task has full
+            # workspace write access. Otherwise we cannot guarantee the
+            # command does not write outside the task's scope.
+            if self._task.writable_paths != ["."] and self._task.writable_paths != [""]:
+                emit_team_event(
+                    _team_state(self._runtime_state),
+                    "tool.bash_denied",
+                    self._agent_id,
+                    self._task.task_id,
+                    tool=self.name,
+                    reason=analysis.reason,
+                    command=command,
+                )
+                return _deny_result(
+                    f"bash command not recognized as read-only; denied because writable_paths is restricted: {analysis.reason}",
+                    "scope_violation",
+                )
+
         self._counters.tool_call_count += 1
         return self._inner.execute(arguments, context)
 
@@ -712,6 +837,6 @@ def build_scoped_registry(
             ScopedFileWriteTool(task, guard, lease_manager, agent_id, runtime_state, counters),
             ScopedFileEditTool(task, guard, lease_manager, agent_id, runtime_state, counters),
             ScopedGrepTool(task, guard, agent_id, runtime_state, counters),
-            ScopedBashTool(task, guard, agent_id, runtime_state, counters),
+            ScopedBashTool(task, guard, lease_manager, agent_id, runtime_state, counters),
         ]
     )

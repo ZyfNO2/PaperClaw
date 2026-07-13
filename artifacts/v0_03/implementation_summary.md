@@ -35,12 +35,12 @@
 
 - 当前 DAG 写冲突只检测具体文件路径 / expected_artifacts 重叠；共享目录由运行时 lease 保护。
 - Reviewer 为规则实现，Fix Task 闭环已落地但复杂语义判断需要后续版本结合真实模型。
-- 测试在 Windows 上需设置 `TEMP`/`TMP` 环境变量到本地可写目录（如 `g:\PaperClaw\tmp\pytest_temp`）绕过系统临时目录权限限制；`--basetmp` 参数在 pytest 9.x 不被支持。
+- 测试在 Windows 上需设置 `TEMP`/`TMP` 环境变量到本地可写目录（如 `g:\PaperClaw\tmp\pytest_temp`）绕过系统临时目录权限限制；pytest 9.x 支持 `--basetemp=DIR` 参数指定基础临时目录。
 
 ## 测试基线
 
-- 全量命令：`$env:TEMP="g:\PaperClaw\tmp\pytest_temp"; $env:TMP="g:\PaperClaw\tmp\pytest_temp"; python -m pytest -q`
-- 结果：`101 passed, 1 skipped`
+- 全量命令：`$env:TEMP="g:\PaperClaw\tmp\pytest_temp"; $env:TMP="g:\PaperClaw\tmp\pytest_temp"; python -m pytest -q --basetemp=tmp/pytest`
+- 结果：`104 passed, 1 skipped`
 
 ## v0.04 前非阻塞债（Review 子代理审查发现）
 

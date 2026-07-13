@@ -810,3 +810,133 @@ def test_cancel_does_not_release_lease_immediately(tmp_workspace: Path):
     result = result_holder.get("result")
     assert result is not None
     assert result.status != "completed"
+
+
+# ---------------------------------------------------------------------------
+# C7: Default Verify Gate tests (M-01/M-02/M-06 under enable_verification_gate=True)
+#
+# The tests above explicitly disable the Verify Gate. These tests verify that
+# the default configuration (gate enabled) works for read-only tasks, write
+# tasks with bash verification, and timeout propagation.
+# ---------------------------------------------------------------------------
+
+
+def test_default_gate_readonly_workers_complete(tmp_workspace: Path):
+    """M-01 under default Verify Gate: two read-only tasks complete.
+
+    Previously the VerificationPlan unconditionally demanded a "relevant bash
+    verification command", which blocked read-only Workers under the default
+    gate. The fix: only require post-write bash verification when the task
+    actually performed write operations.
+    """
+
+    tasks = [
+        AgentTask(
+            task_id="read_a",
+            title="read a",
+            objective="read a",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["file_read"],
+        ),
+        AgentTask(
+            task_id="read_b",
+            title="read b",
+            objective="read b",
+            acceptance_criteria=["done"],
+            allowed_paths=["."],
+            allowed_tools=["file_read"],
+        ),
+    ]
+    coord = Coordinator(
+        _factory_for([_done("a done")], [_done("b done")]),
+        tmp_workspace,
+        enable_verification_gate=True,
+    )
+    result = coord.run("read two files", tasks)
+    assert result.stop_reason == TeamStopReason.ALL_TASKS_COMPLETED
+    assert result.task_results["read_a"].status == "completed"
+    assert result.task_results["read_b"].status == "completed"
+
+
+def test_default_gate_write_workers_with_bash_verify(tmp_workspace: Path):
+    """M-02 under default Verify Gate: write + bash verify completes.
+
+    The Worker writes a file, runs py_compile as verification, then proposes
+    done. The Verify Gate checks file existence, content hash, and that a
+    relevant bash command ran after the write. All pass → verified.
+    """
+
+    tasks = [
+        AgentTask(
+            task_id="write_a",
+            title="write a",
+            objective="write file a.py",
+            acceptance_criteria=["a.py exists"],
+            allowed_paths=["."],
+            writable_paths=["src"],
+            allowed_tools=["file_write", "bash"],
+            expected_artifacts=["src/a.py"],
+        ),
+        AgentTask(
+            task_id="write_b",
+            title="write b",
+            objective="write file b.py",
+            acceptance_criteria=["b.py exists"],
+            allowed_paths=["."],
+            writable_paths=["src"],
+            allowed_tools=["file_write", "bash"],
+            expected_artifacts=["src/b.py"],
+        ),
+    ]
+    seq_a = [
+        _action("file_write", {"path": "src/a.py", "content": "a = 1\n"}),
+        _action("bash", {"command": "python -m py_compile src/a.py"}),
+        _done("wrote a.py"),
+    ]
+    seq_b = [
+        _action("file_write", {"path": "src/b.py", "content": "b = 2\n"}),
+        _action("bash", {"command": "python -m py_compile src/b.py"}),
+        _done("wrote b.py"),
+    ]
+    coord = Coordinator(
+        _factory_for(seq_a, seq_b),
+        tmp_workspace,
+        enable_verification_gate=True,
+    )
+    result = coord.run("write two files", tasks)
+    assert result.stop_reason == TeamStopReason.ALL_TASKS_COMPLETED
+    assert result.task_results["write_a"].status == "completed"
+    assert result.task_results["write_b"].status == "completed"
+    assert (tmp_workspace / "src" / "a.py").exists()
+    assert (tmp_workspace / "src" / "b.py").exists()
+
+
+def test_default_gate_timeout_propagates(tmp_workspace: Path):
+    """M-06 under default Verify Gate: timeout still causes failure.
+
+    The Verify Gate must not mask a timeout stop_reason. The Worker should
+    fail with status=failed, not completed.
+    """
+
+    task = AgentTask(
+        task_id="t1",
+        title="slow task",
+        objective="do something slow",
+        acceptance_criteria=["done"],
+        allowed_paths=["."],
+        allowed_tools=["bash"],
+        max_steps=20,
+        timeout_seconds=1,
+    )
+    slow_seq = [
+        _action("bash", {"command": "sleep 2"}),
+        _done("done"),
+    ]
+    coord = Coordinator(
+        _factory_for(slow_seq),
+        tmp_workspace,
+        enable_verification_gate=True,
+    )
+    result = coord.run("timeout test", [task])
+    assert result.task_results["t1"].status == "failed"

@@ -55,8 +55,13 @@ class DecideActionNode(Node):
             if shared.get("stop_reason") == "cancelled":
                 emit_event(shared, "stop", reason="cancelled", step=shared["step_count"])
                 return "done"
-            shared["stop_reason"] = "max_steps"
-            emit_event(shared, "stop", reason="max_steps", step=shared["step_count"])
+            # Preserve a stop_reason already set in prep (e.g. "timeout"). Only
+            # fall back to "max_steps" when prep returned None without setting a
+            # specific reason. Previously this unconditionally overwrote timeout
+            # with max_steps, hiding the real cause and breaking M-06 semantics.
+            if not shared.get("stop_reason"):
+                shared["stop_reason"] = "max_steps"
+            emit_event(shared, "stop", reason=shared["stop_reason"], step=shared["step_count"])
             return "done"
         shared["step_count"] += 1
         raw = exec_res.content

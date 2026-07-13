@@ -8,7 +8,12 @@ from .paths import resolve_workspace_path
 
 class FileWriteTool:
     name = "file_write"
-    description = "Create or explicitly overwrite a UTF-8 text file inside the workspace."
+    description = (
+        "Create or explicitly overwrite a UTF-8 text file inside the workspace. "
+        "Arguments: path (str), content (str), expected_hash (str, required for existing files). "
+        "expected_hash must equal the content_hash returned by a prior file_read of the same file; "
+        "use empty string '' for new files. Omitting expected_hash on an existing file returns cas_missing."
+    )
 
     def validate(self, arguments: dict[str, Any]) -> None:
         require_string(arguments, "path")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from .base import ToolContext, ToolResult, ToolValidationError, require_string, truncate
@@ -8,7 +9,7 @@ from .paths import resolve_workspace_path
 
 class FileReadTool:
     name = "file_read"
-    description = "Read a UTF-8 text file inside the workspace, optionally by line range."
+    description = "Read a UTF-8 text file inside the workspace, optionally by line range. Returns content_hash in metadata for use as expected_hash in subsequent file_write/file_edit calls."
 
     def validate(self, arguments: dict[str, Any]) -> None:
         require_string(arguments, "path")
@@ -23,11 +24,24 @@ class FileReadTool:
         if not path.is_file():
             return ToolResult(False, "path is not a file", "not_found")
         try:
-            lines = path.read_text(encoding="utf-8", errors="strict").splitlines()
+            raw_bytes = path.read_bytes()
+            lines = raw_bytes.decode(encoding="utf-8", errors="strict").splitlines()
         except UnicodeDecodeError as exc:
             return ToolResult(False, str(exc), "decode_error")
+        # Stable sha256 over raw bytes — matches ScopedFileWriteTool._content_hash
+        # so the model can pass this value directly as expected_hash.
+        content_hash = hashlib.sha256(raw_bytes).hexdigest()
         start = arguments.get("start_line", 1)
         end = min(arguments.get("end_line", start + 499), len(lines))
         rendered = "\n".join(f"{number}: {lines[number - 1]}" for number in range(start, end + 1))
         rendered, truncated = truncate(rendered, context.output_limit)
-        return ToolResult(True, rendered, metadata={"path": str(path), "lines": len(lines), "truncated": truncated})
+        return ToolResult(
+            True,
+            rendered,
+            metadata={
+                "path": str(path),
+                "lines": len(lines),
+                "truncated": truncated,
+                "content_hash": content_hash,
+            },
+        )

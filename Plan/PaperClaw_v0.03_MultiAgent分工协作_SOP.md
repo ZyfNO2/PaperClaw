@@ -567,12 +567,12 @@ artifacts/v0_03/
 - [x] Coordinator 能判断是否值得拆分；
 - [x] Task DAG 有确定性 validator；
 - [x] Worker 有独立作用域和预算；
-- [x] 多 Agent 通过结构化消息通信；
+- [ ] 多 Agent 通过结构化消息通信；  <!-- v0.03.1: 消息通道未实现，AgentMessage 仅记录日志，无 recipient 路由 -->
 - [x] 文件写入有所有权和冲突保护；
-- [x] 局部 Verify 与全局 Verify 分离；
+- [ ] 局部 Verify 与全局 Verify 分离；  <!-- v0.03.1: Global Verify 未实现，只有局部 VerifyDoneProposalNode -->
 - [x] Reviewer 独立且只读；
 - [x] Fix Review 轮数有上限；
-- [x] 取消、超时和失败能正确传播；
+- [ ] 取消、超时和失败能正确传播；  <!-- v0.03.1: timeout 仅在 step 间检查，无法中断运行中的工具调用；顺序路径取消已修复但 Bash 子进程终止为 best-effort -->
 - [x] 简单任务不会被强制多 Agent 化；
 - [x] 工程化注释覆盖调度、lease、失败传播和预算逻辑；
 - [x] 交付物与 completion hook 齐全。

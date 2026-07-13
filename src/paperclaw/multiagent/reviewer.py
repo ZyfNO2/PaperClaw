@@ -139,6 +139,14 @@ class Reviewer:
         Each Fix Task references the original task it is repairing and carries
         the Reviewer's requested change as its objective. The Coordinator is
         responsible for scheduling and re-reviewing after they complete.
+
+        Fix Tasks inherit the **parent task's dependencies** rather than
+        depending on the parent itself. This is critical when the parent task
+        failed: a Fix Task that depends on a failed task would never become
+        ready (the failed task never enters ``completed_so_far``). By inheriting
+        the parent's dependencies, the Fix Task becomes ready as soon as the
+        prerequisites are satisfied, regardless of whether the parent succeeded
+        or failed.
         """
 
         task_by_id = {t.task_id: t for t in original_tasks}
@@ -146,13 +154,17 @@ class Reviewer:
         for idx, finding in enumerate(findings):
             if finding.severity not in {"blocker", "high"}:
                 continue
-            # Heuristic: if the finding references a task that failed, depend on
-            # a new fix task rather than the failed task.
+            # Identify the parent task this finding refers to.
             parent_task_id = None
             for tid in task_by_id:
                 if tid in finding.evidence or tid in finding.title:
                     parent_task_id = tid
                     break
+            parent_task = task_by_id.get(parent_task_id) if parent_task_id else None
+            # Inherit the parent's dependencies instead of depending on the
+            # parent. This ensures the Fix Task is runnable even when the
+            # parent failed (failed tasks never enter completed_so_far).
+            fix_deps = list(parent_task.dependencies) if parent_task else []
             fix_id = f"fix-{finding.finding_id}"
             fix_tasks.append(
                 AgentTask(
@@ -166,7 +178,7 @@ class Reviewer:
                     allowed_paths=["."],
                     writable_paths=[str(Path(finding.file).parent) if finding.file else "."],
                     allowed_tools=["file_read", "file_write", "file_edit", "bash"],
-                    dependencies=[parent_task_id] if parent_task_id else [],
+                    dependencies=fix_deps,
                     parent_task_id=parent_task_id,
                     # Fix Tasks do not inherit the missing artifact as their own
                     # expected_artifact. Doing so causes the Reviewer to re-report
