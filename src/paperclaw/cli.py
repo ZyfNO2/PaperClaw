@@ -152,7 +152,9 @@ def _run_team(args: argparse.Namespace) -> int:
     return 0 if result.stop_reason.value in {"completed", "all_tasks_completed"} else 1
 
 
-def main() -> int:
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser so tests can inspect defaults without running main."""
+
     parser = argparse.ArgumentParser(description="Run the PaperClaw coding agent")
     subparsers = parser.add_subparsers(dest="command")
 
@@ -161,15 +163,37 @@ def main() -> int:
     agent_parser.add_argument("--workspace", type=Path, default=Path.cwd())
     agent_parser.add_argument("--max-steps", type=int, default=12)
     agent_parser.add_argument("--verbose-events", action="store_true")
-    agent_parser.add_argument("--enable-verification-gate", action="store_true")
+    agent_parser.add_argument(
+        "--enable-verification-gate",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run the v0.02 Verify/Reflection Gate (default: True)",
+    )
 
     team_parser = subparsers.add_parser("team", help="Run a MultiAgent Coordinator team from a JSON plan")
     team_parser.add_argument("--plan", type=Path, required=True)
     team_parser.add_argument("--workspace", type=Path, default=Path.cwd())
     team_parser.add_argument("--verbose-events", action="store_true")
-    team_parser.add_argument("--enable-verification-gate", action="store_true")
+    team_parser.add_argument(
+        "--enable-verification-gate",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run the v0.02 Verify/Reflection Gate on every Worker (default: True)",
+    )
+    return parser
 
-    args = parser.parse_args()
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+
+    # Preserve `paperclaw <task>` backward compatibility: if the first positional
+    # argument is not a known subcommand, default to the `agent` subparser.
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] not in {"agent", "team", "-h", "--help", "--version", "-v"}:
+        argv = ["agent", *argv]
+
+    args = parser.parse_args(argv)
     # Keep local runs zero-config while still allowing the shell to override any value explicitly.
     load_dotenv(Path.cwd() / ".env")
 

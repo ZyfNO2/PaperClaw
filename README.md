@@ -55,7 +55,7 @@ python -m pytest -q --basetemp=tmp/pytest
 
 当前基线测试结果：
 
-- `78 passed, 1 skipped`
+- `83 passed, 1 skipped`
 
 ## 运行
 
@@ -66,28 +66,34 @@ CLI 会自动读取仓库根目录 `.env` 中的：
 - `PAPERCLAW_MODEL`
 - `PAPERCLAW_TIMEOUT_SECONDS`（可选）
 
-最小运行示例：
+最小运行示例（v0.02 Verify Gate 默认开启）：
 
 ```powershell
 paperclaw agent "创建 hello.py，使其输出 PaperClaw v0.01 OK，并运行验证" --workspace . --max-steps 8
 ```
 
-启用 v0.02 Gate：
+如需显式关闭 Verify Gate（兼容性 / 低成本测试）：
 
 ```powershell
-paperclaw agent "修复当前目录代码并运行验证" --workspace . --max-steps 10 --enable-verification-gate
+paperclaw agent "创建 hello.py，使其输出 PaperClaw v0.01 OK" --workspace . --max-steps 8 --no-enable-verification-gate
 ```
 
 如需在测试 / 调试时观察过程日志，可显式开启：
 
 ```powershell
-paperclaw agent "修复当前目录代码并运行验证" --workspace . --max-steps 10 --enable-verification-gate --verbose-events
+paperclaw agent "修复当前目录代码并运行验证" --workspace . --max-steps 10 --verbose-events
 ```
 
-MultiAgent 团队运行（需准备 JSON plan）：
+MultiAgent 团队运行（需准备 JSON plan，Verify Gate 同样默认开启）：
 
 ```powershell
 paperclaw team --plan plan.json --workspace . --verbose-events
+```
+
+旧式无子命令调用仍默认进入 agent 路径：
+
+```powershell
+paperclaw "修复当前目录代码并运行验证" --workspace . --max-steps 10
 ```
 
 `--verbose-events` 只用于测试 / 调试观测；默认运行仍只输出最终 JSON。
@@ -97,7 +103,8 @@ paperclaw team --plan plan.json --workspace . --verbose-events
 - 当前 `bash` 安全策略只是 v0.01/v0.03 的最小边界，不是完整 Permission Engine；
 - v0.02 Verify 仍主要依赖本地可确定性检查，尚未接入完整 Session / Memory / 持久 Trace；
 - v0.03 MultiAgent 是进程内协作基线，不支持 crash 后自动恢复、跨机器分布式执行或自动 PR/push；
-- Reviewer Fix Task 闭环、Worker 超时取消传播、全局 Verify 等边界能力已预留接口，未完全闭环；
+- Worker 取消为协作式：长耗时 `bash` 调用可能在取消信号后仍执行完当前步；
+- Reviewer Fix Task 闭环、`TeamBudget` 团队级步数/模型调用上限、D7（junction/symlink/TOCTOU）等边界能力已预留接口，未完全闭环；
 - Context、Permission Engine、Eval、RAG 仍在后续 SOP 中。
 
 ## 上游

@@ -3,7 +3,7 @@
 ## 自动化测试
 
 - 全量命令：`python -m pytest -q --basetemp=tmp/pytest`
-- 结果：`78 passed, 1 skipped`
+- 结果：`83 passed, 1 skipped`
 
 ### MultiAgent 新增测试
 

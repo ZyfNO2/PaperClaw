@@ -251,6 +251,18 @@ class Coordinator:
         for task_id, thread in list(active_workers.items()):
             thread.join(timeout=5)
             if thread.is_alive():
+                # Cooperative cancellation: signal the Worker, then give it a
+                # short grace period to finish the current step.
+                thread.worker.cancel(thread.task)
+                thread.join(timeout=3)
+                if thread.is_alive():
+                    emit_team_event(
+                        self._team_state,
+                        "worker.cancel_failed",
+                        thread.worker.agent_id,
+                        task_id,
+                        reason="thread did not terminate after cooperative cancel",
+                    )
                 thread.result = WorkerResult(
                     task_id=task_id,
                     status=WorkerStatus.CANCELLED,

@@ -7,6 +7,7 @@ so Verify / Reflection remain available without modification.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -49,6 +50,7 @@ class Worker:
         self._lease_manager = lease_manager
         self._team_state = team_state
         self._enable_verification_gate = enable_verification_gate
+        self._cancel_event = threading.Event()
 
     def run(self, task: AgentTask, workspace: Path) -> WorkerResult:
         """Run a single task to completion, failure, or cancellation."""
@@ -87,6 +89,7 @@ class Worker:
                 event_handler=lambda event, payload: self._on_runtime_event(
                     event, payload, task.task_id, counters
                 ),
+                cancel_event=self._cancel_event,
             )
         except Exception as exc:  # defensive: single Worker failure must not crash Coordinator
             self._lease_manager.release_all_for_task(task.task_id)
@@ -103,15 +106,6 @@ class Worker:
         if not isinstance(verification_result, VerificationResult):
             verification_result = None
 
-        emit_team_event(
-            self._team_state,
-            MessageType.TASK_COMPLETED.value if status == WorkerStatus.COMPLETED else MessageType.TASK_FAILED.value,
-            self.agent_id,
-            task.task_id,
-            status=status.value if isinstance(status, WorkerStatus) else status,
-            changed_files=changed_files,
-        )
-
         # Local Verify is required: if gate is on and verification failed, the
         # Worker cannot report completed.
         if (
@@ -121,6 +115,15 @@ class Worker:
             and verification_result.status != "passed"
         ):
             status = WorkerStatus.FAILED
+
+        emit_team_event(
+            self._team_state,
+            MessageType.TASK_COMPLETED.value if status == WorkerStatus.COMPLETED else MessageType.TASK_FAILED.value,
+            self.agent_id,
+            task.task_id,
+            status=status.value if isinstance(status, WorkerStatus) else status,
+            changed_files=changed_files,
+        )
 
         self._lease_manager.release_all_for_task(task.task_id)
         return WorkerResult(
@@ -134,8 +137,9 @@ class Worker:
         )
 
     def cancel(self, task: AgentTask) -> WorkerResult:
-        """Mark the task as cancelled and release its leases."""
+        """Signal cancellation and release leases so the Worker stops cleanly."""
 
+        self._cancel_event.set()
         self._lease_manager.release_all_for_task(task.task_id)
         emit_team_event(
             self._team_state,

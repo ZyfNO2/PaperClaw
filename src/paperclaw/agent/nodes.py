@@ -27,6 +27,10 @@ class DecideActionNode(Node):
     def prep(self, shared: dict) -> str | None:
         if shared["step_count"] >= shared["max_steps"]:
             return None
+        cancel_event = shared.get("cancel_event")
+        if cancel_event is not None and cancel_event.is_set():
+            shared["stop_reason"] = "cancelled"
+            return None
         return build_prompt(shared, self.registry)
 
     def exec(self, prompt: str | None):
@@ -37,6 +41,9 @@ class DecideActionNode(Node):
 
     def post(self, shared: dict, prep_res, exec_res) -> str:
         if prep_res is None:
+            if shared.get("stop_reason") == "cancelled":
+                emit_event(shared, "stop", reason="cancelled", step=shared["step_count"])
+                return "done"
             shared["stop_reason"] = "max_steps"
             emit_event(shared, "stop", reason="max_steps", step=shared["step_count"])
             return "done"

@@ -236,6 +236,26 @@ def test_dag_cycle_rejected(tmp_workspace: Path):
     assert result.stop_reason == TeamStopReason.BLOCKED
 
 
+def test_worker_inherits_verification_gate_from_coordinator(tmp_workspace: Path):
+    """M-08: team mode must not bypass v0.02 Verify Gate by default."""
+
+    coord = Coordinator(
+        _factory_for([_done("ok")]),
+        tmp_workspace,
+        enable_verification_gate=True,
+    )
+    worker = coord._make_worker("worker-0")
+    assert worker._enable_verification_gate is True
+
+    coord_disabled = Coordinator(
+        _factory_for([_done("ok")]),
+        tmp_workspace,
+        enable_verification_gate=False,
+    )
+    worker_disabled = coord_disabled._make_worker("worker-0")
+    assert worker_disabled._enable_verification_gate is False
+
+
 def test_runtime_lease_conflict_between_workers(tmp_workspace: Path):
     """D5: two parallel Workers contending the same file hit lease_conflict."""
 
