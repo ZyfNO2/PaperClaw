@@ -29,6 +29,14 @@ from paperclaw.context.builder import (
     ROLE_WORKER,
     RoleContextView,
 )
+from paperclaw.context.compaction import (
+    Char4TokenEstimator,
+    CompactionOutcome,
+    CompactionPolicy,
+    DEFAULT_ESTIMATOR,
+    ESTIMATOR_CHAR4,
+    TokenEstimator,
+)
 from paperclaw.context.contracts import (
     Checkpoint,
     CompactionResult,
@@ -50,7 +58,10 @@ from paperclaw.context.session import (
 )
 
 __all__ = [
+    "Char4TokenEstimator",
     "Checkpoint",
+    "CompactionOutcome",
+    "CompactionPolicy",
     "CompactionResult",
     "ContextBudget",
     "ContextBudgetExhausted",
@@ -59,6 +70,8 @@ __all__ = [
     "ContextItem",
     "ContextSnapshot",
     "ContextSource",
+    "DEFAULT_ESTIMATOR",
+    "ESTIMATOR_CHAR4",
     "EventSink",
     "EXCLUSION_BUDGET",
     "EXCLUSION_CONFLICT",
@@ -79,6 +92,7 @@ __all__ = [
     "SessionEvent",
     "SessionService",
     "SqliteEventSink",
+    "TokenEstimator",
     "open_session",
     "reopen_session",
 ]
