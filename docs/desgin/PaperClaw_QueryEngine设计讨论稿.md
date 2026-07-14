@@ -5,6 +5,8 @@
 > 目标：参考 Claude Code 的会话级任务编排思想，为 PaperClaw 定义轻量、可观察、可测试的 QueryEngine  
 > 前置：先完成 `v0.01` 最小 PocketFlow ReAct Agent 和基础工具，再根据真实 Trace 冻结接口
 
+> **MVP 边界更新（2026-07-14）**：本文保留长期设计空间，但不再视为 v0.05 的一次性交付清单。v0.05 只实现薄 QueryEngine façade、AgentRun、最小预算、基础事件和结构化 RunResult；async streaming、后台 Shell、完整 Permission、Provider Gateway、Replay 与 exporter 均按需后置。
+
 ## 目录
 
 - [1. 核心结论](#1-核心结论)
@@ -734,11 +736,13 @@ task → decide → tool → observation → decide → done
 
 - 一个 Conversation 对应一个 QueryEngine；
 - `submit()` 和 AgentRun；
-- Runtime Event；
-- PermissionDecision；
-- cancel；
-- step / tool / wall-time 预算；
-- usage、Trace 和工具错误统一回流。
+- 复用现有 FlowRunner / Context / Session / Tool / Permission；
+- 最小 Runtime Event；
+- step / model-call / tool-call 预算；
+- 节点边界 cooperative stop；
+- 结构化 RunResult 与工具错误回流。
+
+v0.05 不要求 async streaming、后台 Shell、完整 PermissionDecision、wall-time / cost budget、Provider capability、Replay 或 exporter。增强候选见 `Plan/drafts/PaperClaw_v0.05.1_Harness增强候选池.md`。
 
 ### v0.06：Claw 交互层
 

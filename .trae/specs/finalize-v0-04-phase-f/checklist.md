@@ -1,0 +1,17 @@
+- [ ] WP1 定向测试已运行（Context contract / Repository / Session / ContextBuilder / Compaction / Checkpoint / Resume）
+- [ ] 文档与实现字段漂移检查完成（contracts.py vs SOP §4 最小契约）
+- [ ] 确认未增加新的数据库表或恢复状态
+- [ ] artifacts/v0_04/test_report.md 存在且包含 M04-01..M04-08 矩阵
+- [ ] test_report.md 末尾给出 GO/NO-GO 初判
+- [ ] tests/integration/test_v0_04_mvp_demo.py 存在并可运行
+- [ ] 集成演示覆盖 SOP §9 全部 5 阶段（超预算→压缩→保留→Snapshot→reopen→resume/pending）
+- [ ] mvp_demo_trace.json 包含关键断言证据（compaction summary、retained IDs、Checkpoint、ResumeDecision）
+- [ ] artifacts/v0_04/known_limitations.md 存在且按 SOP §10 后续增强边界分类
+- [ ] artifacts/v0_04/implementation_summary.md 存在且按 SOP §11 借鉴表说明实际借鉴
+- [ ] artifacts/v0_04/file_manifest.txt 存在且列出 v0.04 全部源码/测试/artifact 文件
+- [ ] README.md 包含 v0.04 能力段落（不描述未实现能力为已完成）
+- [ ] docs/desgin/PaperClaw_上下文系统与提示词工程骨架.md 同步已实现部分
+- [ ] 独立 Review subagent 只针对 MVP Claim 输出 PASS 或已修复全部阻塞项
+- [ ] git commit 包含 Phase F 全部变更
+- [ ] SOP 完成度 hook 输出已贴给用户
+- [ ] SOP §7 WP1-WP3 全部 checkbox 已勾选

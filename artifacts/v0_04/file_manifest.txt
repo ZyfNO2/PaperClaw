@@ -1,0 +1,98 @@
+PaperClaw v0.04 File Manifest
+==============================
+
+Scope: all files added or modified between commit 4c2a5f4~1 (5083534)
+and HEAD of v0.04, plus untracked v0.04 artifacts present on disk.
+Generated: 2026-07-14 (Asia/Shanghai).
+Refreshed: 2026-07-14 (Phase F final — includes test_report.md,
+mvp_demo_trace.json, implementation_summary.md, integration demo).
+
+Legend:
+  [A] = added in v0.04
+  [M] = existing file modified during v0.04
+  [U] = untracked v0.04 artifact (not yet committed)
+
+
+## Source Code (src/paperclaw/)
+
+### context/
+- [A] src/paperclaw/context/__init__.py
+- [A] src/paperclaw/context/builder.py
+- [A] src/paperclaw/context/compaction.py
+- [A] src/paperclaw/context/contracts.py
+- [A] src/paperclaw/context/migrations.py
+- [A] src/paperclaw/context/repository.py
+- [A] src/paperclaw/context/session.py
+
+### runtime/
+- [A] src/paperclaw/runtime/__init__.py
+- [A] src/paperclaw/runtime/checkpoint.py
+- [A] src/paperclaw/runtime/error_codes.py
+- [A] src/paperclaw/runtime/file_snapshot.py
+- [A] src/paperclaw/runtime/flow_contracts.py
+- [A] src/paperclaw/runtime/flow_runner.py
+- [A] src/paperclaw/runtime/node_registry.py
+- [A] src/paperclaw/runtime/resume.py
+- [A] src/paperclaw/runtime/resume_coordinator.py
+
+### agent/ (modified during v0.04, not new)
+- [M] src/paperclaw/agent/flow.py
+- [M] src/paperclaw/agent/nodes.py
+
+
+## Tests
+
+### tests/unit/
+- [A] tests/unit/test_checkpoint_wiring.py
+- [A] tests/unit/test_compaction.py
+- [A] tests/unit/test_context_builder.py
+- [A] tests/unit/test_context_contracts.py
+- [A] tests/unit/test_context_session.py
+- [A] tests/unit/test_instrumented_flow_runner.py
+- [A] tests/unit/test_node_registry.py
+- [A] tests/unit/test_resume_coordinator.py
+
+### tests/integration/
+- [A] tests/integration/test_v0_04_mvp_demo.py
+  SOP §9 integration demo: long task → budget overflow → compaction
+  → constraint/evidence retention → snapshot → checkpoint → reopen
+  → safe resume ok → pending mutation → recovery_required.
+
+### tests/ (root)
+- [A] tests/test_pocketflow_vendor_integrity.py
+
+
+## Artifacts (artifacts/v0_04/)
+- [A] artifacts/v0_04/compaction.json
+- [A] artifacts/v0_04/context_builder.json
+- [A] artifacts/v0_04/pocketflow_adapter/instrumented_flow_runner.json
+- [A] artifacts/v0_04/pocketflow_adapter/node_registry.json
+- [A] artifacts/v0_04/resume_boundary.json
+- [U] artifacts/v0_04/test_report.md
+- [U] artifacts/v0_04/mvp_demo_trace.json
+- [U] artifacts/v0_04/known_limitations.md
+- [U] artifacts/v0_04/implementation_summary.md
+- [U] artifacts/v0_04/file_manifest.txt   (this file)
+
+
+## Plan / Docs (added or modified during v0.04)
+- [A] Plan/addenda/PaperClaw_v0.04_PocketFlow运行时适配_实施补充.md
+- [A] Plan/drafts/PaperClaw_v0.04.1_RuntimeProtocolRecovery_SOP草案.md
+- [M] Plan/drafts/PaperClaw_v0.04_ContextSessionSQLite_SOP草案.md
+- [M] UPSTREAM.md
+- [M] README.md
+- [M] docs/desgin/PaperClaw_上下文系统与提示词工程骨架.md
+
+
+## Summary
+
+  Source - context/     :  7 files (all added)
+  Source - runtime/     :  9 files (all added)
+  Source - agent/       :  2 files (modified)
+  Tests  - unit/        :  8 files (all added)
+  Tests  - integration/ :  1 file  (added)
+  Tests  - root         :  1 file  (added)
+  Artifacts             : 10 files (5 added, 5 untracked incl. this manifest)
+  Plan / Docs           :  6 files (2 added, 4 modified)
+  -------------------------------------------------
+  Total                 : 44 files

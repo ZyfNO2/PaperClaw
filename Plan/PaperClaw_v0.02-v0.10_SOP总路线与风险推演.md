@@ -1,6 +1,6 @@
 # PaperClaw v0.02–v0.10 SOP 总路线与风险推演
 
-> 状态：路线标题已冻结；v0.02–v0.03 为正式 SOP，v0.04–v0.10 为逐步收敛的 SOP 草案  
+> 状态：v0.04 正在按 MVP 收口；v0.05–v0.10 为逐步收敛的 SOP 草案
 > 日期：2026-07-13  
 > 目标：把 PaperClaw 从最小 ReAct Loop 推进到可观测、可评估、可恢复、可演示的 Coding / Research Agent Harness
 
@@ -12,6 +12,7 @@
 - [SOP 固定结构与延期边界](#7-每份-sop-固定章节)
 - [版本、终局与待确认决策](#9-版本号预案)
 - [面试证据与草案使用方式](#12-面试追问与可展示证据)
+- [后续草案拆分预警](#14-后续草案拆分预警)
 
 ## 1. 冻结标题
 
@@ -19,8 +20,8 @@
 |---|---|---|
 | v0.02 | Verify 与 Reflection Agent | Agent 不靠自报完成，能基于证据修复和重验 |
 | v0.03 | MultiAgent 分工协作 | 拆解、并行、冲突治理和独立 Reviewer 有真实收益 |
-| v0.04 | Context Engineering、Session 与 SQLite | 长会话可压缩、持久化、隔离和幂等恢复 |
-| v0.05 | Harness Engineering 与 QueryEngine | Context、Tool、Permission、Budget、Event、Provider 汇入统一 Runtime |
+| v0.04 | Context、Session 与 SQLite MVP | 上下文可预算、可持久化，并只从安全边界恢复 |
+| v0.05 | 最小 Harness 与 QueryEngine MVP | 现有 Agent Runtime 通过一个薄、稳定入口运行 |
 | v0.06 | Claw CLI / TUI 交互层 | 用户能观察、授权、取消、恢复和理解 Agent |
 | v0.07 | Trace、Replay 与分层 Eval | 运行事实可追踪、回放、比较和形成回归数据 |
 | v0.08 | Retrieval、RAG 与 Evidence Engine | Query、检索、核验、Evidence 和 Context 有强契约与指标 |
@@ -50,7 +51,9 @@ v0.06 可以和 v0.07 的文档并行推进，但正式验收都依赖 v0.05 的
 - [v0.02 Verify 与 Reflection](PaperClaw_v0.02_Verify与ReflectionAgent_SOP.md)
 - [v0.03 MultiAgent](PaperClaw_v0.03_MultiAgent分工协作_SOP.md)
 - [v0.04 Context / Session / SQLite](drafts/PaperClaw_v0.04_ContextSessionSQLite_SOP草案.md)
+- [v0.04 Post-MVP 增强候选池](drafts/PaperClaw_v0.04.1_RuntimeProtocolRecovery_SOP草案.md)
 - [v0.05 Harness / QueryEngine](drafts/PaperClaw_v0.05_HarnessQueryEngine_SOP草案.md)
+- [v0.05 Post-MVP 增强候选池](drafts/PaperClaw_v0.05.1_Harness增强候选池.md)
 - [v0.06 Claw CLI / TUI](drafts/PaperClaw_v0.06_Claw交互层_SOP草案.md)
 - [v0.07 Trace / Replay / Eval](drafts/PaperClaw_v0.07_TraceReplay与分层Eval_SOP草案.md)
 - [v0.08 Retrieval / RAG / Evidence](drafts/PaperClaw_v0.08_RetrievalRAG与EvidenceEngine_SOP草案.md)
@@ -66,8 +69,8 @@ v0.06 可以和 v0.07 的文档并行推进，但正式验收都依赖 v0.05 的
 |---|---|---|
 | Verify Evidence | v0.02 | v0.02 |
 | EventEnvelope | v0.02 minimal v1 | v0.07 Trace contract |
-| Permission | v0.03 Lite allow/deny | v0.05 完整 Engine |
-| Idempotency | v0.03 接口 | v0.04 durable ledger |
+| Permission | v0.03 Lite allow/deny | v0.05 复用基础 Gate；完整交互按需增强 |
+| Idempotency | v0.03 接口 | v0.04 事件去重；副作用 ledger 按真实恢复需求增强 |
 | Context | v0.01 history | v0.04 ContextBuilder |
 | Trace | v0.01 JSON demo | v0.07 append-only store / exporter |
 | Eval | v0.02 completion metrics | v0.07 framework |
@@ -166,23 +169,20 @@ v0.06 可以和 v0.07 的文档并行推进，但正式验收都依赖 v0.05 的
 
 ## 7. 每份 SOP 固定章节
 
-后续正式 SOP 必须包含：
+后续正式 SOP 采用两层结构。
 
-1. 目标与非目标；
-2. 前置版本 Gate；
-3. 既有实现参考；
-4. 至少两种技术路径与推荐理由；
-5. 数据 / Event / Config Schema；
-6. Security 与 Permission；
-7. Idempotency、Retry、Cancel、Recovery；
-8. Migration 与 Rollback；
-9. Observability 与 Eval；
-10. Failure Injection；
-11. 风险矩阵和降级路径；
-12. Artifact / Release 交付；
-13. GO / REVISE / NO-GO；
-14. 面试可能追问和可展示证据；
-15. 明确延期项。
+当前 MVP 必须包含：
+
+1. 一个用户可见故事；
+2. 必做与明确延期；
+3. 两种技术路径与选择；
+4. 最小契约；
+5. 最多三个实施 Phase；
+6. 最小测试、GO / NO-GO；
+7. 一条可复现演示；
+8. 既有实现参考与风险。
+
+Post-MVP 能力进入独立候选池。只有真实失败或下游用户故事证明必要性时，才提取一个候选重新写成 SOP。不得为了模板完整性，强迫每个 MVP 同时实现 Migration、Recovery、Eval、Permission、Cancel 和 Failure Injection 全家桶。
 
 ## 8. 必须延期的能力
 
@@ -256,8 +256,8 @@ v0.10 不是“功能很多”，而是能提供以下证据：
 |---|---|---|
 | v0.02 | Reflection 会不会只是多调一次模型？ | False completion fixture、Verify Evidence、bounded repair Trace |
 | v0.03 | MultiAgent 为什么比单 Agent 好？ | 单/多 Agent 成功率、时延、token、冲突/重复率对照 |
-| v0.04 | 为什么 SQLite？如何防恢复重复执行？ | migration、WAL、idempotency ledger、unknown_outcome fixture |
-| v0.05 | QueryEngine 会不会是 God Object？ | Protocol 依赖图、cancel propagation、Permission bypass test |
+| v0.04 | 为什么 SQLite？恢复边界是什么？ | Context budget、Session reopen、safe resume / recovery_required 演示 |
+| v0.05 | QueryEngine 会不会是 God Object？ | 薄 façade 依赖图、budget 与 Permission bypass test |
 | v0.06 | 为什么 TUI 不直接做 Web？ | Event-driven thin client、CLI fallback、Windows terminal matrix |
 | v0.07 | LangSmith 和自建 Trace 怎么分工？ | Local TraceStore、export outage、deterministic replay、Eval version manifest |
 | v0.08 | 为什么 Hybrid 优于只用向量库？ | BM25/Dense/RRF ablation、Recall/MRR/nDCG、降级链 |
@@ -268,6 +268,22 @@ v0.10 不是“功能很多”，而是能提供以下证据：
 
 - 不要一次性执行 v0.04–v0.10；
 - 每完成一个前置版本，先用真实 Trace 重审下一份草案；
+- 每份草案先收缩为一个 MVP 用户故事，其余能力移入 Post-MVP 候选池；
+- 候选池没有默认执行顺序，一次只允许提取一个小型 SOP；
 - 将已验证条目转成 checkbox，将不再适用的假设删除或记录偏差；
 - 每份正式 SOP 只承诺当期可验证能力；
 - 远期草案中的具体库和性能数值均是候选，不是既定依赖或完成事实。
+
+## 14. 后续草案拆分预警
+
+以下是 2026-07-14 的文档体量审计，不代表已经修改正文。每份草案进入执行前必须重新收缩：
+
+| 版本 | 当前过度设计风险 | 建议 MVP | 后置候选 |
+|---|---|---|---|
+| v0.06 | 同时做完整 TUI、MultiAgent、Context、Trace 面板 | 对话输入、事件时间线、一次权限交互 | 高级面板、Web、完整任务可视化 |
+| v0.07 | Trace、Replay、Agent/RAG/Context/MultiAgent Eval 全部打包 | 本地 TraceStore + 一组 repair dataset 回归 | LangSmith、在线 Eval、RAG/多 Agent 专项评估 |
+| v0.08 | Sparse、Dense、RRF、Reranker、多源在线检索同时进入 | SQLite FTS5 + Evidence identity + 一个离线评估集 | Dense、Reranker、多源联网和缓存体系 |
+| v0.09 | 多模式、Skill 矩阵和完整科研 Pipeline 同时落地 | 一组 Seed → 核验 → 单一方法建议 → NO-GO | topic-only、并行 lanes、完整学术 Skill 编排 |
+| v0.10 | 安全、跨平台、供应链、CI、发布全部作为单一 Gate | Windows clean install + offline demo + version/license | SBOM、跨平台矩阵、sandbox 与完整安全加固 |
+
+优先级：v0.07 风险最高；在 v0.06 或 v0.07 启动前，必须先生成对应 MVP 收口版和 Post-MVP 候选池。

@@ -515,21 +515,24 @@ PaperAgent\apps\api\app\services\agents\graph\nodes\evidence_context.py
 提取：Context 分区、Session、Memory lifecycle、Claim/Evidence identity。  
 禁止：照搬字符硬截断或把所有 Skill 全量注入 Prompt。
 
+当前 v0.04 是 MVP 收口：只验收 Context budget、SQLite Session reopen、结构化 compaction 与 safe step-boundary resume。Migration upgrade、长期 Memory、任意 crash reconciliation 和 durable MultiAgent 均属于 Post-MVP 候选。
+
 ### v0.05 Harness Engineering
 
 执行前至少阅读：
 
 ```text
+PaperClaw\src\paperclaw\runtime\flow_runner.py
+PaperClaw\src\paperclaw\context\session.py
+PaperClaw\src\paperclaw\tools\registry.py
+PaperClaw\src\paperclaw\multiagent\permissions.py
 AutoResearchClaw\researchclaw\pipeline\runner.py
-AutoResearchClaw\researchclaw\llm\client.py
-AutoResearchClaw\researchclaw\llm\anthropic_adapter.py
 AutoResearchClaw\researchclaw\server\websocket\events.py
-AutoResearchClaw\researchclaw\mcp\registry.py
 PaperAgent\apps\api\app\services\retrieval\tool_orchestrator.py
 ```
 
-提取：checkpoint、heartbeat、Provider adapter、Event、MCP / Tool 边界。  
-禁止：同步阻塞实现、把 LangSmith 当唯一 TraceStore、把 ACP dirty 文件当上游基线。
+提取：薄 orchestrator、依赖边界、稳定事件和 Tool adapter 隔离。
+禁止：在 v0.05 MVP 重写 async Provider、后台 Shell、MCP、Replay 或完整 EventBus；优先复用 PaperClaw 已有 FlowRunner、Session、ToolRegistry 和 PermissionGuard。
 
 ### v0.06 Claw 交互层
 

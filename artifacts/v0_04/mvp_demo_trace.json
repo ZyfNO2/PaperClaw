@@ -1,0 +1,71 @@
+{
+  "stages": [
+    {
+      "stage": "1_setup",
+      "db_path": "G:\\PaperClaw\\tmp\\pytest\\test_v0_04_mvp_demo0\\demo.db",
+      "conversation_id": "conv-demo",
+      "run_id": "run-demo",
+      "items_seeded": [
+        "constraint-1",
+        "evidence-1",
+        "obs-1",
+        "obs-2",
+        "obs-3",
+        "obs-4",
+        "obs-5",
+        "obs-6",
+        "obs-7",
+        "obs-8",
+        "obs-9",
+        "obs-10"
+      ],
+      "total_seeded_tokens": 2660
+    },
+    {
+      "stage": "2_compaction",
+      "snapshot_id": "snap-f0cf68dd8aef4594",
+      "estimated_tokens": 181,
+      "usable_input": 310,
+      "source_item_ids": [
+        "constraint-1",
+        "evidence-1",
+        "summary-074421c092da471d"
+      ],
+      "excluded_count": 11,
+      "budget_overflow_count": 10,
+      "rendered_hash": "37c7b7359630c5e8a887bc59bde6ff742df6ce25ad8be05dad80d9c55312402a"
+    },
+    {
+      "stage": "3_checkpoint",
+      "checkpoint_id": "cp-demo-1",
+      "last_committed_sequence": 1,
+      "next_node_id": "node-A",
+      "checkpoint_registry_hash": "693d723fc25bf2324331619dd4d8f3a155495bc9167c77e07253b9b133029c64",
+      "session_closed": true
+    },
+    {
+      "stage": "4_safe_resume",
+      "decision_status": "ok",
+      "can_auto_resume": true,
+      "next_node_id": "node-A",
+      "last_safe_sequence": 1,
+      "recommended_action": "resume_from_next_node",
+      "pending_operations_count": 0
+    },
+    {
+      "stage": "5_unsafe_resume",
+      "decision_status": "recovery_required",
+      "can_auto_resume": false,
+      "reason": "1 pending operation(s) are in a non-terminal state (started but not committed/failed/unknown_outcome); manual reconciliation required before resume",
+      "recommended_action": "initiate_recovery",
+      "pending_operations": [
+        {
+          "operation_id": "op-file-write-1",
+          "state": "started",
+          "event_type": "operation.started",
+          "started_at": "2026-07-14T14:52:32.939096+00:00"
+        }
+      ]
+    }
+  ]
+}
