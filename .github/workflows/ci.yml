@@ -59,7 +59,8 @@ jobs:
           python -m pytest `
             --basetemp=tmp/pytest `
             --report-log=tmp/pytest_reportlog.jsonl `
-            -q
+            -q `
+            -m "not real_llm"
 
       - name: Summarize test counts
         if: always()

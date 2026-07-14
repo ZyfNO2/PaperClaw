@@ -1,0 +1,20 @@
+[
+  {
+    "event_type": "tool.completed",
+    "tool": "file_write",
+    "call_index": 1,
+    "ok": true,
+    "error_code": null,
+    "run_id": "run-ae73fd26230b",
+    "sequence": 5
+  },
+  {
+    "event_type": "tool.completed",
+    "tool": "bash",
+    "call_index": 2,
+    "ok": true,
+    "error_code": null,
+    "run_id": "run-ae73fd26230b",
+    "sequence": 9
+  }
+]

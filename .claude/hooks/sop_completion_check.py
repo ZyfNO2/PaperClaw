@@ -189,6 +189,13 @@ VERSION_HANDOFF_FILES: dict[str, list[str]] = {
         "reviewer_findings.json",
         "file_manifest.txt",
     ],
+    "v0.05": [
+        "query_engine_contract.md",
+        "mvp_test_report.md",
+        "mvp_demo_trace.json",
+        "known_limitations.md",
+        "file_manifest.txt",
+    ],
 }
 
 

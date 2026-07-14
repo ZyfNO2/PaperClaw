@@ -1,0 +1,17 @@
+{
+  "provider": "openai-compatible",
+  "model": "deepseek-v4-flash",
+  "status": "completed",
+  "stop_reason": "done",
+  "model_calls": 3,
+  "tool_calls": 2,
+  "max_steps": 10,
+  "max_model_calls": 10,
+  "max_tool_calls": 10,
+  "terminal_event_count": 1,
+  "acceptance_checks": {
+    "file_created": true,
+    "content_match": true,
+    "exit_code_ok": true
+  }
+}
