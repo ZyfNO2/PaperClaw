@@ -1,0 +1,176 @@
+{
+  "design_decisions": [
+    "Wrap (not subclass) Flow to decouple runner from PocketFlow internals.",
+    "Parity short-circuit delegates to flow.run(shared) when all services are None.",
+    "Phase-split error classification: prep/_exec/post called separately for non-Flow nodes.",
+    "Flow nodes delegate to _run directly; errors labeled NODE_EXEC_FAILED.",
+    "Cancellation token checked between nodes (is_cancelled bool preferred; is_set() fallback).",
+    "Exceptions re-raised after node.failed emission; flow.stopped NOT emitted on crash."
+  ],
+  "error_codes": [
+    {
+      "code": "NODE_PREP_FAILED",
+      "description": "Node prep hook raised an exception before exec.",
+      "phase": "prep"
+    },
+    {
+      "code": "NODE_EXEC_FAILED",
+      "description": "Node exec or _exec retry loop raised an exception.",
+      "phase": "exec"
+    },
+    {
+      "code": "NODE_POST_FAILED",
+      "description": "Node post hook raised an exception after exec succeeded.",
+      "phase": "post"
+    },
+    {
+      "code": "NODE_IDENTITY_MISSING",
+      "description": "Node has no node_id attribute and is not in the registry.",
+      "phase": "identity"
+    },
+    {
+      "code": "RESUME_REGISTRY_MISMATCH",
+      "description": "resume_point references a node_id not in the registry.",
+      "phase": "resume"
+    },
+    {
+      "code": "CANCELLATION_REQUESTED",
+      "description": "Cooperative cancellation token was triggered.",
+      "phase": "cancellation"
+    }
+  ],
+  "event_schema_version": 1,
+  "events": [
+    {
+      "event_type": "flow.started",
+      "payload_fields": {
+        "resume_from": "str | None (completed_node_id when resuming)",
+        "run_id": "str",
+        "schema_version": 1,
+        "start_node_id": "str"
+      },
+      "when": "Before the first node executes."
+    },
+    {
+      "event_type": "node.started",
+      "payload_fields": {
+        "node_id": "str",
+        "run_id": "str",
+        "schema_version": 1,
+        "step_count": "int (1-indexed)"
+      },
+      "when": "Before prep/exec/post of each node."
+    },
+    {
+      "event_type": "node.completed",
+      "payload_fields": {
+        "action": "str | None (post return value)",
+        "next_node_id": "str | None",
+        "node_id": "str",
+        "run_id": "str",
+        "schema_version": 1,
+        "state_revision": "int",
+        "step_count": "int"
+      },
+      "when": "After post returns, before transition.selected."
+    },
+    {
+      "event_type": "node.failed",
+      "payload_fields": {
+        "error_code": "str (stable code from error_codes.py)",
+        "error_message": "str (truncated to 500 chars)",
+        "error_type": "str (qualified class name)",
+        "node_id": "str",
+        "run_id": "str",
+        "schema_version": 1,
+        "step_count": "int"
+      },
+      "when": "When prep/exec/post raises. Exception is re-raised after emission."
+    },
+    {
+      "event_type": "transition.selected",
+      "payload_fields": {
+        "action": "str | None",
+        "from_node_id": "str",
+        "run_id": "str",
+        "schema_version": 1,
+        "to_node_id": "str | None"
+      },
+      "when": "After node.completed, records the action and successor."
+    },
+    {
+      "event_type": "checkpoint.committed",
+      "payload_fields": {
+        "last_committed_sequence": "int",
+        "last_node_id": "str",
+        "next_node_id": "str | None",
+        "run_id": "str",
+        "schema_version": 1,
+        "state_revision": "int"
+      },
+      "when": "After checkpoint_writer is called (P0-B stub; P0-C wires real writer)."
+    },
+    {
+      "event_type": "flow.stopped",
+      "payload_fields": {
+        "last_node_id": "str | None",
+        "run_id": "str",
+        "schema_version": 1,
+        "step_count": "int",
+        "stop_reason": "str (done | cancelled | shared[stop_reason])"
+      },
+      "when": "When the flow ends naturally or via cancellation. NOT emitted on crash."
+    }
+  ],
+  "parity_mode": {
+    "behavior": "Delegates to flow.run(shared) for byte-for-byte identical business results.",
+    "condition": "services.event_sink is None AND services.checkpoint_writer is None AND services.cancellation_token is None AND resume_point is None",
+    "hard_gate_test": "test_instrumented_flow_parity"
+  },
+  "phase": "P0-B",
+  "pocketflow_semantics_preserved": [
+    "prep -> exec -> post order (PB2 #1)",
+    "post returns action that selects conditional edge (PB2 #2)",
+    "None action uses default transition (PB2 #3)",
+    "Node retry and fallback behavior via _exec (PB2 #4)",
+    "shared state is the authoritative business state (PB2 #5)",
+    "Native Flow shallow-copy of nodes per iteration (PB2 #6)"
+  ],
+  "runner_class": "InstrumentedFlowRunner",
+  "runner_module": "paperclaw.runtime.flow_runner",
+  "runner_signature": {
+    "method": "run",
+    "parameters": [
+      {
+        "kind": "positional",
+        "name": "self"
+      },
+      {
+        "kind": "positional",
+        "name": "flow",
+        "type": "pocketflow.Flow"
+      },
+      {
+        "kind": "positional",
+        "name": "shared",
+        "type": "dict[str, Any]"
+      },
+      {
+        "kind": "keyword-only",
+        "name": "services",
+        "required": true,
+        "type": "RuntimeServices"
+      },
+      {
+        "default": "None",
+        "kind": "keyword-only",
+        "name": "resume_point",
+        "type": "FlowResumePoint | None"
+      }
+    ],
+    "return_type": "Any (last post action)"
+  },
+  "schema_version": 1,
+  "test_count": 25,
+  "test_file": "tests/unit/test_instrumented_flow_runner.py"
+}
