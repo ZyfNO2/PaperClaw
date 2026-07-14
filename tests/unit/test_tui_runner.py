@@ -48,3 +48,25 @@ def test_no_tty_without_task_returns_usage_error(tmp_path: Path) -> None:
     )
     assert code == 2
     assert "paperclaw agent" in stderr.getvalue()
+
+
+def test_missing_textual_falls_back_even_with_tty(tmp_path: Path, monkeypatch) -> None:
+    from paperclaw.tui import runner
+
+    monkeypatch.setattr(runner, "textual_available", lambda: False)
+    called = []
+    stderr = Stream(tty=True)
+    code = runner.run_tui(
+        workspace=tmp_path,
+        limits=RunLimits(),
+        enable_verification_gate=True,
+        initial_task="task",
+        no_tui=False,
+        fallback=lambda: called.append(True) or 0,
+        stdin=Stream(tty=True),
+        stdout=Stream(tty=True),
+        stderr=stderr,
+    )
+    assert code == 0
+    assert called == [True]
+    assert "textual" in stderr.getvalue()
