@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from paperclaw.harness import AgentRuntimeExecutor, QueryEngine, RunLimits
+from paperclaw.context.repository import SQLiteRepository
+from paperclaw.harness import (
+    AgentRuntimeExecutor,
+    ExecutionReport,
+    QueryEngine,
+    RunLimits,
+)
 from paperclaw.tools.base import ToolContext, ToolResult
 from paperclaw.tools.registry import ToolRegistry
 from tests.helpers import FakeModel, action, done
@@ -111,3 +117,45 @@ def test_max_steps_maps_to_budget_exhausted(tmp_path: Path) -> None:
     assert result.status == "budget_exhausted"
     assert result.stop_reason == "max_steps"
     assert tool.executions == 1
+
+
+def test_optional_session_binding_persists_messages_and_events(
+    tmp_path: Path,
+) -> None:
+    repo = SQLiteRepository(tmp_path / "session.db", migrate=True)
+    try:
+        executor = AgentRuntimeExecutor(
+            FakeModel([done(result="persisted")]),
+            tmp_path,
+            repository=repo,
+        )
+        result = QueryEngine(
+            executor,
+            conversation_id="conv-session",
+        ).submit("persist me")
+
+        messages = repo.list_messages("conv-session")
+        events = repo.list_events(result.run_id)
+        assert [message["role"] for message in messages] == ["user", "assistant"]
+        assert any(event.event_type == "model.started" for event in events)
+        assert any(event.event_type == "flow.stopped" for event in events)
+    finally:
+        repo.close()
+
+
+def test_recovery_required_is_preserved_as_blocked() -> None:
+    class RecoveryExecutor:
+        def execute(self, request, *, emit, stop_token):
+            return ExecutionReport(
+                status="blocked",
+                output=None,
+                stop_reason="recovery_required",
+            )
+
+    result = QueryEngine(
+        RecoveryExecutor(),
+        conversation_id="conv-recovery",
+    ).submit("resume")
+
+    assert result.status == "blocked"
+    assert result.stop_reason == "recovery_required"
