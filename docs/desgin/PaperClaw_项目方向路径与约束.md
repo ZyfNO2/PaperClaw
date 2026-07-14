@@ -2,11 +2,19 @@
 
 > 文档性质：项目提要与方向约束，不是详细架构设计或实现方案。
 
-## 当前实现状态（v0.01）
+## 当前实现状态（v0.03）
 
-截至 2026-07-13，仓库已实现 PocketFlow action routing 驱动的最小 Coding Agent Loop、五个工作区工具、结构化 history、模型输出校验、最大步数和基础安全边界。完整 Permission Engine、持久化 Trace、Session / Memory、Context Compaction、Eval、RAG 与 SeededResearch 仍处于设计或计划状态。
+截至 2026-07-13，仓库已实现：
+
+- v0.01：PocketFlow action routing 驱动的最小 Coding Agent Loop、五个工作区工具、结构化 history、模型输出校验、最大步数和基础安全边界；
+- v0.02：Verify / Reflection Gate、VerificationPlan / Evidence / Result 契约、Reflection 轮数上限与结构化 Verify Trace；
+- v0.03：Coordinator / Worker / Reviewer MultiAgent 分工协作基线，包括 Task DAG 校验、PermissionGuard Lite、FileLease、原子写入与 expected_hash CAS、事件 trace、`paperclaw agent` / `paperclaw team` CLI。
+
+完整 Permission Engine、持久化 Trace、Session / Memory、Context Compaction、Eval、RAG 与 SeededResearch 仍处于设计或计划状态。
 
 ## 1. 项目目标
+
+既有项目与可复用模块的统一入口见 [`PaperClaw_参考项目与可复用模块索引.md`](../reference/PaperClaw_参考项目与可复用模块索引.md)。后续设计和 SOP 应先阅读对应版本的参考清单，再决定独立实现、adapter 或受许可约束的迁移方式。
 
 PaperClaw 是一个面向校招学习、技术验证和真实科研场景的轻量 Agent Runtime 项目。
 

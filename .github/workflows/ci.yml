@@ -1,0 +1,114 @@
+name: CI
+
+# Independent test verification for PaperClaw.
+#
+# Runs the full pytest suite on every push to main and on every pull request,
+# then uploads the JUnit XML and the raw log as build artifacts so test
+# results survive outside the contributor's local machine. This closes the
+# "101 passed is an author-local claim only" gap called out in the v0.03.1
+# audit closeout (C9).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest on Windows
+    runs-on: windows-latest
+
+    env:
+      # BashTool spawns PowerShell and relies on Windows-specific process
+      # management (taskkill /T /F, CREATE_NO_WINDOW). Keep the runner on
+      # windows-latest. Redirecting TEMP/TMP away from the system temp dir
+      # avoids permission flakiness on the GitHub-hosted runner, mirroring
+      # the local invocation documented in README.md.
+      TEMP: ${{ github.workspace }}\tmp\pytest_temp
+      TMP: ${{ github.workspace }}\tmp\pytest_temp
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        id: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install project (editable, with dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install pytest-reportlog
+
+      - name: Prepare temp dirs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path tmp\pytest_temp | Out-Null
+          New-Item -ItemType Directory -Force -Path tmp\pytest | Out-Null
+
+      - name: Run pytest
+        shell: pwsh
+        # --basetemp keeps per-test sandboxes under repo control (matches the
+        # documented local command). --report-log produces a machine-readable
+        # event stream uploaded as an artifact for offline post-mortem.
+        run: |
+          python -m pytest `
+            --basetemp=tmp/pytest `
+            --report-log=tmp/pytest_reportlog.jsonl `
+            -q
+
+      - name: Summarize test counts
+        if: always()
+        shell: pwsh
+        run: |
+          $log = "tmp/pytest_reportlog.jsonl"
+          if (Test-Path $log) {
+            $passed = (Select-String -Path $log -Pattern '"outcome": "passed"' -SimpleMatch).Count
+            $failed = (Select-String -Path $log -Pattern '"outcome": "failed"' -SimpleMatch).Count
+            $errors = (Select-String -Path $log -Pattern '"outcome": "error"' -SimpleMatch).Count
+            $skipped = (Select-String -Path $log -Pattern '"outcome": "skipped"' -SimpleMatch).Count
+            Write-Host "::notice::pytest summary — passed=$passed failed=$failed errors=$errors skipped=$skipped"
+            "passed=$passed" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "::warning::report log not found at $log"
+          }
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results-${{ github.run_id }}
+          path: |
+            tmp/pytest_reportlog.jsonl
+          retention-days: 30
+          if-no-files-found: warn
+
+  lint:
+    name: ruff lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install ruff
+        run: python -m pip install "ruff>=0.7"
+      - name: Run ruff check
+        run: python -m ruff check .

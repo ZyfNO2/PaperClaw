@@ -1,0 +1,153 @@
+{
+  "stop_reason": "TeamStopReason.ALL_TASKS_COMPLETED",
+  "task_results": {
+    "write_b": {
+      "task_id": "write_b",
+      "status": "completed",
+      "summary": "wrote b.py",
+      "changed_files": [
+        "src/b.py"
+      ],
+      "artifact_ids": [],
+      "verification_result": null,
+      "unresolved_items": [],
+      "handoff_notes": [
+        "steps=3"
+      ]
+    },
+    "write_a": {
+      "task_id": "write_a",
+      "status": "completed",
+      "summary": "wrote a.py",
+      "changed_files": [
+        "src/a.py"
+      ],
+      "artifact_ids": [],
+      "verification_result": null,
+      "unresolved_items": [],
+      "handoff_notes": [
+        "steps=3"
+      ]
+    }
+  },
+  "review_findings": [],
+  "summary": "stop=all_tasks_completed, completed=2/2, findings=0, fix_rounds=0",
+  "trace_events": [
+    {
+      "event_id": "evt-1aa25f7042c9",
+      "event_type": "team.started",
+      "schema_version": "v1",
+      "run_id": "team-75579550be80",
+      "agent_id": "coordinator",
+      "task_id": "root",
+      "sequence": 1,
+      "payload": {
+        "user_goal": "write two files in parallel",
+        "task_count": 2
+      },
+      "timestamp": "2026-07-13T13:31:17.902164+00:00"
+    },
+    {
+      "event_id": "evt-e952c3641a7f",
+      "event_type": "task.assigned",
+      "schema_version": "v1",
+      "run_id": "team-75579550be80",
+      "agent_id": "worker-0",
+      "task_id": "write_a",
+      "sequence": 2,
+      "payload": {
+        "title": "write a",
+        "objective": "write file a.py"
+      },
+      "timestamp": "2026-07-13T13:31:17.903690+00:00"
+    },
+    {
+      "event_id": "evt-d4645836fff4",
+      "event_type": "task.assigned",
+      "schema_version": "v1",
+      "run_id": "team-75579550be80",
+      "agent_id": "worker-1",
+      "task_id": "write_b",
+      "sequence": 3,
+      "payload": {
+        "title": "write b",
+        "objective": "write file b.py"
+      },
+      "timestamp": "2026-07-13T13:31:17.904258+00:00"
+    },
+    {
+      "event_id": "evt-3d1817e4e39f",
+      "event_type": "task.completed",
+      "schema_version": "v1",
+      "run_id": "team-75579550be80",
+      "agent_id": "worker-1",
+      "task_id": "write_b",
+      "sequence": 4,
+      "payload": {
+        "status": "completed",
+        "changed_files": [
+          "src/b.py"
+        ]
+      },
+      "timestamp": "2026-07-13T13:31:19.482408+00:00"
+    },
+    {
+      "event_id": "evt-39a7d93ecd46",
+      "event_type": "task.completed",
+      "schema_version": "v1",
+      "run_id": "team-75579550be80",
+      "agent_id": "worker-0",
+      "task_id": "write_a",
+      "sequence": 5,
+      "payload": {
+        "status": "completed",
+        "changed_files": [
+          "src/a.py"
+        ]
+      },
+      "timestamp": "2026-07-13T13:31:19.516391+00:00"
+    },
+    {
+      "event_id": "evt-78277661a95d",
+      "event_type": "review.started",
+      "schema_version": "v1",
+      "run_id": "team-75579550be80",
+      "agent_id": "reviewer-0",
+      "task_id": "review",
+      "sequence": 6,
+      "payload": {
+        "user_goal": "write two files in parallel",
+        "task_count": 2
+      },
+      "timestamp": "2026-07-13T13:31:19.566919+00:00"
+    },
+    {
+      "event_id": "evt-978597e04a6e",
+      "event_type": "review.completed",
+      "schema_version": "v1",
+      "run_id": "team-75579550be80",
+      "agent_id": "reviewer-0",
+      "task_id": "review",
+      "sequence": 7,
+      "payload": {
+        "verdict": "approve",
+        "finding_count": 0
+      },
+      "timestamp": "2026-07-13T13:31:19.567937+00:00"
+    },
+    {
+      "event_id": "evt-f12f7b329cab",
+      "event_type": "team.stopped",
+      "schema_version": "v1",
+      "run_id": "team-75579550be80",
+      "agent_id": "coordinator",
+      "task_id": "root",
+      "sequence": 8,
+      "payload": {
+        "stop_reason": "TeamStopReason.ALL_TASKS_COMPLETED",
+        "summary": "stop=all_tasks_completed, completed=2/2, findings=0, fix_rounds=0"
+      },
+      "timestamp": "2026-07-13T13:31:19.567937+00:00"
+    }
+  ]
+}
