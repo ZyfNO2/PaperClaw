@@ -33,6 +33,7 @@ from paperclaw.runtime import (
     RESUME_REGISTRY_MISMATCH,
     CompletedNode,
     FlowResumePoint,
+    InMemoryCheckpointWriter,
     InstrumentedFlowRunner,
     NodeIdentityMissingError,
     NodeRegistry,
@@ -322,11 +323,10 @@ class TestEventOrder:
     def test_checkpoint_committed_emitted_when_writer_present(self):
         flow, registry = _build_linear_flow(["a", "b"])
         sink = RecordingSink()
-        writer_calls: list[dict] = []
-
-        def writer(cp: dict) -> None:
-            writer_calls.append(cp)
-
+        # P0-C: the writer is now a CheckpointWriter Protocol object, not a
+        # bare callable. InMemoryCheckpointWriter records the Checkpoint
+        # objects so the test can assert on their fields.
+        writer = InMemoryCheckpointWriter()
         services = RuntimeServices(
             event_sink=sink,
             node_registry=registry,
@@ -337,7 +337,11 @@ class TestEventOrder:
 
         types = set(sink.event_types)
         assert "checkpoint.committed" in types
-        assert len(writer_calls) == 2  # one per node
+        assert len(writer.committed) == 2  # one per node
+        # Each committed Checkpoint records the node identity triple.
+        assert writer.committed[0].completed_node_id == "a"
+        assert writer.committed[0].next_node_id == "b"
+        assert writer.committed[1].completed_node_id == "b"
 
 
 # ---------------------------------------------------------------------------

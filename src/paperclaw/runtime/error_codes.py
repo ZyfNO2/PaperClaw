@@ -52,6 +52,24 @@ RESUME_REGISTRY_MISMATCH = "RESUME_REGISTRY_MISMATCH"
 #: token is checked between nodes, not inside exec).
 CANCELLATION_REQUESTED = "CANCELLATION_REQUESTED"
 
+#: Addendum P0-C §5.3: a Checkpoint exists but the runtime cannot safely
+#: auto-resume because either (a) a node's ``node.started`` event has no
+#: matching ``node.completed`` (the node crashed mid-execution), or (b) a
+#: mutating side-effect operation is in a non-terminal state
+#: (``operation.started`` without ``committed`` / ``failed`` /
+#: ``unknown_outcome``). Resume MUST stop and a human or higher-level
+#: recovery process must reconcile the partial state before re-entering
+#: the Flow. NEVER auto-replay a mutating operation (Addendum §5.3).
+RECOVERY_REQUIRED = "RECOVERY_REQUIRED"
+
+#: Addendum P0-C §5.4: the Checkpoint's ``checkpoint_registry_hash`` does
+#: not match the current NodeRegistry hash, or ``next_node_id`` is not
+#: present in the current registry. The Flow definition has changed since
+#: the Checkpoint was written; resume MUST stop and surface both hashes
+#: (or the missing node id). Silently mapping to the "closest" node name is
+#: explicitly forbidden. Full cross-version migration is a later version.
+INCOMPATIBLE_FLOW_DEFINITION = "INCOMPATIBLE_FLOW_DEFINITION"
+
 
 #: All stable error codes exported by this module. Artifact generators and
 #: contract tests iterate over this tuple to verify completeness.
@@ -62,6 +80,8 @@ ALL_ERROR_CODES: tuple[str, ...] = (
     NODE_IDENTITY_MISSING,
     RESUME_REGISTRY_MISMATCH,
     CANCELLATION_REQUESTED,
+    RECOVERY_REQUIRED,
+    INCOMPATIBLE_FLOW_DEFINITION,
 )
 
 
