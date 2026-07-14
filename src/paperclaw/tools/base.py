@@ -30,6 +30,19 @@ class ToolValidationError(ValueError):
     pass
 
 
+class ToolControlFlow(RuntimeError):
+    """Internal signal that must cross safe_execute without becoming a ToolResult.
+
+    v0.05 uses this only for cooperative stop and hard call-budget exits at
+    the tool boundary. It is not a user-facing tool failure and must never be
+    swallowed as ``internal_error``.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class Tool(Protocol):
     """Stable tool contract for registry lookup and flow-safe execution."""
 
@@ -54,11 +67,12 @@ def truncate(text: str, limit: int) -> tuple[str, bool]:
 
 
 def safe_execute(tool: Tool, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
-    """Convert expected and unexpected tool failures into ToolResult so one bad tool call cannot crash the agent loop."""
-
+    """Convert tool failures to ToolResult while preserving runtime signals."""
     try:
         tool.validate(arguments)
         return tool.execute(arguments, context)
+    except ToolControlFlow:
+        raise
     except ToolValidationError as exc:
         return ToolResult(False, str(exc), "validation_error")
     except Exception as exc:  # defensive boundary: tools must not crash the flow
