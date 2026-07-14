@@ -166,6 +166,16 @@ def _run_tui(args: argparse.Namespace) -> int:
     )
 
 
+def _run_doctor(args: argparse.Namespace) -> int:
+    """Run non-mutating SQLite diagnostics and print one structured report."""
+
+    from paperclaw.context.health import inspect_sqlite_database
+
+    report = inspect_sqlite_database(args.database, full=args.full)
+    console_print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+    return 0 if report.ok else 1
+
+
 def _load_team_plan(plan_path: Path) -> tuple[str, list[AgentTask], TeamBudget]:
     """Load a JSON team plan: {goal, tasks: [...], budget: {...}}."""
     data = json.loads(plan_path.read_text(encoding="utf-8"))
@@ -239,6 +249,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Skip Textual and use the standard CLI (requires task)",
     )
 
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Inspect an existing PaperClaw SQLite database without modifying it",
+    )
+    doctor_parser.add_argument("--database", type=Path, required=True)
+    doctor_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Run SQLite integrity_check instead of the faster quick_check",
+    )
+
     team_parser = subparsers.add_parser("team", help="Run a MultiAgent Coordinator team from a JSON plan")
     team_parser.add_argument("--plan", type=Path, required=True)
     team_parser.add_argument("--workspace", type=Path, default=Path.cwd())
@@ -256,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     if argv is None:
         argv = sys.argv[1:]
-    if argv and argv[0] not in {"agent", "team", "tui", "-h", "--help", "--version", "-v"}:
+    if argv and argv[0] not in {"agent", "team", "tui", "doctor", "-h", "--help", "--version", "-v"}:
         argv = ["agent", *argv]
 
     args = parser.parse_args(argv)
@@ -266,6 +287,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_team(args)
     if args.command == "tui":
         return _run_tui(args)
+    if args.command == "doctor":
+        return _run_doctor(args)
     return _run_agent(args)
 
 
