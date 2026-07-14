@@ -6,57 +6,15 @@ from typing import Any, Iterator
 
 import pytest
 
-from paperclaw.models.base import ModelTurn
-
-
-class FakeModel:
-    def __init__(self, actions: list[dict | str]) -> None:
-        self.actions = iter(actions)
-        self.prompts: list[str] = []
-
-    def complete(self, prompt: str) -> str:
-        self.prompts.append(prompt)
-        value = next(self.actions)
-        content = value if isinstance(value, str) else json.dumps(value)
-        return ModelTurn(content=content)
-
-
-def action(name: str, arguments: dict, reason: str = "test") -> dict:
-    return {"action": name, "arguments": arguments, "reason": reason}
-
-
-def done(result: str = "complete", verification: str = "verified by command") -> dict:
-    return action("done", {"result": result, "verification": verification, "remaining_issues": []})
-
-
-def reflect(decision: str, *, reason_code: str = "test_decision", confidence: float = 0.9, next_action: str | None = None, evidence_ids: list[str] | None = None, failed_claim_ids: list[str] | None = None) -> dict:
-    return {
-        "decision": decision,
-        "evidence_ids": evidence_ids or [],
-        "failed_claim_ids": failed_claim_ids or [],
-        "next_action": next_action,
-        "reason_code": reason_code,
-        "confidence": confidence,
-    }
-
 
 # ---------------------------------------------------------------------------
 # v0.04 demo trace normalization
 # ---------------------------------------------------------------------------
 #
-# The v0.04 MVP demo (tests/integration/test_v0_04_mvp_demo.py) writes a
-# reviewable JSON artifact into the repo so reviewers can inspect the
-# five-stage flow without re-running pytest. Runtime-generated identifiers
-# (snapshot_id, summary-<digest>, started_at, the pytest temp path) would
-# dirty the worktree after every run, so this fixture normalizes those
-# volatile fields to stable placeholders after the test passes.
-#
-# The fixture lives in tests/conftest.py (NOT tests/integration/conftest.py)
-# on purpose: an integration-dir conftest would shadow this module on
-# ``from conftest import ...`` resolution and break test_cli_observability
-# / test_minimal_react_loop, which import FakeModel / action / done /
-# reflect from here. Keeping everything in the parent conftest preserves
-# both the helpers and the normalize behavior without shadowing.
+# Reusable test doubles live in ``tests.helpers`` rather than in a conftest
+# module. Pytest resolves conftest files by directory scope, so importing from
+# a bare ``conftest`` name is ambiguous when nested test directories define
+# their own plugins.
 
 _TRACE_PATH = (
     Path(__file__).resolve().parents[1]
@@ -100,51 +58,26 @@ def _normalize_trace(trace: dict[str, Any]) -> dict[str, Any]:
 
 @pytest.hookimpl(hookwrapper=True, tryfirst=True)
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo) -> Any:
-    """Attach the per-phase report onto the item so teardown-stage fixtures
-    can tell whether the test itself passed.
-
-    Without this hook, an autouse teardown fixture cannot distinguish a
-    passing test from a failing one. That matters here because the
-    v0.04 demo fixture must NOT raise ``pytest.fail`` when the original
-    test already failed — masking the real exception with a cleanup
-    error makes the failure mode harder to diagnose.
-    """
+    """Attach each phase report so teardown can preserve the primary failure."""
     outcome = yield
-    rep = outcome.get_result()
-    setattr(item, f"rep_{rep.when}", rep)
+    report = outcome.get_result()
+    setattr(item, f"rep_{report.when}", report)
 
 
 @pytest.fixture(autouse=True)
 def normalize_v0_04_demo_trace(request: pytest.FixtureRequest) -> Iterator[None]:
-    """Normalize the tracked v0.04 demo artifact after its test runs.
-
-    Only normalizes when the test passed. If the test failed, the raw
-    exception is the signal reviewers need — running normalize or
-    raising ``pytest.fail`` here would mask the original failure with a
-    second, less informative error.
-
-    The fixture is autouse across the whole test tree but opts out by
-    node name for anything other than the v0.04 demo, so other tests pay
-    only the cost of one early-return.
-    """
+    """Normalize the tracked demo trace only after its test passes."""
     yield
 
-    # Don't touch the trace if the test itself failed — the original
-    # exception must stay visible.
-    rep_call = getattr(request.node, "rep_call", None)
-    if rep_call is None or rep_call.failed:
+    report = getattr(request.node, "rep_call", None)
+    if report is None or report.failed:
         return
 
-    # Only the v0.04 demo writes this trace; other tests opt out by name.
     if request.node.name != "test_v0_04_mvp_demo":
         return
 
     if not _TRACE_PATH.exists():
-        # Test passed but the trace wasn't written — that's a real bug
-        # worth surfacing as a separate, clearly-labeled failure.
-        pytest.fail(
-            f"test passed but did not write expected trace at {_TRACE_PATH}"
-        )
+        pytest.fail(f"test passed but did not write expected trace at {_TRACE_PATH}")
 
     with _TRACE_PATH.open("r", encoding="utf-8") as trace_file:
         trace = json.load(trace_file)
