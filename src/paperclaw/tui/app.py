@@ -14,7 +14,13 @@ from textual.widgets import Input
 from paperclaw.harness import RunLimits, RunResult
 
 from .state import EventReducer
-from .widgets import ChatLog, PromptInput, RunStatus, ToolTimeline
+from .widgets import (
+    ChatLog,
+    PromptInput,
+    RunStatus,
+    ToolTimeline,
+    VerificationInspector,
+)
 
 EventHandler = Callable[[str, dict], None]
 
@@ -73,11 +79,13 @@ class PaperClawApp(App[int]):
             with Vertical(id="chat-pane"):
                 yield ChatLog(id="chat-log", wrap=True, highlight=False, markup=True)
             with Vertical(id="timeline-pane"):
+                yield VerificationInspector(id="verification-inspector")
                 yield ToolTimeline(id="tool-timeline", wrap=True, highlight=False)
         yield PromptInput(id="prompt-input")
 
     def on_mount(self) -> None:
         self.query_one(RunStatus).show_snapshot(self._reducer.snapshot)
+        self.query_one(VerificationInspector).reset()
         self._apply_responsive_layout(self.size.width)
         self.query_one(PromptInput).focus()
         if self._initial_task:
@@ -117,6 +125,7 @@ class PaperClawApp(App[int]):
             self._quit_confirmation_pending = False
             self._chat.clear()
             self._timeline.clear()
+            self._verification.reset()
             self._status.show_snapshot(self._reducer.snapshot)
             self._chat.add_system("Started a new conversation.")
         elif command == "/cancel":
@@ -175,6 +184,8 @@ class PaperClawApp(App[int]):
         self._status.show_snapshot(reduced.snapshot)
         if reduced.timeline_text:
             self._timeline.add_event(reduced.timeline_text, known=reduced.known_event)
+        if message.event_type == "verification.completed":
+            self._verification.show_result(message.payload)
 
     @on(RunFinishedMessage)
     def on_run_finished(self, message: RunFinishedMessage) -> None:
@@ -246,6 +257,10 @@ class PaperClawApp(App[int]):
     @property
     def _timeline(self) -> ToolTimeline:
         return self.query_one(ToolTimeline)
+
+    @property
+    def _verification(self) -> VerificationInspector:
+        return self.query_one(VerificationInspector)
 
     @property
     def _status(self) -> RunStatus:

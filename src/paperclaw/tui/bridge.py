@@ -9,7 +9,7 @@ runtime contract. Only explicitly safe, structured legacy events are admitted.
 from __future__ import annotations
 
 from threading import RLock
-from typing import Callable
+from typing import Any, Callable, Mapping
 
 EventHandler = Callable[[str, dict], None]
 
@@ -44,10 +44,11 @@ class TUIEventBridge:
         mapped = LEGACY_EVENT_MAP.get(event_type)
         if mapped is None:
             return
+        safe_payload = _safe_verification_payload(payload)
         with self._lock:
             if self._run_id is None:
                 return
-            envelope = self._next_envelope(payload, run_id=self._run_id)
+            envelope = self._next_envelope(safe_payload, run_id=self._run_id)
         self._handler(mapped, envelope)
 
     def _next_envelope(self, payload: dict, *, run_id: str) -> dict:
@@ -59,3 +60,36 @@ class TUIEventBridge:
         envelope["run_id"] = run_id
         envelope["sequence"] = self._sequence
         return envelope
+
+
+def _safe_verification_payload(payload: Mapping[str, Any]) -> dict:
+    """Keep aggregate verification facts while dropping raw observed outputs."""
+
+    result = payload.get("result")
+    result_map = result if isinstance(result, Mapping) else {}
+    return {
+        "step": payload.get("step"),
+        "result": {
+            "status": _text(result_map.get("status")),
+            "passed_claim_ids": _string_list(result_map.get("passed_claim_ids")),
+            "failed_claim_ids": _string_list(result_map.get("failed_claim_ids")),
+            "uncovered_claim_ids": _string_list(result_map.get("uncovered_claim_ids")),
+            "verified_after_last_write": result_map.get("verified_after_last_write")
+            if isinstance(result_map.get("verified_after_last_write"), bool)
+            else None,
+            "summary": _text(result_map.get("summary"), limit=500),
+        },
+    }
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(item)[:200] for item in value if str(item).strip()]
+
+
+def _text(value: Any, *, limit: int = 200) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text[:limit] if text else None

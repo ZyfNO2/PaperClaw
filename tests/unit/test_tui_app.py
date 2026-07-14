@@ -3,7 +3,13 @@ import threading
 
 from paperclaw.harness import RunLimits, RunResult
 from paperclaw.tui.app import PaperClawApp
-from paperclaw.tui.widgets import ChatLog, PromptInput, RunStatus, ToolTimeline
+from paperclaw.tui.widgets import (
+    ChatLog,
+    PromptInput,
+    RunStatus,
+    ToolTimeline,
+    VerificationInspector,
+)
 
 
 class FakeEngine:
@@ -22,7 +28,14 @@ class FakeEngine:
             {
                 "run_id": "run-test",
                 "sequence": 3,
-                "result": {"status": "passed"},
+                "result": {
+                    "status": "passed",
+                    "passed_claim_ids": ["claim-1"],
+                    "failed_claim_ids": [],
+                    "uncovered_claim_ids": [],
+                    "verified_after_last_write": True,
+                    "summary": "all checks passed",
+                },
             },
         )
         self.handler(
@@ -92,6 +105,7 @@ def test_headless_launch_submit_and_narrow_layout() -> None:
             assert app.query_one(PromptInput)
             assert app.query_one(RunStatus)
             assert app.query_one(ToolTimeline)
+            assert app.query_one(VerificationInspector)
             assert app.query_one("#main").has_class("narrow")
 
             prompt = app.query_one(PromptInput)
@@ -104,6 +118,10 @@ def test_headless_launch_submit_and_narrow_layout() -> None:
                     break
             assert app._reducer.snapshot.status == "completed"
             assert app._reducer.snapshot.last_sequence == 4
+            verification = app.query_one(VerificationInspector).snapshot
+            assert verification.status == "passed"
+            assert verification.passed == 1
+            assert verification.verified_after_last_write is True
 
     asyncio.run(scenario())
 

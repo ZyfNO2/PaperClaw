@@ -13,7 +13,18 @@ def test_bridge_merges_verification_into_monotonic_ui_sequence() -> None:
         "model.completed", {"run_id": "run-1", "sequence": 2, "call_index": 1}
     )
     bridge.handle_legacy_event(
-        "verification_completed", {"result": {"status": "passed"}}
+        "verification_completed",
+        {
+            "result": {
+                "status": "passed",
+                "passed_claim_ids": ["claim-1"],
+                "failed_claim_ids": [],
+                "uncovered_claim_ids": [],
+                "verified_after_last_write": True,
+                "summary": "all required checks passed",
+                "checks": [{"observed": "raw secret output"}],
+            }
+        },
     )
     bridge.handle_query_event(
         "run.completed", {"run_id": "run-1", "sequence": 3, "status": "completed"}
@@ -27,6 +38,11 @@ def test_bridge_merges_verification_into_monotonic_ui_sequence() -> None:
     ]
     assert [payload["sequence"] for _, payload in events] == [1, 2, 3, 4]
     assert events[-1][1]["query_sequence"] == 3
+    verification = events[2][1]["result"]
+    assert verification["status"] == "passed"
+    assert verification["passed_claim_ids"] == ["claim-1"]
+    assert "checks" not in verification
+    assert "raw secret output" not in str(events[2][1])
 
 
 def test_bridge_drops_hidden_or_unmapped_legacy_events() -> None:

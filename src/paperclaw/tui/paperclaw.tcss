@@ -38,6 +38,12 @@ Screen {
     padding: 0 1;
 }
 
+#verification-inspector {
+    height: 5;
+    padding: 0 1;
+    border-bottom: solid $secondary;
+}
+
 #prompt-input {
     dock: bottom;
 }
