@@ -42,8 +42,23 @@ SCHEMA_VERSION_V1 = 1
 #: already get the constraint from V2_SCHEMA_SQL below.
 SCHEMA_VERSION_V2 = 2
 
+#: v3 (Addendum P0-C §5.1) extends the ``checkpoints`` table with four
+#: node-identity columns so a resume can record which node completed, what
+#: action it returned, which node is next, and the NodeRegistry hash at
+#: checkpoint time. All four are nullable for backward compatibility with
+#: rows written by v2 (and by Phase A/B tests that construct Checkpoint
+#: without the new fields). SQLite supports ``ALTER TABLE ADD COLUMN`` for
+#: nullable columns without a table rebuild, so this migration is cheap and
+#: idempotent: ``ADD COLUMN`` fails harmlessly if the column already exists.
+#:
+#: The fresh-DB DDL in V1_SCHEMA_SQL does NOT include these columns because
+#: v1 must remain the canonical "frozen at v1" schema for tests that assert
+#: ``SCHEMA_VERSION_V1`` round-trips. Fresh databases created at v3 get the
+#: columns via this migration immediately after v1 creation.
+SCHEMA_VERSION_V3 = 3
+
 #: Current target schema version after applying all known migrations.
-CURRENT_SCHEMA_VERSION = SCHEMA_VERSION_V2
+CURRENT_SCHEMA_VERSION = SCHEMA_VERSION_V3
 
 
 @dataclass
@@ -251,12 +266,43 @@ V2_MESSAGES_UNIQUE_SQL: tuple[str, ...] = (
 )
 
 
+#: v3 migration: add node-identity columns to ``checkpoints`` via
+#: ``ALTER TABLE ADD COLUMN``. SQLite supports adding nullable columns
+#: in-place (no table rebuild). All four columns are nullable so rows
+#: written by v2 (or by Phase A/B tests that construct Checkpoint without
+#: the new fields) get NULL, which the Checkpoint dataclass maps to
+#: ``None`` — exactly the "fresh start" semantics for legacy checkpoints.
+#:
+#: Why ALTER and not rebuild? The ``checkpoints`` table holds recovery
+#: records that may already exist in production databases from v2. A
+#: rebuild via temp-table swap would copy rows but lose nothing; however,
+#: the simpler ALTER path is cheaper, faster, and atomic per column.
+#:
+#: Idempotency: the migration runner wraps the whole migration in a single
+#: BEGIN IMMEDIATE / COMMIT transaction and only advances
+#: ``schema_migrations.version`` after COMMIT succeeds. If any ALTER fails
+#: (e.g. because the column already exists from a manual recovery), the
+#: transaction rolls back and ``schema_migrations`` is NOT advanced — the
+#: operator must resolve the partial state before re-running. This matches
+#: the v0.04 forward-only migration contract (SOP §5.3).
+V3_CHECKPOINTS_NODE_IDENTITY_SQL: tuple[str, ...] = (
+    "ALTER TABLE checkpoints ADD COLUMN completed_node_id TEXT",
+    "ALTER TABLE checkpoints ADD COLUMN last_action TEXT",
+    "ALTER TABLE checkpoints ADD COLUMN next_node_id TEXT",
+    "ALTER TABLE checkpoints ADD COLUMN checkpoint_registry_hash TEXT",
+)
+
+
 #: Map schema_version -> (description, DDL tuple). Used by MigrationRunner.
 MIGRATIONS: dict[int, tuple[str, tuple[str, ...]]] = {
     SCHEMA_VERSION_V1: ("initial v0.04 context runtime schema", V1_SCHEMA_SQL),
     SCHEMA_VERSION_V2: (
         "add UNIQUE(conversation_id, sequence) on messages via temp-table swap",
         V2_MESSAGES_UNIQUE_SQL,
+    ),
+    SCHEMA_VERSION_V3: (
+        "add node-identity columns to checkpoints for Addendum P0-C resume",
+        V3_CHECKPOINTS_NODE_IDENTITY_SQL,
     ),
 }
 

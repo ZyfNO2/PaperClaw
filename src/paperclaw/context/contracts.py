@@ -279,6 +279,28 @@ class Checkpoint:
 
     A Checkpoint never overwrites original Evidence; it is a recovery decision
     record, not a state replacement.
+
+    Addendum P0-C (§5.1) extends the v0.04 main SOP §4.6 Checkpoint with four
+    node-identity fields so a resume can decide which node to enter next and
+    detect incompatible Flow definitions:
+
+    - ``completed_node_id``: the stable node_id of the node that just
+      committed. ``None`` means "fresh start, no node has run yet" — the
+      resume path treats this as a recovery signal when paired with a
+      ``node.started`` event that lacks a matching ``node.completed``.
+    - ``last_action``: the transition label returned by the completed node's
+      ``post`` hook. Recorded for traceability; resume does not replay the
+      action, it only uses it for audit.
+    - ``next_node_id``: the stable node_id the runner will enter on resume.
+      Per Addendum §5.3 the resume object is the NEXT node, never a replay
+      of the completed node.
+    - ``checkpoint_registry_hash``: SHA-256 of the NodeRegistry at checkpoint
+      time. A mismatch with the current registry hash means the Flow
+      definition has changed and resume MUST stop (Addendum §5.4).
+
+    All four fields default to ``None`` so existing Checkpoint construction
+    sites (Phase A/B tests) keep working without modification — the v0.04
+    schema stays backward compatible.
     """
 
     checkpoint_id: str
@@ -291,6 +313,14 @@ class Checkpoint:
     state_hash: str
     schema_version: int
     created_at: str
+    # Addendum P0-C §5.1 extensions. Defaults keep the v0.04 main SOP §4.6
+    # construction sites backward compatible — older code that does not know
+    # about node identity still produces valid Checkpoints, and the resume
+    # decision treats a missing ``next_node_id`` as "fresh start".
+    completed_node_id: str | None = None
+    last_action: str | None = None
+    next_node_id: str | None = None
+    checkpoint_registry_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

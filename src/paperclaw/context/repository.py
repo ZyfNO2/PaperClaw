@@ -805,20 +805,10 @@ class SQLiteRepository:
             self._exec_txn(
                 "INSERT INTO checkpoints (checkpoint_id, run_id, last_committed_sequence, "
                 "task_state_revision, budget_state, pending_operations, file_snapshots, "
-                "state_hash, schema_version, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    checkpoint.checkpoint_id,
-                    checkpoint.run_id,
-                    int(checkpoint.last_committed_sequence),
-                    int(checkpoint.task_state_revision),
-                    json.dumps(checkpoint.budget_state),
-                    json.dumps(list(checkpoint.pending_operations)),
-                    json.dumps(list(checkpoint.file_snapshots)),
-                    checkpoint.state_hash,
-                    int(checkpoint.schema_version),
-                    checkpoint.created_at,
-                ),
+                "state_hash, schema_version, created_at, "
+                "completed_node_id, last_action, next_node_id, checkpoint_registry_hash) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                self._checkpoint_to_row(checkpoint),
             )
 
     def latest_checkpoint(self, run_id: str) -> Checkpoint | None:
@@ -829,18 +819,7 @@ class SQLiteRepository:
         ).fetchone()
         if row is None:
             return None
-        return Checkpoint(
-            checkpoint_id=row["checkpoint_id"],
-            run_id=row["run_id"],
-            last_committed_sequence=int(row["last_committed_sequence"]),
-            task_state_revision=int(row["task_state_revision"]),
-            budget_state=json.loads(row["budget_state"]),
-            pending_operations=tuple(json.loads(row["pending_operations"])),
-            file_snapshots=tuple(json.loads(row["file_snapshots"])),
-            state_hash=row["state_hash"],
-            schema_version=int(row["schema_version"]),
-            created_at=row["created_at"],
-        )
+        return self._row_to_checkpoint(row)
 
     # ------------------------------------------------------------------
     # idempotency ledger
@@ -999,20 +978,10 @@ class SQLiteRepository:
                     self._conn.execute(
                         "INSERT INTO checkpoints (checkpoint_id, run_id, last_committed_sequence, "
                         "task_state_revision, budget_state, pending_operations, file_snapshots, "
-                        "state_hash, schema_version, created_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (
-                            checkpoint.checkpoint_id,
-                            checkpoint.run_id,
-                            int(checkpoint.last_committed_sequence),
-                            int(checkpoint.task_state_revision),
-                            json.dumps(checkpoint.budget_state),
-                            json.dumps(list(checkpoint.pending_operations)),
-                            json.dumps(list(checkpoint.file_snapshots)),
-                            checkpoint.state_hash,
-                            int(checkpoint.schema_version),
-                            checkpoint.created_at,
-                        ),
+                        "state_hash, schema_version, created_at, "
+                        "completed_node_id, last_action, next_node_id, checkpoint_registry_hash) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        self._checkpoint_to_row(checkpoint),
                     )
 
                 self._conn.execute("COMMIT")
@@ -1105,6 +1074,63 @@ class SQLiteRepository:
             int(item.estimated_tokens),
             json.dumps(item.metadata),
             utc_now_iso(),
+        )
+
+    @staticmethod
+    def _checkpoint_to_row(checkpoint: Checkpoint) -> tuple[Any, ...]:
+        """Serialize a Checkpoint to the row tuple matching the INSERT in
+        ``insert_checkpoint`` / ``commit_runtime_step``.
+
+        The four P0-C node-identity columns are appended after the original
+        v1 columns. They are nullable; ``None`` maps to SQL NULL. This keeps
+        the row layout stable for callers that read the v1 columns only.
+        """
+        return (
+            checkpoint.checkpoint_id,
+            checkpoint.run_id,
+            int(checkpoint.last_committed_sequence),
+            int(checkpoint.task_state_revision),
+            json.dumps(checkpoint.budget_state),
+            json.dumps(list(checkpoint.pending_operations)),
+            json.dumps(list(checkpoint.file_snapshots)),
+            checkpoint.state_hash,
+            int(checkpoint.schema_version),
+            checkpoint.created_at,
+            checkpoint.completed_node_id,
+            checkpoint.last_action,
+            checkpoint.next_node_id,
+            checkpoint.checkpoint_registry_hash,
+        )
+
+    @staticmethod
+    def _row_to_checkpoint(row: sqlite3.Row) -> Checkpoint:
+        """Reconstruct a Checkpoint from a ``checkpoints`` row.
+
+        Uses ``row.keys()``-based access so the helper works whether the row
+        was produced by ``SELECT *`` (includes v3 columns) or by a narrower
+        projection (legacy callers). Missing P0-C columns default to None,
+        matching the dataclass defaults.
+        """
+        keys = set(row.keys()) if hasattr(row, "keys") else set()
+        return Checkpoint(
+            checkpoint_id=row["checkpoint_id"],
+            run_id=row["run_id"],
+            last_committed_sequence=int(row["last_committed_sequence"]),
+            task_state_revision=int(row["task_state_revision"]),
+            budget_state=json.loads(row["budget_state"]),
+            pending_operations=tuple(json.loads(row["pending_operations"])),
+            file_snapshots=tuple(json.loads(row["file_snapshots"])),
+            state_hash=row["state_hash"],
+            schema_version=int(row["schema_version"]),
+            created_at=row["created_at"],
+            completed_node_id=row["completed_node_id"] if "completed_node_id" in keys else None,
+            last_action=row["last_action"] if "last_action" in keys else None,
+            next_node_id=row["next_node_id"] if "next_node_id" in keys else None,
+            checkpoint_registry_hash=(
+                row["checkpoint_registry_hash"]
+                if "checkpoint_registry_hash" in keys
+                else None
+            ),
         )
 
     @staticmethod
