@@ -4,7 +4,7 @@
   "status": "completed",
   "sop_section": "§10 / §11 Phase E",
   "commits": [
-    "feat(v0.04-E): ResumeCoordinator + FileSnapshotVerifier + build_pending_operations (pending)"
+    "4968b9c feat(v0.04-E): ResumeCoordinator + FileSnapshotVerifier + build_pending_operations"
   ],
   "files": {
     "created": [
@@ -68,7 +68,7 @@
     "R-02_pending_bash": "test_r02_pending_bash_returns_recovery_required — operation.started without terminal → recovery_required",
     "R-03_pending_file_write": "test_r03_pending_file_write_returns_recovery_required — file_write operation.started without terminal → recovery_required",
     "R-04_external_file_change": "test_r04_external_file_change_returns_recovery_required — file content modified after snapshot → file_conflicts populated + recovery_required",
-    "R-05_corrupt_checkpoint": "test_r05_no_checkpoint_returns_recovery_required — no Checkpoint exists → recovery_required with 'no Checkpoint exists' reason",
+    "R-05_corrupt_checkpoint": "DEFERRED to v0.04.1 (E-DEBT-4) — SOP §12 R-05 defines 'Corrupt checkpoint — state_hash 失败'. state_hash recomputation requires a helper that knows the original state at checkpoint time. Current test_no_checkpoint_returns_recovery_required covers the related 'no Checkpoint exists' case (SOP §10.1 condition 1 failure), which is a distinct scenario.",
     "R-06_active_worker_marker": "test_r06_active_worker_returns_recovery_required — TaskState status='active' → recovery_required (detection only, no recovery)"
   },
   "sop_10_boundary_compliance": {
@@ -81,7 +81,7 @@
       "condition_6_schema_version_compatible": "SUPPORTED_CHECKPOINT_SCHEMA_VERSIONS = {1}",
       "condition_7_budget_state_valid": "Trivially satisfied — v0.04 Checkpoints carry budget_state={} until Phase F wires real budget tracking"
     },
-    "10.2_must_stop_recovery_required": "Negation of 10.1 plus RECOVERY_REQUIRED on any file hash mismatch, pending operation in non-terminal state, or active Worker marker",
+    "10.2_must_stop_recovery_required": "Negation of 10.1 plus RECOVERY_REQUIRED on any file hash mismatch, pending operation in non-terminal state, or active Worker marker. Condition 7 (lease 状态无法确认) is NOT detected — see E-DEBT-5.",
     "10.3_v0.04_does_not_promise": {
       "no_auto_replay_mutating_tool": "Coordinator never calls a mutating tool — only computes decision",
       "no_external_api_success_judgment": "Deferred to v0.04.1",
@@ -125,8 +125,14 @@
     {
       "id": "E-DEBT-4",
       "description": "state_hash validation (R-05 in test matrix mentions 'Corrupt checkpoint — state_hash 失败')",
-      "impact": "Coordinator does not recompute state_hash from current state and compare. A Checkpoint with a tampered state_hash would not be detected. The current R-05 test covers 'no Checkpoint exists', which is the more common failure mode.",
+      "impact": "Coordinator does not recompute state_hash from current state and compare. A Checkpoint with a tampered state_hash would not be detected. The current test_no_checkpoint_returns_recovery_required covers 'no Checkpoint exists', which is the more common failure mode but is a distinct scenario from R-05.",
       "deferred_to": "v0.04.1 — needs a state_hash recomputation helper that knows the original state at checkpoint time"
+    },
+    {
+      "id": "E-DEBT-5",
+      "description": "Lease status detection (SOP §10.2 condition 7: 'lease 状态无法确认')",
+      "impact": "ResumeCoordinator does not check FileLease or other lease states. A run that crashed while holding an active lease would not be detected at resume time. v0.04 does not persist leases (SOP §10.3 defers FileLease recovery), but §10.2 requires DETECTION of uncertain lease state — detection and recovery are distinct.",
+      "deferred_to": "v0.04.1 — needs FileLease persistence layer and a lease-state inspector integrated into ResumeCoordinator._detect_active_workers or a parallel _detect_uncertain_leases method"
     }
   ]
 }

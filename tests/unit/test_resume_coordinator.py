@@ -667,10 +667,18 @@ class TestResumeCoordinatorDecideResume:
     # R-05: Corrupt/missing checkpoint — recovery_required
     # ------------------------------------------------------------------
 
-    def test_r05_no_checkpoint_returns_recovery_required(self, session):
-        """R-05: no Checkpoint exists for the run →
+    def test_no_checkpoint_returns_recovery_required(self, session):
+        """No Checkpoint exists for the run →
         ``recovery_required`` with a reason mentioning "no Checkpoint
-        exists". Resume cannot proceed without a safe step boundary."""
+        exists". Resume cannot proceed without a safe step boundary.
+
+        Note: SOP §12 R-05 defines "Corrupt checkpoint — state_hash
+        failure". That state_hash recomputation case is deferred to
+        v0.04.1 (E-DEBT-4 in resume_boundary.json) because it requires
+        a state-hash recomputation helper that knows the original state
+        at checkpoint time. This test covers the related but distinct
+        case "no Checkpoint exists at all", which is SOP §10.1
+        condition 1 failure."""
         registry = _build_registry(["next_node"])
 
         coordinator = ResumeCoordinator(registry=registry)
