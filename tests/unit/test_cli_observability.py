@@ -1,8 +1,8 @@
 import threading
 from pathlib import Path
 
-from conftest import FakeModel, action, done
 from paperclaw.agent.flow import AgentRuntime
+from tests.helpers import FakeModel, action, done
 
 
 def test_runtime_emits_tool_events(tmp_path: Path) -> None:

@@ -25,3 +25,18 @@ include = ["paperclaw*", "pocketflow*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+extend-exclude = ["src/pocketflow"]
+
+[tool.ruff.lint]
+# Bootstrap CI with correctness-critical rules. The repository predates the
+# Ruff gate and still contains a large unused-import/style backlog; those are
+# cleanup debt, not reasons to disable syntax/undefined-name protection.
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.ruff.lint.per-file-ignores]
+# Postponed annotations make this local test-only CoordinatorResult reference
+# runtime-safe. Keep the exception narrow rather than disabling F821 globally.
+"tests/unit/test_multiagent_coordinator.py" = ["F821"]
