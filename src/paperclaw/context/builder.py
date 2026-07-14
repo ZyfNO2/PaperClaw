@@ -213,8 +213,19 @@ class ContextBuilder:
     ``SQLiteRepository`` is via its writer RLock).
     """
 
-    def __init__(self, repo: Repository):
+    def __init__(self, repo: Repository, compaction_policy: Any = None):
+        """Initialize the builder.
+
+        ``compaction_policy`` accepts a ``CompactionPolicy`` instance
+        (or any object with a compatible ``compact`` signature). It
+        defaults to ``None`` and is lazily instantiated on first use to
+        avoid a circular import (``compaction`` imports
+        ``ContextItem`` from ``contracts``, but ``builder`` imports
+        ``CompactionPolicy`` from ``compaction`` — the lazy import breaks
+        the cycle cleanly without a shared ``_internal`` module).
+        """
         self._repo = repo
+        self._compaction_policy = compaction_policy
 
     # -- public API ---------------------------------------------------
 
@@ -304,12 +315,72 @@ class ContextBuilder:
         )
         excluded.extend(budget_excluded)
 
-        # Step 10: compact if required. v0.04 stub — Phase D injects a
-        # real CompactionPolicy here. The stub records whether compaction
-        # would have been triggered so Phase D can wire off this signal.
-        compaction_triggered = self._maybe_compact_stub(
-            selected, excluded, usable
+        # Step 10: compact if required (Phase D). The lazy import avoids
+        # a circular dependency at module load time: ``compaction`` imports
+        # ``ContextItem`` from ``contracts`` (no cycle), but ``builder`` and
+        # ``compaction`` reference each other's symbols. Importing here —
+        # inside the build method — keeps the cycle out of the import graph.
+        compaction_result = self._run_compaction(
+            selected, budget_excluded, budget, view, run_id, at_sequence
         )
+        if compaction_result is not None:
+            outcome, result = compaction_result
+            # Persist summary items so future builds see the compacted
+            # state (otherwise the next build would re-compact the same
+            # source items, causing drift — D6 invariant).
+            if result is not None:
+                # ``outcome.final_selected`` already contains the summaries;
+                # we only need to persist the new summary items, not the
+                # already-persisted originals.
+                existing_ids = {item.item_id for item in selected}
+                new_summaries = [
+                    item
+                    for item in outcome.final_selected
+                    if item.item_id not in existing_ids
+                ]
+                if new_summaries:
+                    self._repo.insert_context_items(new_summaries)
+            selected = outcome.final_selected
+            # Record the compaction in the exclusion audit trail so
+            # consumers can tell which items were merged into which
+            # summaries. These are NOT exclusion records — they're
+            # ``compaction_summary`` entries that augment the audit.
+            if result is not None:
+                for summary_id in result.summary_item_ids:
+                    excluded.append(
+                        {
+                            "item_id": summary_id,
+                            "exclusion_reason": "compaction_summary",
+                            "detail": (
+                                "summary item absorbing "
+                                f"{len(result.removed_item_ids)} source items"
+                            ),
+                        }
+                    )
+            # Re-check budget after compaction. Per SOP §8.3 clause 4,
+            # "still over budget → context_budget_exhausted, do NOT
+            # silently truncate hard constraints". This means: if
+            # PROTECTED items alone still exceed usable_input, raise.
+            # If only evictable items + summaries push total over
+            # usable, we accept the outcome — compaction already did
+            # its best, and dropping a summary would lose provenance.
+            post_total = sum(item.estimated_tokens for item in selected)
+            if outcome.still_over_budget or post_total > usable:
+                protected_tokens = sum(
+                    item.estimated_tokens
+                    for item in selected
+                    if self._is_protected(item)
+                )
+                # Only raise if protected items themselves exceed budget.
+                # Otherwise accept the compacted result (summaries may
+                # push total slightly over usable, but that's better than
+                # losing provenance or dropping a hard constraint).
+                if protected_tokens > usable:
+                    raise ContextBudgetExhausted(
+                        run_id=run_id,
+                        required=protected_tokens,
+                        usable=usable,
+                    )
 
         # Step 11: render. Produce a deterministic string and hash so
         # the snapshot is reproducible from its source_item_ids alone
@@ -665,20 +736,78 @@ class ContextBuilder:
             tier = 2
         return (tier, item.priority, item.valid_from_sequence, item.item_id)
 
+    def _run_compaction(
+        self,
+        selected: list[ContextItem],
+        budget_excluded: list[dict[str, Any]],
+        budget: ContextBudget,
+        view: RoleContextView,
+        run_id: str,
+        at_sequence: int,
+    ) -> tuple[Any, Any] | None:
+        """Run structured compaction if the first pass evicted items.
+
+        Returns ``(outcome, compaction_result)`` where ``outcome`` is the
+        ``CompactionOutcome`` and ``compaction_result`` is the
+        ``CompactionResult`` (or ``None`` if no compaction was triggered).
+        Returns ``None`` if compaction was not needed (no budget-overflow
+        exclusions in the first pass).
+
+        This method is the Phase D replacement for ``_maybe_compact_stub``.
+        It decides whether to compact based on the presence of
+        ``EXCLUSION_BUDGET`` records in ``budget_excluded``, then delegates
+        to ``CompactionPolicy.compact`` for the actual merging.
+
+        Lazy-imports ``CompactionPolicy`` to break the import cycle.
+        """
+        # Detect whether first-pass selection evicted anything.
+        evicted_ids = {
+            rec["item_id"]
+            for rec in budget_excluded
+            if rec.get("exclusion_reason") == EXCLUSION_BUDGET
+        }
+        if not evicted_ids:
+            return None
+
+        # Reconstruct evicted items. We don't have the original
+        # ``ContextItem`` objects (first-pass selection dropped them),
+        # so we re-fetch from the Repository by run_id and filter by id.
+        # This is O(N) but only runs when compaction is needed — the
+        # happy path (no overflow) returns early above.
+        all_items = self._repo.list_context_items(run_id)
+        evicted_items = [item for item in all_items if item.item_id in evicted_ids]
+
+        # Lazy import to avoid circular dependency.
+        from paperclaw.context.compaction import CompactionPolicy
+
+        policy = self._compaction_policy
+        if policy is None:
+            policy = CompactionPolicy()
+            self._compaction_policy = policy
+
+        outcome = policy.compact(
+            kept=selected,
+            evicted=evicted_items,
+            budget=budget,
+            view=view,
+            run_id=run_id,
+            at_sequence=at_sequence,
+        )
+        return outcome, outcome.result
+
     def _maybe_compact_stub(
         self,
         selected: list[ContextItem],
         excluded: list[dict[str, Any]],
         usable: int,
     ) -> bool:
-        """Phase D injection point.
+        """Legacy Phase C stub. Retained for backward compatibility with
+        tests that directly invoke the stub. Phase D replaces the call
+        site in ``build`` with ``_run_compaction``.
 
-        Returns True if compaction would have been triggered (i.e. the
-        selected set was trimmed by budget). Phase D will replace this
-        with a real ``CompactionPolicy`` that produces a
-        ``CompactionResult`` and re-runs selection.
-
-        v0.04 MVP just records the signal — no items are compacted.
+        .. deprecated:: Phase D
+            Use ``_run_compaction`` instead. This method will be removed
+            in v0.04.1.
         """
         return any(
             rec.get("exclusion_reason") == EXCLUSION_BUDGET

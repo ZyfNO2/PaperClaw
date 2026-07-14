@@ -513,12 +513,12 @@ class RuntimeServices:
 
 ### Addendum Phase P0-C：Checkpoint Wiring
 
-- [ ] PC1. Checkpoint 记录 completed/next node；
-- [ ] PC2. 节点完成后再提交 Checkpoint；
-- [ ] PC3. resume 从 next node 开始；
-- [ ] PC4. 半完成节点进入 recovery_required；
-- [ ] PC5. pending mutating operation 阻止恢复；
-- [ ] PC6. registry hash 不一致阻止恢复。
+- [x] PC1. Checkpoint 记录 completed/next node；
+- [x] PC2. 节点完成后再提交 Checkpoint；
+- [x] PC3. resume 从 next node 开始；
+- [x] PC4. 半完成节点进入 recovery_required；
+- [x] PC5. pending mutating operation 阻止恢复；
+- [x] PC6. registry hash 不一致阻止恢复。
 
 ### Addendum Phase P1-D：Contracts and Integrity
 

@@ -1,0 +1,109 @@
+{
+  "phase": "D",
+  "title": "Budget and Structured Compaction",
+  "sop_reference": "Plan/drafts/PaperClaw_v0.04_ContextSessionSQLite_SOP草案.md §8, §9",
+  "status": "DONE",
+  "commit": "pending",
+  "files_created": [
+    "src/paperclaw/context/compaction.py",
+    "tests/unit/test_compaction.py",
+    "artifacts/v0_04/compaction.json"
+  ],
+  "files_modified": [
+    "src/paperclaw/context/builder.py",
+    "src/paperclaw/context/__init__.py",
+    "Plan/drafts/PaperClaw_v0.04_ContextSessionSQLite_SOP草案.md"
+  ],
+  "public_api": {
+    "compaction_module": "src/paperclaw/context/compaction.py",
+    "classes": [
+      {
+        "name": "TokenEstimator",
+        "type": "Protocol",
+        "purpose": "Pluggable token counter; v0.04 ships Char4TokenEstimator default"
+      },
+      {
+        "name": "Char4TokenEstimator",
+        "type": "class",
+        "purpose": "Conservative fallback: 1 token per 4 UTF-8 bytes; safe for CJK and Latin"
+      },
+      {
+        "name": "CompactionPolicy",
+        "type": "class",
+        "purpose": "Stateless policy that merges evicted observations into summary items"
+      },
+      {
+        "name": "CompactionOutcome",
+        "type": "frozen dataclass",
+        "fields": ["result", "final_selected", "still_over_budget"],
+        "purpose": "Result of one compaction pass; builder consumes final_selected"
+      }
+    ],
+    "constants": [
+      "ESTIMATOR_CHAR4 = \"char4\"",
+      "DEFAULT_ESTIMATOR = Char4TokenEstimator()",
+      "_MAX_ITEMS_PER_SUMMARY = 16",
+      "_SUMMARY_CONTENT_MAX_CHARS = 400"
+    ]
+  },
+  "design_decisions": [
+    {
+      "decision": "Compaction only merges `kind == \"observation\"` items",
+      "rationale": "SOP §8.2 allows compressing old Observations; §9.2 forbids rewriting hypothesis as fact. By restricting merge input to observations, the policy structurally prevents forbidden promotions."
+    },
+    {
+      "decision": "Summary items are `kind == \"observation\"`, never `fact` or `decision`",
+      "rationale": "A summary is a derived observation, not a verified fact. Promoting it would violate §9.2."
+    },
+    {
+      "decision": "Summary `source_ref` = `compaction:item_id1,item_id2,...`",
+      "rationale": "SOP §4.1 requires source traceability. The comma-joined list lets any consumer trace back to originals."
+    },
+    {
+      "decision": "Summary `trust_level = trusted_local` (not `external_untrusted`)",
+      "rationale": "Summaries are produced by deterministic code, not by an LLM. v0.04 does NOT use model-generated summaries."
+    },
+    {
+      "decision": "Compaction hash excludes summary item_id (random uuid), includes only content hash",
+      "rationale": "D6 invariant: two compactions of the same eligible set must produce the same hash. Random uuid would break determinism."
+    },
+    {
+      "decision": "Post-compaction budget check: only raise ContextBudgetExhausted if PROTECTED items exceed usable_input",
+      "rationale": "SOP §8.3 clause 4 says 'still over budget → context_budget_exhausted, do not silently truncate hard constraints'. This means protected items must not be dropped. If only summaries push total over usable, we accept the outcome — dropping a summary would lose provenance."
+    },
+    {
+      "decision": "`_is_protected` duplicated in compaction.py (not imported from builder.py)",
+      "rationale": "Avoids circular import (builder imports CompactionPolicy lazily, compaction would import _is_protected eagerly). The two copies MUST stay in sync."
+    },
+    {
+      "decision": "ContextBuilder accepts optional `compaction_policy` parameter",
+      "rationale": "Allows tests to inject custom policies. Default None → lazy-instantiate CompactionPolicy on first use."
+    }
+  ],
+  "test_matrix": {
+    "total_tests": 26,
+    "coverage": [
+      {"id": "D-01", "scenario": "Char4TokenEstimator (Latin, CJK, empty, protocol)", "count": 6},
+      {"id": "D-02", "scenario": "Deterministic eviction order (observation before constraint, priority)", "count": 2},
+      {"id": "D-04", "scenario": "Structured compaction (merges evicted, required fields, constraint retention)", "count": 3},
+      {"id": "D-05", "scenario": "Constraint Retention fixture (format + retention)", "count": 2},
+      {"id": "D-06", "scenario": "Compaction Drift (repeated builds, hash determinism)", "count": 2},
+      {"id": "D-07", "scenario": "Immutable snapshot + CompactionResult", "count": 2},
+      {"id": "§9.2", "scenario": "Forbidden behaviors (hypothesis, evidence, constraint, protected overflow)", "count": 4},
+      {"id": "D-03", "scenario": "Tool output trimming", "count": 1},
+      {"id": "direct", "scenario": "CompactionPolicy direct unit tests (no-eviction, scope, estimator, chunking)", "count": 4}
+    ]
+  },
+  "forbidden_behaviors_enforced": [
+    "hypothesis never promoted to fact (construction: only observations merged)",
+    "evidence_ref never fabricated (construction: summary references original item_ids only)",
+    "constraint never dropped by compaction (construction: _is_protected restores protected items)",
+    "original sources never overwritten (construction: summary is a new item, originals stay in repo)",
+    "external_untrusted never promoted to instruction (construction: summary trust_level = trusted_local, scope = shared)"
+  ],
+  "non_blocking_debts": [
+    "CompactionPolicy._build_summary_item uses a simple content snippet (first 80 chars per item). v0.04.1 may add LLM-based summarization via ModelAdapter.",
+    "Large file content (tier 1 in §8.3) is not specially handled in compaction — it's treated as a regular evictable item. v0.04.1 may add source_ref-based re-read eligibility.",
+    "Tool output trimming (D3) relies on first-pass eviction; no dedicated `max_tool_output_tokens` enforcement in compaction yet."
+  ]
+}

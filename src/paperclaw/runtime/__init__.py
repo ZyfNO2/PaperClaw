@@ -12,22 +12,38 @@ Modules:
   by the InstrumentedFlowRunner (P0-B) and Checkpoint wiring (P0-C).
   P0-A only ships the dataclasses; the runner itself is P0-B.
 - ``error_codes``: stable error code constants + ``classify_exception``
-  helper for ``node.failed`` event payloads. P0-B deliverable.
+  helper for ``node.failed`` event payloads. P0-B deliverable; P0-C adds
+  ``RECOVERY_REQUIRED`` and ``INCOMPATIBLE_FLOW_DEFINITION`` for the
+  safe-resume decision.
 - ``flow_runner``: ``InstrumentedFlowRunner`` wrapping PocketFlow Flow with
   event emission, cancellation, and resume entry-point resolution. P0-B
   deliverable. Parity mode delegates to native ``Flow.run`` when all
-  services are None (Addendum PB5 hard gate).
+  services are None (Addendum PB5 hard gate). P0-C wires the real
+  ``CheckpointWriter.commit_checkpoint`` call after each ``node.completed``
+  event and emits ``flow.resumed`` when entering from a resume point.
+- ``checkpoint``: ``CheckpointWriter`` Protocol + ``SqliteCheckpointWriter``
+  + ``InMemoryCheckpointWriter`` test double. P0-C deliverable.
+- ``resume``: ``ResumeDecision`` + ``evaluate_resume_safety`` implementing
+  Addendum §5.3 rules (registry hash, pending operations, file snapshots).
+  P0-C deliverable.
 """
 
 from __future__ import annotations
 
+from paperclaw.runtime.checkpoint import (
+    CheckpointWriter,
+    InMemoryCheckpointWriter,
+    SqliteCheckpointWriter,
+)
 from paperclaw.runtime.error_codes import (
     ALL_ERROR_CODES,
     CANCELLATION_REQUESTED,
+    INCOMPATIBLE_FLOW_DEFINITION,
     NODE_EXEC_FAILED,
     NODE_IDENTITY_MISSING,
     NODE_POST_FAILED,
     NODE_PREP_FAILED,
+    RECOVERY_REQUIRED,
     RESUME_REGISTRY_MISMATCH,
     classify_exception,
 )
@@ -48,14 +64,22 @@ from paperclaw.runtime.node_registry import (
     RegistryMismatch,
     compute_registry_hash,
 )
+from paperclaw.runtime.resume import (
+    ResumeDecision,
+    TERMINAL_OPERATION_STATES,
+    evaluate_resume_safety,
+)
 
 __all__ = [
     "ALL_ERROR_CODES",
     "CANCELLATION_REQUESTED",
+    "CheckpointWriter",
     "COMPLETED_NODE_ID",
     "CompletedNode",
     "FlowResumePoint",
     "IdentifiedNode",
+    "InMemoryCheckpointWriter",
+    "INCOMPATIBLE_FLOW_DEFINITION",
     "InstrumentedFlowRunner",
     "NodeIdentityMissingError",
     "NodeRegistry",
@@ -63,10 +87,15 @@ __all__ = [
     "NODE_IDENTITY_MISSING",
     "NODE_POST_FAILED",
     "NODE_PREP_FAILED",
+    "RECOVERY_REQUIRED",
     "RegistryMismatch",
     "RESUME_REGISTRY_MISMATCH",
+    "ResumeDecision",
     "ResumeRegistryMismatchError",
     "RuntimeServices",
+    "TERMINAL_OPERATION_STATES",
+    "SqliteCheckpointWriter",
     "classify_exception",
     "compute_registry_hash",
+    "evaluate_resume_safety",
 ]

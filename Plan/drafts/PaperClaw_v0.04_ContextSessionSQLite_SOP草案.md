@@ -576,13 +576,13 @@ recommended_action
 
 ### Phase D：Budget 与 Compaction
 
-- [ ] D1. tokenizer adapter 与保守 fallback；
-- [ ] D2. 确定性裁剪顺序；
-- [ ] D3. 工具输出裁剪；
-- [ ] D4. 结构化 compaction；
-- [ ] D5. Constraint Retention fixture；
-- [ ] D6. Compaction Drift fixture；
-- [ ] D7. immutable ContextSnapshot。
+- [x] D1. tokenizer adapter 与保守 fallback；
+- [x] D2. 确定性裁剪顺序；
+- [x] D3. 工具输出裁剪；
+- [x] D4. 结构化 compaction；
+- [x] D5. Constraint Retention fixture；
+- [x] D6. Compaction Drift fixture；
+- [x] D7. immutable ContextSnapshot。
 
 ### Phase E：Safe resume
 

@@ -56,11 +56,13 @@ Design decisions (Addendum §4.5 invariants preserved):
 from __future__ import annotations
 
 import copy
+import hashlib
 import uuid
 from typing import Any
 
 from pocketflow import Flow
 
+from paperclaw.context.contracts import Checkpoint, utc_now_iso
 from paperclaw.runtime.error_codes import (
     NODE_IDENTITY_MISSING,
     RESUME_REGISTRY_MISMATCH,
@@ -203,6 +205,20 @@ class InstrumentedFlowRunner:
             "resume_from": resume_from,
         })
 
+        # In resume mode, emit flow.resumed AFTER flow.started so a recovery
+        # shell can distinguish "this run started fresh" from "this run
+        # resumed from a Checkpoint". The event carries the resume_point's
+        # last_committed_sequence so the shell can assert that no event
+        # emitted by this run has a sequence below it (Addendum §4.4).
+        if resume_point is not None:
+            _emit_event(event_sink, "flow.resumed", {
+                "run_id": run_id,
+                "next_node_id": resume_point.next_node_id,
+                "completed_node_id": resume_point.completed_node_id,
+                "last_committed_sequence": resume_point.last_committed_sequence,
+                "state_revision": resume_point.state_revision,
+            })
+
         # ------------------------------------------------------------------
         # Replicate Flow._orch's loop.
         # ------------------------------------------------------------------
@@ -310,34 +326,53 @@ class InstrumentedFlowRunner:
             if seq > 0:
                 last_committed_sequence = seq
 
-            # Checkpoint commit (P0-B stub: call writer if non-None, then
-            # emit checkpoint.committed). P0-C wires the real writer and
-            # defines the error-handling contract. For P0-B, writer failures
-            # are swallowed so a checkpoint bug cannot crash the run.
+            # Checkpoint commit (P0-C: build a real Checkpoint object,
+            # emit checkpoint.committed, then call the writer). The order
+            # per Addendum §5.2 is:
+            #
+            #   node.completed event
+            #     → (caller persists business state — not the runner's job)
+            #     → checkpoint.committed event
+            #     → CheckpointWriter.commit_checkpoint
+            #
+            # The runner does not own business persistence; it assumes the
+            # node's post() hook (or a surrounding commit_runtime_step
+            # call) has already persisted any business state the node
+            # produced. The Checkpoint is a recovery marker, NOT a
+            # business-state commit.
+            #
+            # P0-C does NOT swallow writer exceptions: a missing Checkpoint
+            # breaks the resume guarantee (Addendum §5.3), so a writer
+            # failure MUST propagate to the caller. P0-B swallowed errors
+            # because the writer contract was not yet defined; P0-C
+            # tightens this.
             if services.checkpoint_writer is not None:
-                try:
-                    services.checkpoint_writer({
-                        "run_id": run_id,
-                        "completed_node_id": node_id,
-                        "last_action": action,
-                        "next_node_id": next_node_id,
-                        "last_committed_sequence": last_committed_sequence,
-                        "state_revision": state_revision,
-                    })
-                except Exception:
-                    # P0-B: checkpoint writer failures are non-fatal.
-                    # P0-C will define whether this should raise or
-                    # trigger recovery_required.
-                    pass
+                checkpoint = self._build_checkpoint(
+                    run_id=run_id,
+                    completed_node_id=node_id,
+                    last_action=action,
+                    next_node_id=next_node_id,
+                    last_committed_sequence=last_committed_sequence,
+                    state_revision=state_revision,
+                    registry=registry,
+                )
+                # Emit checkpoint.committed BEFORE calling the writer so the
+                # event log records the intent even if the writer raises.
+                # The event carries the checkpoint_id so a recovery shell
+                # can correlate the event with the persisted row (or confirm
+                # it was never persisted if the writer raised).
                 seq = _emit_event(event_sink, "checkpoint.committed", {
                     "run_id": run_id,
-                    "last_node_id": node_id,
+                    "checkpoint_id": checkpoint.checkpoint_id,
+                    "completed_node_id": node_id,
                     "next_node_id": next_node_id,
                     "last_committed_sequence": last_committed_sequence,
                     "state_revision": state_revision,
                 })
                 if seq > 0:
                     last_committed_sequence = seq
+                # Persist the Checkpoint. Exceptions propagate (P0-C).
+                services.checkpoint_writer.commit_checkpoint(checkpoint)
 
             # Advance to the next node. Shallow-copy to match _orch's
             # per-iteration isolation.
@@ -359,6 +394,86 @@ class InstrumentedFlowRunner:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _build_checkpoint(
+        self,
+        *,
+        run_id: str,
+        completed_node_id: str,
+        last_action: str | None,
+        next_node_id: str | None,
+        last_committed_sequence: int,
+        state_revision: int,
+        registry: Any,
+    ) -> Checkpoint:
+        """Build a Checkpoint at a safe step boundary.
+
+        Per Addendum §5.1 the Checkpoint records the node identity triple
+        (completed_node_id, last_action, next_node_id) plus the registry
+        hash so a resume can detect incompatible Flow definitions (§5.4).
+
+        v0.04 scope (Addendum §5 non-goals):
+
+        - ``pending_operations`` is always empty. The idempotency-ledger
+          check that populates this field is deferred to Phase E; the
+          runner does not yet track in-flight mutating operations.
+        - ``file_snapshots`` is always empty. File-state snapshotting is
+          deferred to a later version.
+        - ``budget_state`` is always empty. Budget tracking lands in a
+          later version.
+
+        The ``state_hash`` is a SHA-256 of the node-identity triple plus
+        the last_committed_sequence. It is NOT a hash of the full shared
+        state (which would require serializing the dict and would be
+        sensitive to key ordering). The triple hash is sufficient for
+        v0.04's resume guarantee: if any of (completed_node_id,
+        last_action, next_node_id, sequence) differs, the hash differs,
+        and a resume can detect that the Checkpoint does not match the
+        expected step boundary.
+        """
+        # Normalize the action and next_node_id to strings for hashing.
+        # None action (default transition) is hashed as the literal "None"
+        # so two Checkpoints with action=None produce the same hash.
+        action_str = "None" if last_action is None else str(last_action)
+        next_str = "None" if next_node_id is None else str(next_node_id)
+        hash_payload = (
+            f"{completed_node_id}|{action_str}|{next_str}|"
+            f"{last_committed_sequence}"
+        ).encode("utf-8")
+        state_hash = hashlib.sha256(hash_payload).hexdigest()
+
+        # Record the registry hash so a resume can detect that the Flow
+        # definition has changed (Addendum §5.4). When the registry is
+        # None (should not happen in instrumented mode, but defensive),
+        # leave the hash unset — evaluate_resume_safety treats a None
+        # stored hash as "not checked" and falls back to the membership
+        # check.
+        registry_hash: str | None = None
+        if registry is not None:
+            try:
+                registry_hash = registry.registry_hash
+            except Exception:
+                # Defensive: a misbehaving registry should not crash the
+                # run. Leave the hash unset; resume will rely on the
+                # membership check only.
+                registry_hash = None
+
+        return Checkpoint(
+            checkpoint_id=f"cp-{uuid.uuid4().hex[:12]}",
+            run_id=run_id,
+            last_committed_sequence=last_committed_sequence,
+            task_state_revision=state_revision,
+            budget_state={},
+            pending_operations=(),
+            file_snapshots=(),
+            state_hash=state_hash,
+            schema_version=1,
+            created_at=utc_now_iso(),
+            completed_node_id=completed_node_id,
+            last_action=last_action,
+            next_node_id=next_node_id,
+            checkpoint_registry_hash=registry_hash,
+        )
 
     def _resolve_node_id(self, node: Any, registry: Any) -> str:
         """Resolve a stable ``node_id`` for ``node``.
