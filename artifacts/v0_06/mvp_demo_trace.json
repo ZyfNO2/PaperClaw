@@ -1,0 +1,46 @@
+{
+  "schema_version": "paperclaw.v0.06.demo-trace.1",
+  "classification": "offline_fixture",
+  "real_provider": false,
+  "interactive_terminal": false,
+  "scenario": "headless completed run with verification event",
+  "events": [
+    {
+      "event_type": "run.started",
+      "run_id": "run-test",
+      "sequence": 1
+    },
+    {
+      "event_type": "model.started",
+      "run_id": "run-test",
+      "sequence": 2,
+      "call_index": 1
+    },
+    {
+      "event_type": "verification.completed",
+      "run_id": "run-test",
+      "sequence": 3,
+      "result": {
+        "status": "passed"
+      }
+    },
+    {
+      "event_type": "run.completed",
+      "run_id": "run-test",
+      "sequence": 4,
+      "status": "completed",
+      "stop_reason": "done",
+      "model_calls": 1,
+      "tool_calls": 0
+    }
+  ],
+  "run_result": {
+    "run_id": "run-test",
+    "status": "completed",
+    "output": "ok",
+    "stop_reason": "done",
+    "model_calls": 1,
+    "tool_calls": 0,
+    "last_event_sequence": 4
+  }
+}

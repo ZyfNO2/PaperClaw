@@ -1,0 +1,29 @@
+# v0.06 implementation
+pyproject.toml
+src/paperclaw/cli.py
+src/paperclaw/tui/__init__.py
+src/paperclaw/tui/app.py
+src/paperclaw/tui/bridge.py
+src/paperclaw/tui/paperclaw.tcss
+src/paperclaw/tui/runner.py
+src/paperclaw/tui/state.py
+src/paperclaw/tui/widgets.py
+
+# v0.06 tests
+tests/unit/test_tui_app.py
+tests/unit/test_tui_architecture.py
+tests/unit/test_tui_bridge.py
+tests/unit/test_tui_cli.py
+tests/unit/test_tui_runner.py
+tests/unit/test_tui_state.py
+
+# v0.06 documentation and handoff
+Plan/PaperClaw_v0.06_Claw_TUI_MVP_SOP.md
+artifacts/v0_06/implementation_summary.md
+artifacts/v0_06/mvp_test_report.md
+artifacts/v0_06/mvp_demo_trace.json
+artifacts/v0_06/tui_boundary.md
+artifacts/v0_06/known_limitations.md
+artifacts/v0_06/file_manifest.txt
+docs/handoff/PaperClaw_v0.06_TUI_MVP_HANDOFF.md
+README.md
