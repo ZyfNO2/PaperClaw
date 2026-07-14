@@ -58,7 +58,6 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Protocol, Sequence
-from uuid import uuid4
 
 from paperclaw.context.contracts import (
     CompactionResult,
@@ -413,6 +412,19 @@ class CompactionPolicy:
             f"snippets: {' | '.join(snippets)}"
         )
 
+        # Deterministic summary_id derived from the sorted source item_ids
+        # of the absorbed chunk. Two compactions of the same eligible set
+        # MUST produce the same summary_id so that ``ContextSnapshot.
+        # rendered_hash`` stays reproducible across runs (SOP §4.4:
+        # rendered_hash reproducible from source_item_ids alone). The
+        # previous UUID-based id leaked non-determinism into _render's
+        # payload (which includes item_id), causing the same inputs to
+        # yield different hashes on every run. Distinct chunks never
+        # share item_ids, so two different summaries cannot collide.
+        source_id_digest = hashlib.sha256(
+            ",".join(sorted(item_ids)).encode("utf-8")
+        ).hexdigest()[:16]
+
         # Estimate the summary's own token cost using the same estimator
         # the builder uses, so the post-compaction budget check is
         # consistent with the pre-compaction estimates.
@@ -427,7 +439,7 @@ class CompactionPolicy:
         # the summary is derived from already-scoped items and we want
         # it visible wherever those originals would have been visible.
         return ContextItem(
-            item_id=f"summary-{uuid4().hex[:16]}",
+            item_id=f"summary-{source_id_digest}",
             run_id=run_id,
             layer="L4",
             kind="observation",
