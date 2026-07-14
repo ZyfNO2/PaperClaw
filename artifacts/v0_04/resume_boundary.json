@@ -1,0 +1,132 @@
+{
+  "phase": "E",
+  "title": "Safe resume boundary (SOP §10)",
+  "status": "completed",
+  "sop_section": "§10 / §11 Phase E",
+  "commits": [
+    "feat(v0.04-E): ResumeCoordinator + FileSnapshotVerifier + build_pending_operations (pending)"
+  ],
+  "files": {
+    "created": [
+      "src/paperclaw/runtime/file_snapshot.py",
+      "src/paperclaw/runtime/resume_coordinator.py",
+      "tests/unit/test_resume_coordinator.py"
+    ],
+    "modified": [
+      "src/paperclaw/runtime/__init__.py",
+      "Plan/drafts/PaperClaw_v0.04_ContextSessionSQLite_SOP草案.md"
+    ]
+  },
+  "public_api": {
+    "FileSnapshotVerifier": "class — hashlib-based file state verifier (verify + snapshot helpers)",
+    "ResumeCoordinator": "class — end-to-end resume decision entry (decide_resume method)",
+    "build_pending_operations": "function — reconstruct pending ops list from SessionEvent log",
+    "ACTIVE_TASK_STATUSES": "frozenset — TaskState statuses considered in-flight (active/running/started)",
+    "OPERATION_STARTED_EVENT": "str — 'operation.started' event type constant",
+    "OPERATION_TERMINAL_EVENTS": "dict — terminal event types to state values",
+    "SUPPORTED_CHECKPOINT_SCHEMA_VERSIONS": "frozenset — {1} schema version gate"
+  },
+  "design_decisions": [
+    {
+      "id": "E-D1",
+      "title": "FileSnapshotVerifier as a class, not a bare callable",
+      "rationale": "evaluate_resume_safety accepts a Callable[[dict], bool] for testability (synthetic verifiers in tests). FileSnapshotVerifier is the production implementation with a stateful hash_algorithm config and a companion snapshot() helper for recording pre-mutation state. Keeping them in one class lets callers reuse one instance for both snapshot and verify."
+    },
+    {
+      "id": "E-D2",
+      "title": "build_pending_operations pairs events by operation_id, last-write-wins",
+      "rationale": "An operation may have multiple started events (retries) or multiple terminal events (committed then failed — unusual but possible). Last-write-wins matches the idempotency ledger semantics. Order is stable: operations returned in order of first started event, so tests can assert on ordering."
+    },
+    {
+      "id": "E-D3",
+      "title": "ResumeCoordinator composes evaluate_resume_safety rather than duplicating its rules",
+      "rationale": "P0-C's evaluate_resume_safety is the source of truth for the core decision (registry hash, pending ops, file snapshots). The coordinator only gathers inputs (latest_checkpoint, event log reconstruction, active worker detection) and delegates. This keeps the decision logic in one place and lets tests for evaluate_resume_safety stay focused."
+    },
+    {
+      "id": "E-D4",
+      "title": "Active Worker detection is detection-only (no recovery)",
+      "rationale": "SOP §10.3 explicitly defers MultiAgent active Worker recovery to a later version. The coordinator detects status in {active, running, started} and blocks resume with recovery_required, but never tries to terminate or reconcile the Worker. This is the conservative safe default."
+    },
+    {
+      "id": "E-D5",
+      "title": "Schema version gate before any other check",
+      "rationale": "A Checkpoint with schema_version=99 means the serialized format may have changed in ways the coordinator cannot read. Checking schema version BEFORE evaluate_resume_safety avoids passing a misread Checkpoint to the decision logic (which might then make a wrong decision based on misinterpreted fields)."
+    },
+    {
+      "id": "E-D6",
+      "title": "FileSnapshotVerifier.verify returns False on I/O errors, never raises",
+      "rationale": "evaluate_resume_safety treats False as a mismatch (safe default: block resume). A file that cannot be read (permission denied, vanished mid-read) has unknown state — treating it as False is safer than raising, because raising would force the caller to add try/except around every verify call. The snapshot() helper, by contrast, records absence rather than crashing."
+    },
+    {
+      "id": "E-D7",
+      "title": "existence_required=False records ABSENCE (not just non-existence)",
+      "rationale": "A snapshot with existence_required=False asserts 'this file should NOT exist when resume runs'. Used for cleanup operations that delete files — if the file appears on resume, an external process created it, and resume MUST stop. This is a positive assertion about absence, not a default for missing files."
+    }
+  ],
+  "test_matrix_coverage": {
+    "R-01_step_boundary_resume": "test_r01_clean_checkpoint_returns_ok — clean Checkpoint + matching registry → ok",
+    "R-02_pending_bash": "test_r02_pending_bash_returns_recovery_required — operation.started without terminal → recovery_required",
+    "R-03_pending_file_write": "test_r03_pending_file_write_returns_recovery_required — file_write operation.started without terminal → recovery_required",
+    "R-04_external_file_change": "test_r04_external_file_change_returns_recovery_required — file content modified after snapshot → file_conflicts populated + recovery_required",
+    "R-05_corrupt_checkpoint": "test_r05_no_checkpoint_returns_recovery_required — no Checkpoint exists → recovery_required with 'no Checkpoint exists' reason",
+    "R-06_active_worker_marker": "test_r06_active_worker_returns_recovery_required — TaskState status='active' → recovery_required (detection only, no recovery)"
+  },
+  "sop_10_boundary_compliance": {
+    "10.1_auto_allow_resume": {
+      "condition_1_checkpoint_exists": "latest_checkpoint() is not None",
+      "condition_2_sequence_readable": "Checkpoint.last_committed_sequence field",
+      "condition_3_no_pending_mutation": "build_pending_operations finds no non-terminal ops (delegated to evaluate_resume_safety Rule 3)",
+      "condition_4_taskstate_revision_consistent": "NOT enforced by coordinator — caller responsibility; v0.04 does not auto-reconcile (deferred to v0.04.1)",
+      "condition_5_file_hash_reverified": "FileSnapshotVerifier.verify",
+      "condition_6_schema_version_compatible": "SUPPORTED_CHECKPOINT_SCHEMA_VERSIONS = {1}",
+      "condition_7_budget_state_valid": "Trivially satisfied — v0.04 Checkpoints carry budget_state={} until Phase F wires real budget tracking"
+    },
+    "10.2_must_stop_recovery_required": "Negation of 10.1 plus RECOVERY_REQUIRED on any file hash mismatch, pending operation in non-terminal state, or active Worker marker",
+    "10.3_v0.04_does_not_promise": {
+      "no_auto_replay_mutating_tool": "Coordinator never calls a mutating tool — only computes decision",
+      "no_external_api_success_judgment": "Deferred to v0.04.1",
+      "no_process_tree_restoration": "Out of scope",
+      "no_active_worker_recovery": "Detection only — never attempts to terminate or reconcile Workers",
+      "no_unattended_crash_resume": "Caller must invoke decide_resume explicitly"
+    }
+  },
+  "test_results": {
+    "total": 24,
+    "passed": 24,
+    "failed": 0,
+    "skipped": 0,
+    "classes": {
+      "TestBuildPendingOperations": 8,
+      "TestFileSnapshotVerifierVerify": 5,
+      "TestFileSnapshotVerifierSnapshotRoundTrip": 2,
+      "TestResumeCoordinatorDecideResume": 9
+    }
+  },
+  "full_suite_regression": "344 passed, 1 skipped (was 320 passed, 1 skipped before Phase E; +24 Phase E tests, no regression)",
+  "non_blocking_debts": [
+    {
+      "id": "E-DEBT-1",
+      "description": "TaskState revision consistency check (SOP §10.1 condition 4) is not enforced by ResumeCoordinator",
+      "impact": "A caller that bumped TaskState revision after the Checkpoint would not be detected. v0.04 assumes the caller committed TaskState BEFORE the Checkpoint (correct ordering per SOP §5.3).",
+      "deferred_to": "v0.04.1 — needs a revision-comparison helper that reads Checkpoint.task_state_revision and compares to current TaskState revisions"
+    },
+    {
+      "id": "E-DEBT-2",
+      "description": "Budget state validation (SOP §10.1 condition 7) is trivially satisfied because Checkpoints carry budget_state={}",
+      "impact": "No real budget tracking in v0.04 Checkpoints. A run that exhausted budget mid-step would not be detected at resume time.",
+      "deferred_to": "Phase F — wire real budget state into Checkpoint.budget_state and add validation in ResumeCoordinator"
+    },
+    {
+      "id": "E-DEBT-3",
+      "description": "TOCTOU race between FileSnapshotVerifier.verify and resume action",
+      "impact": "A file could be externally modified between verify() returning True and the runner acting on the decision. v0.04 assumes single-process resume with no concurrent writers.",
+      "deferred_to": "v0.04.1 — needs file locks or a verify-then-act atomic primitive"
+    },
+    {
+      "id": "E-DEBT-4",
+      "description": "state_hash validation (R-05 in test matrix mentions 'Corrupt checkpoint — state_hash 失败')",
+      "impact": "Coordinator does not recompute state_hash from current state and compare. A Checkpoint with a tampered state_hash would not be detected. The current R-05 test covers 'no Checkpoint exists', which is the more common failure mode.",
+      "deferred_to": "v0.04.1 — needs a state_hash recomputation helper that knows the original state at checkpoint time"
+    }
+  ]
+}
