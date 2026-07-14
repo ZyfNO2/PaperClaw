@@ -59,10 +59,10 @@ Legend:
 - [A] tests/unit/test_resume_coordinator.py
 
 ### tests/integration/
-- [A] tests/integration/conftest.py
 - [A] tests/integration/test_v0_04_mvp_demo.py
 
 ### tests/ (root)
+- [M] tests/conftest.py
 - [A] tests/test_pocketflow_vendor_integrity.py
 
 
@@ -103,8 +103,8 @@ Legend:
   Source - runtime/     :  9 files (all added)
   Source - agent/       :  2 files (modified)
   Tests  - unit/        :  8 files (all added)
-  Tests  - integration/ :  2 files (all added)
-  Tests  - root         :  1 file  (added)
+  Tests  - integration/ :  1 file  (added)
+  Tests  - root         :  2 files (1 modified, 1 added)
   Artifacts             : 10 files (all added and tracked)
   Plan/docs/guidance    : 12 files (4 added, 8 modified)
   -------------------------------------------------

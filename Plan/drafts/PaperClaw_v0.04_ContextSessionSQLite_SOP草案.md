@@ -121,7 +121,7 @@ ContextItem
 ContextSnapshot
   snapshot_id
   run_id / role
-  included_item_ids
+  source_item_ids
   excluded_items + reason
   rendered_hash
   estimated_tokens / estimator
