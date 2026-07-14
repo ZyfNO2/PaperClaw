@@ -132,7 +132,13 @@ def _run_agent(args: argparse.Namespace) -> int:
         output = {
             key: value
             for key, value in state.items()
-            if key not in {"workspace", "current_tool_call", "event_handler"}
+            if key
+            not in {
+                "workspace",
+                "current_tool_call",
+                "event_handler",
+                "cancel_event",
+            }
         }
         output["history"] = [entry.to_dict() for entry in state["history"]]
         output["query_engine"] = json_ready(result)
