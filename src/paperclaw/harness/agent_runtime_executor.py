@@ -16,7 +16,12 @@ from paperclaw.agent.flow import AgentRuntime, default_registry
 from paperclaw.context.repository import Repository
 from paperclaw.context.session import SessionService
 from paperclaw.models.base import ChatModel, ModelTurn
-from paperclaw.tools.base import ToolContext, ToolResult, ToolValidationError
+from paperclaw.tools.base import (
+    ToolContext,
+    ToolControlFlow,
+    ToolResult,
+    ToolValidationError,
+)
 from paperclaw.tools.registry import ToolRegistry
 
 from .contracts import EventEmitter, ExecutionReport, RunLimits, RunRequest, StopToken
@@ -103,20 +108,15 @@ class _BudgetedTool:
         self._usage = usage
         self._emit = emit
         self._stop_token = stop_token
-        self._blocked_reason: str | None = None
         self._call_index: int | None = None
         self.name = tool.name
         self.description = tool.description
 
     def validate(self, arguments: dict[str, Any]) -> None:
-        self._blocked_reason = None
         self._call_index = None
-
         if self._stop_token.is_cancelled:
-            self._blocked_reason = "stopped"
-            return
+            raise ToolControlFlow(self._stop_token.reason or "cancelled")
         if self._usage.tool_calls >= self._usage.limits.max_tool_calls:
-            self._blocked_reason = "budget_exhausted"
             self._emit(
                 "tool.failed",
                 {
@@ -125,7 +125,7 @@ class _BudgetedTool:
                     "limit": self._usage.limits.max_tool_calls,
                 },
             )
-            return
+            raise ToolControlFlow("max_tool_calls")
 
         self._usage.tool_calls += 1
         self._call_index = self._usage.tool_calls
@@ -165,21 +165,6 @@ class _BudgetedTool:
         arguments: dict[str, Any],
         context: ToolContext,
     ) -> ToolResult:
-        if self._blocked_reason == "budget_exhausted":
-            return ToolResult(
-                False,
-                "tool call budget exhausted",
-                "budget_exhausted",
-                {"limit": self._usage.limits.max_tool_calls},
-            )
-        if self._blocked_reason == "stopped":
-            return ToolResult(
-                False,
-                "tool call skipped after cooperative stop request",
-                "stopped",
-                {"stop_reason": self._stop_token.reason or "cancelled"},
-            )
-
         try:
             result = self._tool.execute(arguments, context)
         except Exception as exc:
@@ -280,6 +265,16 @@ class AgentRuntimeExecutor:
                 status="budget_exhausted",
                 output=(runtime.last_state or {}).get("result"),
                 stop_reason=exc.resource,
+                model_calls=usage.model_calls,
+                tool_calls=usage.tool_calls,
+            )
+        except ToolControlFlow as exc:
+            self.last_state = runtime.last_state
+            budget_stop = exc.reason == "max_tool_calls"
+            report = ExecutionReport(
+                status="budget_exhausted" if budget_stop else "stopped",
+                output=(runtime.last_state or {}).get("result"),
+                stop_reason=exc.reason,
                 model_calls=usage.model_calls,
                 tool_calls=usage.tool_calls,
             )
