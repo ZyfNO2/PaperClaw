@@ -1,9 +1,7 @@
 from pathlib import Path
 
-import pytest
-
-from conftest import FakeModel, action, done, reflect
 from paperclaw.agent.flow import AgentRuntime
+from tests.helpers import FakeModel, action, done, reflect
 
 
 def test_write_bash_done(tmp_path: Path) -> None:
