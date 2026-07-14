@@ -4,6 +4,14 @@
 > 状态：**已完成 / GO（MVP）**
 > 更新：2026-07-15
 > 前置：PaperClaw v0.04 已完成 / GO
+>
+> 验证路径：
+> ```text
+> Phase A/B/C implementation: DONE
+> Offline deterministic validation: PASS
+> Real LLM acceptance: PASS
+> Final SOP closure: GO
+> ```
 > 目标：为现有单 Agent PocketFlow Loop 提供稳定、薄、可测试的会话级入口，使一次用户提交具有统一 Run、调用预算、事件、停止请求和结构化结果。
 
 ## 1. 版本结论
@@ -53,6 +61,11 @@ v0.05 采用 **薄 QueryEngine façade**，没有进行完整 Harness 重构。
 - `recovery_required` → `blocked`；
 - 单 Agent CLI 迁移；
 - 确定性 create / run / verify 演示；
+- 真实 LLM create / run / verify 验收；
+- 真实 LLM 错误后修复验收；
+- 真实 LLM 预算边界验收；
+- 手动触发 real-llm-e2e GitHub Actions workflow；
+- 脱敏真实运行 artifacts；
 - 完整 CI 与 artifacts。
 
 ### 3.2 明确非目标
@@ -221,6 +234,9 @@ permission.denied
 | M05-08 | event order / unique terminal | PASS |
 | M05-09 | recovery required → blocked | PASS |
 | M05-10 | CLI compatibility | PASS |
+| M05-11 | Real LLM create/run/verify | PASS |
+| M05-12 | Real LLM repair loop | PASS |
+| M05-13 | Provider budget boundary | PASS |
 
 独立 CI：
 
@@ -231,7 +247,82 @@ ruff lint: success
 364 tests passed
 ```
 
-## 10. 最小演示与交付物
+## 10. 真实 LLM 验收
+
+真实 provider 测试位于：
+
+```text
+tests/e2e/test_v0_05_real_llm.py
+```
+
+使用标记：
+
+```text
+@pytest.mark.real_llm
+```
+
+三项验收全部通过：
+
+| 编号 | 场景 | 证据 |
+|---|---|---|
+| E2E-01 | create / run / verify | `test_real_llm_create_run_verify`：真实 LLM 创建 `hello.py`，通过 `bash` 运行 `python hello.py`，输出匹配 `PaperClaw v0.05 REAL LLM OK.`，`status=completed`，`model_calls=3`，`tool_calls=2`，`terminal_event_count=1` |
+| E2E-02 | repair loop | `test_real_llm_repair_after_error`：真实 LLM 先创建含错误的 `hello.py`，观察到失败，修复后再次运行成功，`status=completed` |
+| E2E-03 | provider budget boundary | `test_real_llm_model_budget_boundary`：`max_model_calls=1` 时 provider 仅被调用一次，最终 `status=budget_exhausted`，`stop_reason=max_model_calls` |
+
+手动触发工作流：
+
+```text
+.github/workflows/real-llm-e2e.yml
+```
+
+触发方式：
+
+```text
+workflow_dispatch
+```
+
+需要 Secrets：
+
+```text
+PAPERCLAW_API_KEY
+PAPERCLAW_BASE_URL
+PAPERCLAW_MODEL
+```
+
+重复运行入口：
+
+```text
+scripts/run_v0_05_real_llm_acceptance.py
+```
+
+该脚本写入的脱敏产物：
+
+```text
+artifacts/v0_05/real_llm/
+├── run_summary.json
+├── event_trace.json
+├── generated_files/
+│   └── hello.py
+├── tool_results.json
+├── environment.json
+└── redaction_report.md
+```
+
+最近一次真实运行摘要（`deepseek-v4-flash`）：
+
+```json
+{
+  "provider": "openai-compatible",
+  "model": "deepseek-v4-flash",
+  "status": "completed",
+  "stop_reason": "done",
+  "model_calls": 3,
+  "tool_calls": 2,
+  "terminal_event_count": 1
+}
+```
+
+## 11. 最小演示与交付物
 
 演示：
 
@@ -251,20 +342,31 @@ artifacts/v0_05/
 ├── mvp_test_report.md
 ├── mvp_demo_trace.json
 ├── known_limitations.md
-└── file_manifest.txt
+├── file_manifest.txt
+└── real_llm/
+    ├── run_summary.json
+    ├── event_trace.json
+    ├── generated_files/
+    │   └── hello.py
+    ├── tool_results.json
+    ├── environment.json
+    └── redaction_report.md
 ```
 
 `RunPythonTool` 仅用于跨平台确定性测试，没有加入生产工具面。
 
-## 11. GO 判定
+## 12. GO 判定
 
 v0.05 已满足：
 
-- M05-01–M05-10 全部通过；
+- M05-01–M05-13 全部通过；
 - CLI 与测试使用同一 QueryEngine；
 - Model / Tool budget 在真实调用前生效；
 - Tool 调用继续经过 Registry / validation；
 - terminal state 唯一且结构化；
+- 真实 LLM 完成 create/run/verify、repair loop、budget boundary 三项验收；
+- 真实运行产物已脱敏归档；
+- 手动 real-llm-e2e workflow 就位；
 - 没有为 MVP 引入 async、EventBus、后台任务或新 Provider 抽象。
 
 最终判定：**PaperClaw v0.05 QueryEngine MVP = GO**。

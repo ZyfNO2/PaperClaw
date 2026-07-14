@@ -25,6 +25,9 @@ include = ["paperclaw*", "pocketflow*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "real_llm: tests that call a live LLM provider (slow, costly, non-deterministic)",
+]
 
 [tool.ruff]
 target-version = "py312"

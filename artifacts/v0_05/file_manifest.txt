@@ -14,6 +14,12 @@ artifacts/v0_05/mvp_test_report.md
 artifacts/v0_05/mvp_demo_trace.json
 artifacts/v0_05/known_limitations.md
 artifacts/v0_05/file_manifest.txt
+artifacts/v0_05/real_llm/run_summary.json
+artifacts/v0_05/real_llm/event_trace.json
+artifacts/v0_05/real_llm/generated_files/hello.py
+artifacts/v0_05/real_llm/tool_results.json
+artifacts/v0_05/real_llm/environment.json
+artifacts/v0_05/real_llm/redaction_report.md
 
 PRODUCTION CODE
 src/paperclaw/harness/__init__.py
@@ -31,6 +37,13 @@ tests/unit/test_agent_runtime_executor.py
 tests/unit/test_query_engine_runtime_boundaries.py
 tests/unit/test_query_engine_cli.py
 tests/integration/test_v0_05_mvp_demo.py
+tests/e2e/test_v0_05_real_llm.py
+
+INFRASTRUCTURE
+.github/workflows/real-llm-e2e.yml
+scripts/run_v0_05_real_llm_acceptance.py
+pyproject.toml
+  - Registered pytest marker ``real_llm``.
 
 CROSS-PLATFORM TEST FIX
 tests/unit/test_multiagent_permissions.py
@@ -42,4 +55,7 @@ DELIVERY NOTES
 - AgentRuntimeExecutor is the production adapter.
 - Single-agent CLI uses QueryEngine; team CLI remains on Coordinator.
 - No async framework, EventBus, background shell, new Provider layer, or new PermissionEngine was added.
-- Final code/demo CI evidence: GitHub Actions run 29352667961; pytest on Windows success; Ruff success; 364 tests passed.
+- Offline CI evidence: GitHub Actions run 29352667961; pytest on Windows success; Ruff success; 364 tests passed.
+- Real LLM E2E evidence: E2E-01/E2E-02/E2E-03 passed locally against deepseek-v4-flash;
+  repeatable via ``scripts/run_v0_05_real_llm_acceptance.py`` or ``tests/e2e/test_v0_05_real_llm.py``.
+- Manual workflow ``.github/workflows/real-llm-e2e.yml`` is workflow_dispatch only.

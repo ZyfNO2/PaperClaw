@@ -3,7 +3,15 @@
 > 分支：`codex/v0.05-queryengine-mvp`
 > Pull Request：#1（Draft）
 > 日期：2026-07-15
-> 当前判定：**Phase A/B/C 完成；v0.05 MVP = GO**
+> 当前判定：**Phase A/B/C 完成；真实 LLM 验收通过；v0.05 MVP = GO**
+>
+> 验证路径：
+> ```text
+> Phase A/B/C implementation: DONE
+> Offline deterministic validation: PASS
+> Real LLM acceptance: PASS
+> Final SOP closure: GO
+> ```
 
 ## 1. 交付结论
 
@@ -84,6 +92,14 @@ paperclaw agent <task>
 ```text
 --max-model-calls
 --max-tool-calls
+```
+
+新增真实 LLM 验收入口：
+
+```text
+scripts/run_v0_05_real_llm_acceptance.py
+tests/e2e/test_v0_05_real_llm.py
+.github/workflows/real-llm-e2e.yml
 ```
 
 保留：
@@ -198,7 +214,68 @@ artifacts/v0_05/mvp_demo_trace.json
 
 修正后两轮完整 CI 通过；加入最终演示后仍全绿。
 
-## 6. 当前 artifacts
+## 6. 真实 LLM 验收
+
+测试：
+
+```text
+tests/e2e/test_v0_05_real_llm.py
+```
+
+标记：
+
+```text
+@pytest.mark.real_llm
+```
+
+三项验收全部通过：
+
+| 编号 | 场景 | 结果 |
+|---|---|---|
+| E2E-01 | create / run / verify | PASS |
+| E2E-02 | repair loop | PASS |
+| E2E-03 | provider budget boundary | PASS |
+
+真实运行产物（已脱敏）：
+
+```text
+artifacts/v0_05/real_llm/
+├── run_summary.json
+├── event_trace.json
+├── generated_files/
+│   └── hello.py
+├── tool_results.json
+├── environment.json
+└── redaction_report.md
+```
+
+最近一次真实运行摘要（`deepseek-v4-flash`）：
+
+```json
+{
+  "provider": "openai-compatible",
+  "model": "deepseek-v4-flash",
+  "status": "completed",
+  "stop_reason": "done",
+  "model_calls": 3,
+  "tool_calls": 2,
+  "terminal_event_count": 1
+}
+```
+
+手动触发工作流：
+
+```text
+.github/workflows/real-llm-e2e.yml
+```
+
+重复运行入口：
+
+```text
+python scripts/run_v0_05_real_llm_acceptance.py
+```
+
+## 8. 当前 artifacts
 
 ```text
 artifacts/v0_05/
@@ -206,7 +283,15 @@ artifacts/v0_05/
 ├── mvp_test_report.md
 ├── mvp_demo_trace.json
 ├── known_limitations.md
-└── file_manifest.txt
+├── file_manifest.txt
+└── real_llm/
+    ├── run_summary.json
+    ├── event_trace.json
+    ├── generated_files/
+    │   └── hello.py
+    ├── tool_results.json
+    ├── environment.json
+    └── redaction_report.md
 ```
 
 正式 SOP：
@@ -215,7 +300,7 @@ artifacts/v0_05/
 Plan/PaperClaw_v0.05_HarnessQueryEngine_MVP_SOP.md
 ```
 
-## 7. 仍然存在的边界
+## 9. 仍然存在的边界
 
 必须保留以下表述：
 
@@ -235,7 +320,7 @@ Plan/PaperClaw_v0.05_HarnessQueryEngine_MVP_SOP.md
 artifacts/v0_05/known_limitations.md
 ```
 
-## 8. 后续维护规则
+## 10. 后续维护规则
 
 v0.05 已 GO，不再继续“顺手完善 Harness”。后续只有满足以下条件才立项：
 
@@ -256,7 +341,7 @@ v0.05 已 GO，不再继续“顺手完善 Harness”。后续只有满足以下
 
 这些不能打包为 v0.05 的“尾工”。
 
-## 9. 接手检查
+## 11. 接手检查
 
 ```bash
 python -m pytest tests/unit/test_query_engine.py -q
@@ -264,6 +349,8 @@ python -m pytest tests/unit/test_agent_runtime_executor.py -q
 python -m pytest tests/unit/test_query_engine_runtime_boundaries.py -q
 python -m pytest tests/unit/test_query_engine_cli.py -q
 python -m pytest tests/integration/test_v0_05_mvp_demo.py -q
+python -m pytest tests/e2e/test_v0_05_real_llm.py -v -m real_llm
+python scripts/run_v0_05_real_llm_acceptance.py
 python -m pytest -q
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
