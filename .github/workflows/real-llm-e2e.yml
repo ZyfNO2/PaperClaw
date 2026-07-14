@@ -1,0 +1,103 @@
+name: Real LLM E2E
+
+# Manual-only workflow that runs PaperClaw v0.05 against a live LLM provider.
+#
+# This workflow is intentionally NOT triggered by push or pull_request because it:
+#   * requires paid API credentials,
+#   * calls an external service with cost and rate limits,
+#   * is non-deterministic and slower than offline tests,
+#   * produces real filesystem side effects.
+#
+# Use it as the final acceptance gate before declaring PaperClaw v0.05 MVP = GO.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Model override (optional; defaults to the repository .env or PAPERCLAW_MODEL secret)"
+        required: false
+        default: ""
+permissions:
+  contents: read
+
+concurrency:
+  group: real-llm-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  real-llm-e2e:
+    name: Real provider E2E on Windows
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    env:
+      TEMP: ${{ github.workspace }}\tmp\real_llm
+      TMP: ${{ github.workspace }}\tmp\real_llm
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Prepare temp dirs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path tmp\real_llm | Out-Null
+          New-Item -ItemType Directory -Force -Path tmp\real_llm_artifacts | Out-Null
+
+      - name: Install project (editable, with dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run real LLM E2E tests
+        shell: pwsh
+        env:
+          PAPERCLAW_API_KEY: ${{ secrets.PAPERCLAW_API_KEY }}
+          PAPERCLAW_BASE_URL: ${{ secrets.PAPERCLAW_BASE_URL }}
+          PAPERCLAW_MODEL: ${{ github.event.inputs.model || secrets.PAPERCLAW_MODEL }}
+        run: |
+          python -m pytest `
+            tests/e2e/test_v0_05_real_llm.py `
+            -v -m real_llm `
+            --basetemp=tmp/real_llm `
+            --report-log=tmp/real_llm/reportlog.jsonl
+
+      - name: Summarize outcomes
+        if: always()
+        shell: pwsh
+        run: |
+          $log = "tmp/real_llm/reportlog.jsonl"
+          if (Test-Path $log) {
+            $passed = (Select-String -Path $log -Pattern '"outcome": "passed"' -SimpleMatch).Count
+            $failed = (Select-String -Path $log -Pattern '"outcome": "failed"' -SimpleMatch).Count
+            $skipped = (Select-String -Path $log -Pattern '"outcome": "skipped"' -SimpleMatch).Count
+            Write-Host "::notice::real LLM E2E summary — passed=$passed failed=$failed skipped=$skipped"
+          } else {
+            Write-Host "::warning::report log not found at $log"
+          }
+
+      - name: Upload real LLM report log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-llm-reportlog-${{ github.run_id }}
+          path: tmp/real_llm/reportlog.jsonl
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload generated workspace files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-llm-workspaces-${{ github.run_id }}
+          path: tmp/real_llm/*/
+          retention-days: 30
+          if-no-files-found: warn
