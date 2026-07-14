@@ -539,17 +539,19 @@ PaperAgent\apps\api\app\services\retrieval\tool_orchestrator.py
 执行前至少阅读：
 
 ```text
+PaperClaw\src\paperclaw\harness\query_engine.py
+PaperClaw\src\paperclaw\cli.py
+PaperClaw\src\paperclaw\agent\events.py
 AutoResearchClaw\researchclaw\hitl\adapters\cli_adapter.py
-AutoResearchClaw\researchclaw\dashboard\broadcaster.py
 AutoResearchClaw\researchclaw\server\websocket\events.py
-AutoResearchClaw\frontend-legacy\src\components\PipelineView.js
-AutoResearchClaw\frontend-legacy\src\components\ExperimentMonitor.js
 AutoResearchClaw\frontend-legacy\src\components\ChatPanel.js
-G:\PaperAgent 中当前 workbench / Trace / RagContext 组件
+G:\PaperAgent 中当前 workbench 的事件分组与 stale state 处理
 ```
 
-提取：pause、approve、progress、event-to-UI、task status。  
-禁止：复制 legacy UI 或让 TUI 直接操作 Tool / DB。
+提取：同步 QueryEngine 适配、progress、event-to-UI、terminal status 和 CLI fallback。
+禁止：复制 legacy UI、让 TUI 直接操作 Tool / DB，或在 v0.06 MVP 顺手实现 Permission Dialog、后台 Shell、MultiAgent / Context / Trace 全量面板。
+
+当前 v0.06 只验收 Chat、Prompt、RunStatus、关键 Tool Timeline、cooperative cancel 和 CLI fallback。其余交互能力进入 v0.06.1 候选池。
 
 ### v0.07 Trace / Replay / Eval
 

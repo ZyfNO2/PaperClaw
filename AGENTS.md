@@ -15,11 +15,12 @@
 - 上下文系统骨架：`docs/desgin/PaperClaw_上下文系统与提示词工程骨架.md`。
 - 总路线与风险推演：`Plan/PaperClaw_v0.02-v0.10_SOP总路线与风险推演.md`。
 - 首批跨领域修复型测试题集：`Plan/testsets/PaperClaw_跨领域修复型测试题集_v0.01.md`，当前为设计稿，覆盖图像识别、大语言模型、三维重建各 1 题。
-- v0.04 当前执行文件：`Plan/drafts/PaperClaw_v0.04_ContextSessionSQLite_SOP草案.md`，已重构为 Context / Session / SQLite MVP 收口版。
-- v0.04.1 与 v0.05.1 文件是 Post-MVP 增强候选池，不是默认执行 SOP，也不属于当前版本完成 Gate。
-- v0.05 当前设计文件：`Plan/drafts/PaperClaw_v0.05_HarnessQueryEngine_SOP草案.md`，只做薄 QueryEngine façade 与现有 Runtime 接线。
+- v0.04 MVP 文件：`Plan/drafts/PaperClaw_v0.04_ContextSessionSQLite_SOP草案.md`；仓库已有 closeout commit，但本轮未重新审计 completion hook。
+- v0.05 MVP 文件：`Plan/drafts/PaperClaw_v0.05_HarnessQueryEngine_SOP草案.md`；仓库已有 QueryEngine 实现与 artifacts，但 SOP 状态和 checkbox 仍需单独同步审计。
+- v0.06 当前设计文件：`Plan/drafts/PaperClaw_v0.06_Claw交互层_SOP草案.md`，只做 Chat、关键事件时间线、结构化终态与 CLI fallback。
+- v0.04.1、v0.05.1 与 v0.06.1 文件是 Post-MVP 增强候选池，不是默认执行 SOP，也不属于当前版本完成 Gate。
 - 当前实施顺序：v0.02 Verify/Reflection → v0.03 MultiAgent → v0.04 Context/SQLite → v0.05 Harness/QueryEngine → v0.06 Claw TUI → v0.07 Trace/Eval → v0.08 Retrieval/RAG → v0.09 SeededResearch → v0.10 Release。
-- v0.04 正在执行；v0.05–v0.10 尚为 SOP 草案，必须在前置版本通过后结合真实 Trace 冻结，不能描述为已经实现。
+- v0.06–v0.10 尚为 SOP 草案，必须在前置版本通过后结合真实 Trace 冻结，不能描述为已经实现；v0.04/v0.05 的完成状态以各自 hook、测试与交接物审计为准。
 
 ## 既有项目参考
 

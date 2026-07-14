@@ -1,233 +1,318 @@
-# PaperClaw v0.06：Claw CLI / TUI 交互层 SOP 草案
+# PaperClaw v0.06：Claw TUI MVP SOP 草案
 
-> 状态：SOP 草案，待 v0.05 完成后冻结  
-> 前置：v0.05 Harness Engineering 通过验收  
-> 目标：为 PaperClaw 增加面向用户的 TUI 交互层，同时保持 Runtime 与 UI 解耦
-
-> 执行前参考：[`PaperClaw_参考项目与可复用模块索引.md`](../../docs/reference/PaperClaw_参考项目与可复用模块索引.md) 中 v0.06 清单，重点阅读 AutoResearchClaw CLI / WebSocket / dashboard 交互契约和 PaperAgent 当前 Workbench / Trace 组件。
+> 状态：**MVP 草案，待执行前冻结**
+> 更新：2026-07-15
+> 前置：使用现有同步、单会话 QueryEngine，不反向扩大 v0.05
+> 目标：用户能在一个轻量 TUI 中提交任务、观察关键运行事件、请求停止并看到结构化结果，同时保留可靠 CLI fallback。
 
 ## 目录
 
-- [交互定位、布局与组件](#1-交互层定位)
-- [命令、权限与任务交互](#4-slash-commands)
-- [演示、验收与 Web 边界](#8-最小演示)
-- [技术选型、遗漏与风险](#11-技术选型草案)
-- [实施阶段、Gate 与交付](#14-初步实施阶段)
+- [1. 拆分结论](#1-拆分结论)
+- [2. MVP 用户故事](#2-mvp-用户故事)
+- [3. 技术路径与选择](#3-技术路径与选择)
+- [4. MVP 范围](#4-mvp-范围)
+- [5. 最小架构与交互](#5-最小架构与交互)
+- [6. 实施阶段](#6-实施阶段)
+- [7. 测试与 Gate](#7-测试与-gate)
+- [8. 演示与交付](#8-演示与交付)
+- [9. 后续增强边界](#9-后续增强边界)
+- [10. 风险预案](#10-风险预案)
+- [11. 既有实现参考](#11-既有实现参考)
 
-## 1. 交互层定位
+---
 
-第一版 Claw 交互层采用 Textual TUI：
+## 1. 拆分结论
 
-- 适合 Coding Agent 与 Runtime 调试；
-- 可以实时显示 Tool、Permission、Context 和 Trace；
-- 开发成本低于完整 Web；
-- 面试演示更能突出 Agent Runtime，而不是前端页面。
+旧草案一次要求十个组件、十五个 Slash Commands，并同时覆盖 Chat、Permission Dialog、Shell streaming、MultiAgent 可视化、Context / Verify / Trace inspector、Session Resume 和完整终端兼容矩阵。
 
-TUI 是 Runtime Event 的消费者和 Command 的发送者，不拥有 Agent 业务逻辑。
+这些能力依赖不同的 Runtime enhancement，不能作为一个 TUI MVP 同时实施。v0.06 现在只证明：
 
-## 2. 候选布局
+> TUI 是 QueryEngine 的薄客户端；它能提交任务、消费已有事件、显示终态，并在不可用时安全回退 CLI。
 
-```text
-┌ PaperClaw ─ Session / Mode / Model ─────────────┐
-│ Chat                                            │
-│                                                 │
-├ Tools / Agents / Tasks ─────────────────────────┤
-│ tool status, worker status, verification        │
-├ Context / Permission / Trace ───────────────────┤
-│ token budget, snapshots, pending decisions      │
-├─────────────────────────────────────────────────┤
-│ > input or /command                             │
-└─────────────────────────────────────────────────┘
-```
+---
 
-## 3. 核心组件候选
+## 2. MVP 用户故事
 
 ```text
-ChatPanel
-PromptInput
-ToolTimeline
-AgentTaskPanel
-ContextInspector
-PermissionDialog
-VerificationPanel
-TracePanel
-SessionPicker
-StatusBar
+用户运行 paperclaw tui
+→ 输入“创建 hello.py，运行并验证”
+→ TUI 通过 QueryEngine.submit() 创建 Run
+→ 状态栏显示 running
+→ 时间线显示 model / tool / verification 关键事件
+→ Run 完成后显示 output、status、stop_reason
+→ 用户可开始新任务或退出
 ```
 
-## 4. Slash Commands
+补充路径：
 
-第一版候选：
+- 用户输入 `/cancel`，QueryEngine 在下一个安全边界 cooperative stop；
+- Textual 未安装、无 TTY 或显式 `--no-tui` 时，普通 CLI 仍可运行；
+- Permission deny 只作为事件展示，不在 MVP 中新增交互式授权。
 
-```text
-/new
-/resume
-/cancel
-/mode
-/context
-/compact
-/agents
-/tasks
-/tools
-/permissions
-/verify
-/trace
-/cost
-/export
-/quit
-```
+---
 
-Slash Command 调用 Harness Command API，不直接访问数据库或工具实现。
+## 3. 技术路径与选择
 
-## 5. Permission 交互
+| 路径 | 做法 | 优点 | 风险 |
+|---|---|---|---|
+| A：完整 Runtime Dashboard | 一次实现权限、后台任务、MultiAgent、Context 和 Trace 面板 | 功能丰富 | 强依赖未实现的 async / permission / event 能力 |
+| B：薄 TUI Client | 只包装 QueryEngine 与已有 EventHandler | 可演示、低耦合、易回退 | 暂不具备完整 Claude Code 交互 |
 
-```text
-Tool: BashTool
-Command: pytest
-Class: test
-Risk: low
-Reason: 验证修改
+采用方案 B。
 
-[Allow once] [Allow session] [Deny] [Edit]
-```
-
-高风险命令还应显示：
-
-- 作用路径；
-- 命令拆分结果；
-- 是否 sandbox；
-- Agent / Task；
-- 预计运行方式；
-- 历史拒绝。
-
-## 6. Shell Task 交互
-
-长测试和构建需要：
-
-- 前台流式输出；
-- 转后台；
-- 查看后台列表；
-- 取消；
-- 完成通知；
-- 结果回流当前 Run；
-- 退出 TUI 后的明确处理策略。
-
-## 7. MultiAgent 可视化
-
-展示：
-
-```text
-Coordinator      planning
-Worker A         editing src/a.py
-Worker B         running tests
-Reviewer         waiting
-```
-
-用户能查看 Task DAG、作用域、依赖、Worker Result 和 Reviewer Finding，但不直接看到或依赖隐藏 Chain-of-Thought。
-
-## 8. 最小演示
-
-1. 用户提交编码任务；
-2. Chat 流式显示；
-3. Tool Timeline 显示读、改、测试；
-4. Bash 高风险动作弹 Permission Dialog；
-5. Verify Panel 显示 Claim 和 Evidence；
-6. MultiAgent Panel 显示 Worker 分工；
-7. 用户取消一个 Run；
-8. 重启 TUI 并恢复 Session。
-
-## 9. 草稿验收方向
-
-- TUI 不直接导入具体 Tool 实现；
-- 所有界面状态来自 Runtime Event / Snapshot；
-- 用户动作通过 Command API 返回 Harness；
-- 流式刷新不阻塞 Agent Loop；
-- Permission 等待可取消；
-- 长输出可折叠、截断和引用；
-- Session Resume 后状态一致；
-- Windows Terminal 下稳定运行；
-- 无颜色环境和窄终端有降级布局。
-
-## 10. 后续 Web 边界
-
-TUI 主要服务 Coding Agent、Runtime 调试和校招演示。SeededResearch 的 PDF、Evidence Graph、方法族、实验矩阵和报告管理更适合后续 Web UI。
-
-长期形态：
-
-```text
-PaperClaw Harness
-  ├── CLI
-  ├── Textual TUI
-  ├── Web API
-  ├── Research Web UI
-  └── Offline Eval Runner
-```
-
-等 v0.05 Runtime Event、Permission 和 Session API 稳定后，再编写 v0.06 正式 SOP。
-
-## 11. 技术选型草案
-
-| 能力 | 推荐选型 | 原因 / 限制 |
+| 能力 | MVP 选择 | 边界 |
 |---|---|---|
-| TUI | Textual | Python 原生、Event/Widget/Worker 完整 |
-| 富文本 | Rich / Textual Markdown | 复用生态，不自写 ANSI renderer |
-| CLI | `argparse` 保持兼容 | 当前无依赖；TUI 作为 optional extra |
-| UI 状态 | Runtime Event reducer + immutable snapshot | UI 不直接读 Tool / DB |
-| 后台工作 | Textual Worker + Harness async task | 防止阻塞消息循环 |
-| 样式 | 外部 `.tcss` | 逻辑与样式分离 |
+| TUI | Textual optional extra | Windows 使用 full-screen，不依赖 inline mode |
+| 富文本 | Textual / Rich 内置能力 | 不自写 ANSI renderer |
+| Runtime 调用 | Textual Worker thread 包装同步 `QueryEngine.submit()` | 不把 v0.05 改造成 async |
+| UI 状态 | `run_id + sequence` 的最小 reducer | 不创建通用 EventBus |
+| CLI | 保留现有 `argparse` 路径 | TUI 故障不阻断核心 Agent |
+| 样式 | 一份最小 `.tcss` | 不在 MVP 建设计系统 |
 
-Textual 官方说明 inline mode 当前不支持 Windows，因此 v0.06 默认全屏 application mode；不得把 inline mode 作为 Windows 验收路径。
+---
 
-## 12. 用户尚未覆盖的关键问题
+## 4. MVP 范围
 
-- **非交互环境**：CI、重定向和无 TTY 环境必须自动回退普通 CLI。
-- **可访问性**：无颜色、低对比度、键盘导航、屏幕宽度和中文宽字符。
-- **事件风暴**：token delta 和 Shell stream 不能每字重绘全屏。
-- **权限等待死锁**：用户关闭窗口或切 Session 时 pending request 必须取消或持久化。
-- **后台任务归属**：切换 conversation 后仍要知道任务属于哪个 Run。
-- **恢复后的 UI 一致性**：不能只恢复聊天文本而丢失 Task、Permission、Verify 和 Agent 状态。
-- **日志与聊天分离**：默认界面不应把高频内部日志混入 Assistant 消息。
-- **剪贴板与 Secret**：复制 Trace 时默认脱敏。
-- **Windows Terminal 差异**：PowerShell、cmd、WSL、ConPTY、Unicode 和 resize 均需 fixture。
+### 4.1 必做
 
-## 13. 风险推演与预案
+- `paperclaw tui` 或等价独立入口；
+- Textual 为 optional dependency；
+- 一个 full-screen Application；
+- `ChatLog`：显示用户输入与最终 Agent 输出；
+- `PromptInput`：提交任务和 Slash Command；
+- `RunStatus`：run_id、status、stop_reason、调用计数；
+- `ToolTimeline`：显示关键生命周期事件，不显示隐藏 Chain-of-Thought；
+- Textual Worker 中调用同步 QueryEngine；
+- `/new`、`/cancel`、`/quit`、`/help`；
+- terminal event 唯一、事件 sequence 不倒退；
+- Textual 缺失 / 无 TTY 时给出清晰 CLI fallback；
+- Windows Terminal 基础 smoke；
+- 窄终端下退化为单列而不 crash。
 
-| 场景 | 后果 | 预案 |
+### 4.2 不作为 v0.06 Gate
+
+- token streaming；
+- Shell stdout / stderr 实时流；
+- background Shell 和任务通知；
+- 强制终止模型请求或进程树；
+- Permission Dialog、allow once / session；
+- Session Picker、历史 Session 列表与 reconnect；
+- Context、Verify、Trace、Cost 独立面板；
+- MultiAgent DAG / Worker 面板；
+- `/resume`、`/compact`、`/agents`、`/trace`、`/export` 等高级命令；
+- Web API / Web UI；
+- daemon mode；
+- 完整无障碍、剪贴板脱敏和终端兼容矩阵；
+- 性能压力与事件风暴治理。
+
+上述内容进入 v0.06.1 候选池，不得反向扩大 MVP。
+
+---
+
+## 5. 最小架构与交互
+
+### 5.1 组件关系
+
+```text
+Textual App
+├── ChatLog
+├── ToolTimeline
+├── RunStatus
+└── PromptInput
+        ↓ command
+TUI Controller / Adapter
+        ↓
+QueryEngine
+        ↓ event_handler
+UI Message Queue
+        ↓
+run_id + sequence reducer
+```
+
+硬边界：
+
+- Widget 不导入具体 Tool；
+- TUI 不直接读写 SQLite；
+- TUI 不拼 Agent Prompt；
+- TUI 不判断 Permission；
+- TUI 不修改 RunResult；
+- 所有 Runtime 状态来自 QueryEngine event / result。
+
+### 5.2 同步 QueryEngine 适配
+
+`QueryEngine.submit()` 当前是同步调用。MVP 使用一个 Textual Worker thread 执行它，UI 主循环只消费消息：
+
+```text
+Prompt submit
+→ disable duplicate submit
+→ start worker thread
+→ QueryEngine event_handler posts UI message
+→ reducer rejects stale sequence
+→ terminal RunResult re-enables input
+```
+
+MVP 只允许一个 active run。第二次 submit 必须被 UI 拒绝并解释原因。
+
+### 5.3 Slash Commands
+
+```text
+/help    显示四个 MVP 命令
+/new     清空当前展示并创建新 conversation / engine
+/cancel  调用 QueryEngine.request_stop(active_run_id)
+/quit    无 active run 时退出；有 active run 时先确认
+```
+
+`/cancel` 只能承诺 cooperative stop。界面必须明确“正在运行的同步模型或 Shell 可能要到安全边界才停止”。
+
+### 5.4 Timeline 事件
+
+MVP 只渲染：
+
+```text
+run.started
+model.started / model.completed / model.failed
+tool.started / tool.completed / tool.failed
+verification.completed
+permission.denied
+run.stop_requested
+run.completed / run.failed / run.stopped
+```
+
+未知事件显示为简短 generic row 或忽略并记录 debug log，不能导致 TUI crash。
+
+---
+
+## 6. 实施阶段
+
+### Phase A：TUI Skeleton 与 Runtime Adapter
+
+- [ ] 增加 optional Textual dependency 与独立 TUI entry；
+- [ ] 建立 App、ChatLog、PromptInput、RunStatus、ToolTimeline；
+- [ ] 用 Worker thread 包装同步 QueryEngine；
+- [ ] 建立 UI message 与 `run_id + sequence` reducer；
+- [ ] 保持现有 CLI 行为不变。
+
+### Phase B：最小交互闭环
+
+- [ ] 支持任务提交与单 active run；
+- [ ] 渲染关键 model / tool / verification / terminal events；
+- [ ] 实现 `/help`、`/new`、`/cancel`、`/quit`；
+- [ ] 展示 RunResult、stop_reason 和调用计数；
+- [ ] 实现 Textual 缺失与无 TTY fallback。
+
+### Phase C：验证与留档
+
+- [ ] 完成 Textual headless/widget tests；
+- [ ] 完成 Windows Terminal 和窄终端 smoke；
+- [ ] 完成正常任务、cancel、失败和 fallback 演示；
+- [ ] 确认 TUI 不直接依赖 Tool / SQLite；
+- [ ] 输出最小 artifacts 并完成 Review。
+
+三个 Phase 之外的新 Widget 或 Runtime 能力全部进入候选池。
+
+---
+
+## 7. 测试与 Gate
+
+| 编号 | 场景 | 通过标准 |
 |---|---|---|
-| Runtime Event 到达乱序 | 面板状态倒退 | 按 run_id + sequence reducer；检测 gap 后请求 snapshot |
-| Shell 输出过快 | UI 卡顿 | 30–100ms batch；保留尾部；完整输出存 Trace 引用 |
-| Permission Dialog 被关闭 | Run 永久等待 | 明确 close=deny_once 或 cancel；状态持久化 |
-| Textual Worker 异常 | UI 无反馈 | worker.failed 转 Runtime/UI error panel，不吞异常 |
-| 窄终端布局崩溃 | 无法演示 | 单列 fallback；隐藏 inspector；`/trace` 单独 screen |
-| TUI 崩溃但 Agent 仍运行 | 用户失去控制 | 默认同进程取消；未来 daemon 模式需明确 reconnect token |
-| MultiAgent 信息过载 | 用户看不懂 | 默认只显示 Coordinator + active task；详情按需展开 |
-| Windows inline 不支持 | 启动失败 | 只提供 full-screen；普通 CLI 作为可靠 fallback |
+| M06-01 | TUI launch | full-screen App 可启动，基础组件存在 |
+| M06-02 | submit | 只调用一次 QueryEngine，UI 主循环不阻塞 |
+| M06-03 | event order | stale / duplicate sequence 不回滚界面状态 |
+| M06-04 | terminal result | completed / failed / stopped 正确显示 |
+| M06-05 | duplicate submit | active run 存在时拒绝第二次提交 |
+| M06-06 | cooperative cancel | `/cancel` 发送 stop request 并解释边界 |
+| M06-07 | unknown event | 不 crash，不伪造已知状态 |
+| M06-08 | no Textual | 给出安装提示或回退 CLI，核心命令仍可用 |
+| M06-09 | no TTY | 自动回退或明确拒绝，不进入损坏界面 |
+| M06-10 | architecture boundary | TUI 不导入具体 Tool、Repository 或数据库表 |
+| M06-11 | terminal smoke | Windows Terminal 与窄宽度不 crash |
+| M06-12 | CLI regression | 原 `paperclaw agent` 路径保持通过 |
 
-## 14. 初步实施阶段
+### GO
 
-1. 保持现有 CLI 回归；
-2. Event reducer 和 UI snapshot；
-3. Chat / Prompt / Status 基础屏；
-4. Tool / Verify / Agent / Context inspector；
-5. Permission Dialog；
-6. Shell Task stream / cancel；
-7. Session picker / resume；
-8. Windows Terminal、resize、无颜色、无 TTY 验收。
+- M06-01–M06-12 全部通过；
+- 一条真实任务可以从输入走到结构化终态；
+- UI 不阻塞 QueryEngine 执行；
+- CLI fallback 可用；
+- 未引入 Permission、ShellTask、MultiAgent 或 Trace 新 Runtime；
+- 文档不宣称 token streaming、强制取消或 Session reconnect。
 
-## 15. GO / 降级 / NO-GO
+### NO-GO
 
-- `GO`：TUI 不阻塞 Runtime，Permission 可控，Session 状态完整，普通 CLI 保持可用。
-- `降级`：先交付 Chat + Tool Timeline + Permission；Context/Eval 图形面板后置。
-- `NO-GO`：TUI 直接调用工具、无 TTY 时无法运行、关闭权限弹窗导致永久挂起、UI 崩溃后后台副作用失控。
+- TUI 直接执行 Tool 或写数据库；
+- UI 线程因同步 QueryEngine 冻结；
+- event sequence 倒退导致终态被覆盖；
+- Textual 不可用时核心 CLI 也无法运行；
+- `/cancel` 被描述为已经终止模型或进程树；
+- 为完成 UI 顺手重构 v0.05 QueryEngine。
 
-## 16. 预期交付
+---
+
+## 8. 演示与交付
+
+### 最小演示
+
+```text
+启动 TUI
+→ 提交创建文件任务
+→ 观察 run / tool / verify 事件
+→ 查看 completed RunResult
+→ 新建任务并请求 cooperative cancel
+→ 退出 TUI
+→ 用普通 CLI 再运行一次 smoke
+```
+
+### 交付物
 
 ```text
 artifacts/v0_06/
-├── interaction_contract.md
-├── tui_layout.md
-├── windows_terminal_matrix.md
-├── permission_ux_report.md
-├── event_stress_report.md
-└── demo_script.md
+├── mvp_test_report.md
+├── mvp_demo_trace.json
+├── tui_boundary.md
+├── known_limitations.md
+└── implementation_summary.md
 ```
+
+不生成尚未实现的 Permission UX、Shell stream、MultiAgent 或完整 terminal matrix 报告。
+
+---
+
+## 9. 后续增强边界
+
+后续候选统一进入：
+
+[`PaperClaw_v0.06.1_Claw交互增强候选池.md`](PaperClaw_v0.06.1_Claw交互增强候选池.md)
+
+候选池没有默认实施顺序。一次只能提取一个用户故事重新写成小型 SOP。
+
+---
+
+## 10. 风险预案
+
+| 风险 | 预案 |
+|---|---|
+| 同步 submit 冻结界面 | Worker thread + UI message，不重写 Runtime async |
+| UI 事件乱序 | run_id + sequence reducer |
+| 退出时 active run 未知 | 明确提示 cooperative stop 边界，不假装已杀进程 |
+| Textual 成为硬依赖 | optional extra + CLI fallback |
+| Widget 数继续膨胀 | MVP 固定四个可视组件 |
+| 把高频日志当聊天 | Timeline 只显示关键生命周期事件 |
+| Windows inline 不可用 | full-screen App；不把 inline 作为验收路径 |
+| hidden Chain-of-Thought 泄漏 | 只显示 structured event、reason summary 和 tool metadata |
+
+---
+
+## 11. 既有实现参考
+
+| 参考项目 | 必读路径 | 借鉴目标 | 禁止照搬 |
+|---|---|---|---|
+| PaperClaw | `src/paperclaw/harness/query_engine.py` | 同步 submit、event_handler、cooperative stop | 让 Widget 绕过 QueryEngine |
+| PaperClaw | `src/paperclaw/cli.py` | CLI fallback 与事件展示词汇 | 把 CLI print 逻辑直接塞进 Widget |
+| PaperClaw | `src/paperclaw/agent/events.py` | 现有 Agent 事件类型 | 新建冲突的第二套语义 |
+| AutoResearchClaw | `researchclaw/hitl/adapters/cli_adapter.py` | progress / action 的轻量交互 | 复制科研 stage 常量 |
+| AutoResearchClaw | `researchclaw/server/websocket/events.py` | event-to-UI 边界 | 在 MVP 引入 WebSocket server |
+| AutoResearchClaw | `frontend-legacy/src/components/ChatPanel.js` | Chat 与状态分离思路 | 复制 legacy React UI |
+| PaperAgent | 当前 Workbench / Trace 组件 | 事件分组与 stale state 经验 | 复制旧 DOM、全量面板或 LangGraph 状态 |
+
+执行前记录参考仓库 commit / worktree。Implementation Summary 必须说明复用的既有 QueryEngine / CLI 契约，以及主动延期的 UI 能力。

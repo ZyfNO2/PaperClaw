@@ -1,6 +1,6 @@
 # PaperClaw v0.02–v0.10 SOP 总路线与风险推演
 
-> 状态：v0.04 正在按 MVP 收口；v0.05–v0.10 为逐步收敛的 SOP 草案
+> 状态：v0.04/v0.05 已有实现提交；v0.06 已收缩为 MVP 草案；完成状态仍以各版本 hook、测试与交接物审计为准
 > 日期：2026-07-13  
 > 目标：把 PaperClaw 从最小 ReAct Loop 推进到可观测、可评估、可恢复、可演示的 Coding / Research Agent Harness
 
@@ -22,7 +22,7 @@
 | v0.03 | MultiAgent 分工协作 | 拆解、并行、冲突治理和独立 Reviewer 有真实收益 |
 | v0.04 | Context、Session 与 SQLite MVP | 上下文可预算、可持久化，并只从安全边界恢复 |
 | v0.05 | 最小 Harness 与 QueryEngine MVP | 现有 Agent Runtime 通过一个薄、稳定入口运行 |
-| v0.06 | Claw CLI / TUI 交互层 | 用户能观察、授权、取消、恢复和理解 Agent |
+| v0.06 | Claw TUI MVP | 用户能提交任务、观察关键事件、请求停止并可靠回退 CLI |
 | v0.07 | Trace、Replay 与分层 Eval | 运行事实可追踪、回放、比较和形成回归数据 |
 | v0.08 | Retrieval、RAG 与 Evidence Engine | Query、检索、核验、Evidence 和 Context 有强契约与指标 |
 | v0.09 | SeededResearch 学术裁缝垂直切片 | 通用 Runtime 能支撑真实科研决策 domain |
@@ -55,6 +55,7 @@ v0.06 可以和 v0.07 的文档并行推进，但正式验收都依赖 v0.05 的
 - [v0.05 Harness / QueryEngine](drafts/PaperClaw_v0.05_HarnessQueryEngine_SOP草案.md)
 - [v0.05 Post-MVP 增强候选池](drafts/PaperClaw_v0.05.1_Harness增强候选池.md)
 - [v0.06 Claw CLI / TUI](drafts/PaperClaw_v0.06_Claw交互层_SOP草案.md)
+- [v0.06 Post-MVP 交互增强候选池](drafts/PaperClaw_v0.06.1_Claw交互增强候选池.md)
 - [v0.07 Trace / Replay / Eval](drafts/PaperClaw_v0.07_TraceReplay与分层Eval_SOP草案.md)
 - [v0.08 Retrieval / RAG / Evidence](drafts/PaperClaw_v0.08_RetrievalRAG与EvidenceEngine_SOP草案.md)
 - [v0.09 SeededResearch](drafts/PaperClaw_v0.09_SeededResearch学术裁缝垂直切片_SOP草案.md)
@@ -258,7 +259,7 @@ v0.10 不是“功能很多”，而是能提供以下证据：
 | v0.03 | MultiAgent 为什么比单 Agent 好？ | 单/多 Agent 成功率、时延、token、冲突/重复率对照 |
 | v0.04 | 为什么 SQLite？恢复边界是什么？ | Context budget、Session reopen、safe resume / recovery_required 演示 |
 | v0.05 | QueryEngine 会不会是 God Object？ | 薄 façade 依赖图、budget 与 Permission bypass test |
-| v0.06 | 为什么 TUI 不直接做 Web？ | Event-driven thin client、CLI fallback、Windows terminal matrix |
+| v0.06 | 为什么 TUI 不直接做 Web？ | QueryEngine 薄客户端、关键事件时间线、CLI fallback smoke |
 | v0.07 | LangSmith 和自建 Trace 怎么分工？ | Local TraceStore、export outage、deterministic replay、Eval version manifest |
 | v0.08 | 为什么 Hybrid 优于只用向量库？ | BM25/Dense/RRF ablation、Recall/MRR/nDCG、降级链 |
 | v0.09 | 学术裁缝如何避免伪创新？ | BaselineCard、Compatibility、EvidenceLink、falsifier、NO-GO case |
@@ -280,10 +281,10 @@ v0.10 不是“功能很多”，而是能提供以下证据：
 
 | 版本 | 当前过度设计风险 | 建议 MVP | 后置候选 |
 |---|---|---|---|
-| v0.06 | 同时做完整 TUI、MultiAgent、Context、Trace 面板 | 对话输入、事件时间线、一次权限交互 | 高级面板、Web、完整任务可视化 |
+| v0.06 | 同时做完整 TUI、MultiAgent、Permission、Context、Trace 面板 | 对话输入、关键事件时间线、结构化终态、CLI fallback | Permission、Shell stream、高级面板、Session Picker、完整任务可视化 |
 | v0.07 | Trace、Replay、Agent/RAG/Context/MultiAgent Eval 全部打包 | 本地 TraceStore + 一组 repair dataset 回归 | LangSmith、在线 Eval、RAG/多 Agent 专项评估 |
 | v0.08 | Sparse、Dense、RRF、Reranker、多源在线检索同时进入 | SQLite FTS5 + Evidence identity + 一个离线评估集 | Dense、Reranker、多源联网和缓存体系 |
 | v0.09 | 多模式、Skill 矩阵和完整科研 Pipeline 同时落地 | 一组 Seed → 核验 → 单一方法建议 → NO-GO | topic-only、并行 lanes、完整学术 Skill 编排 |
 | v0.10 | 安全、跨平台、供应链、CI、发布全部作为单一 Gate | Windows clean install + offline demo + version/license | SBOM、跨平台矩阵、sandbox 与完整安全加固 |
 
-优先级：v0.07 风险最高；在 v0.06 或 v0.07 启动前，必须先生成对应 MVP 收口版和 Post-MVP 候选池。
+优先级：v0.07 风险最高；v0.06 已完成文档拆分，v0.07 启动前必须生成对应 MVP 收口版和 Post-MVP 候选池。
