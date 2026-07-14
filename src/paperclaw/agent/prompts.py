@@ -15,6 +15,6 @@ def build_prompt(shared: dict, registry: ToolRegistry) -> str:
             "[Tools]\n" + json.dumps(registry.descriptions(), ensure_ascii=False),
             "[Task]\n" + shared["task"],
             "[History]\n" + json.dumps(history, ensure_ascii=False),
-            '[Output Contract]\nReturn exactly one JSON object: {"action":"tool_name|done","arguments":{},"reason":"short audit note"}. For done, use {"action":"done","arguments":{"result":"what is finished","verification":"what command/output verified it","remaining_issues":[]}}.',
+            '[Output Contract]\nReturn exactly one JSON object: {"action":"tool_name|done","arguments":{},"reason":"short audit note"}. For done, treat it as a completion proposal and use {"action":"done","arguments":{"result":"what is finished","verification":"what command/output verified it","remaining_issues":[]}}.',
         ]
     )
