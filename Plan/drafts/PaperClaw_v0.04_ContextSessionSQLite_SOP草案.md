@@ -1,7 +1,7 @@
 # PaperClaw v0.04：Context、Session 与 SQLite MVP 收口 SOP
 
 > 版本：v0.04
-> 状态：**执行中 / MVP 收口版**
+> 状态：**已完成 / GO（MVP）**
 > 更新：2026-07-14
 > 目标：证明 PaperClaw 能把结构化 Context 持久化到 SQLite，在预算内生成可解释的模型上下文，并从安全 step boundary 恢复。
 > 原则：已经实现的扩展代码可以保留，但不自动成为 v0.04 的完成 Gate。
@@ -203,18 +203,18 @@ open existing SQLite
 
 ## 6. 当前实现快照
 
-以下仅用于帮助当前执行者收口，不替代测试验收：
+以下仅用于说明 v0.04 最终实现来源，不替代测试验收：
 
 | 能力 | 已观察到的提交 | 状态解释 |
 |---|---|---|
-| Context contract / SQLite / Repository | `4c2a5f4`、`a08c522` | 已有实现候选 |
-| SessionService / EventSink | `2a482ab`、`d4eaa5c` | 已有实现候选 |
-| PocketFlow runtime adapter | `0c68c76`–`af86ebb` | 已有实现候选 |
-| ContextBuilder / RoleContextView | `94f84f1` | 已有实现候选 |
-| Compaction | `f7c5336` | 已有实现候选 |
-| Safe resume boundary | `4968b9c` | 已有实现候选，当前仍有工作区修改 |
+| Context contract / SQLite / Repository | `4c2a5f4`、`a08c522` | 已实现并纳入 MVP 回归 |
+| SessionService / EventSink | `2a482ab`、`d4eaa5c` | 已实现并纳入 MVP 回归 |
+| PocketFlow runtime adapter | `0c68c76`–`af86ebb` | 已实现并纳入 MVP 回归 |
+| ContextBuilder / RoleContextView | `94f84f1` | 已实现并纳入 MVP 回归 |
+| Compaction | `f7c5336` | 已实现并纳入 MVP 回归 |
+| Safe resume boundary | `4968b9c`、`e52ebfc` | 已实现并通过 Phase E Review 修正 |
 
-当前重点不再是继续加模块，而是证明这些模块形成一个最小闭环。工作区中的 dirty 测试与 artifact 不得当作最终验收证据。
+Phase F 已完成最小闭环验证与留档；后续只从 v0.04.1 候选池按真实失败或下游阻塞提取独立小型 SOP。
 
 ---
 
@@ -240,7 +240,7 @@ open existing SQLite
 - [x] 同步 README / Context 设计文档；
 - [x] 完成只针对 MVP Claim 的独立 Review。
 
-WP1–WP3 完成后停止 v0.04。发现增强需求只登记，不在当前版本顺手实现。
+WP1–WP3 已完成，v0.04 判定为 **GO**。发现增强需求只登记，不在当前版本顺手实现。
 
 ---
 

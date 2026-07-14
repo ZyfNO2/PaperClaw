@@ -22,13 +22,13 @@
 - [x] Task 6: WP3 文档同步
   - [x] SubTask 6.1: 更新 `README.md` 标注 v0.04 已完成能力
   - [x] SubTask 6.2: 更新 `docs/desgin/PaperClaw_上下文系统与提示词工程骨架.md` 同步已实现部分
-- [ ] Task 7: WP3 只针对 MVP Claim 的独立 Review
-  - [ ] SubTask 7.1: 分发 subagent 按 SOP §8 GO/NO-GO 审核（不全量审核增强候选）
-  - [ ] SubTask 7.2: 处理阻塞项（若有）
-- [ ] Task 8: Commit 与 SOP 收尾
-  - [ ] SubTask 8.1: git commit Phase F 全部变更
-  - [ ] SubTask 8.2: 运行 SOP 完成度 hook（`python .claude/hooks/sop_completion_check.py`）
-  - [ ] SubTask 8.3: 勾选 SOP §7 WP1-WP3 全部 checkbox
+- [x] Task 7: WP3 只针对 MVP Claim 的独立 Review
+  - [x] SubTask 7.1: 分发 subagent 按 SOP §8 GO/NO-GO 审核（不全量审核增强候选）
+  - [x] SubTask 7.2: 处理阻塞项（无 BLOCKER；2 个 HIGH 已在 Phase F 提交前修复，3 个 MEDIUM 登记为 v0.04.1 候选）
+- [x] Task 8: Commit 与 SOP 收尾
+  - [x] SubTask 8.1: git commit Phase F 全部变更（`ace27d2`）
+  - [x] SubTask 8.2: 运行 SOP 完成度 hook（`python .claude/hooks/sop_completion_check.py`）
+  - [x] SubTask 8.3: 勾选 SOP §7 WP1-WP3 全部 checkbox
 
 # Task Dependencies
 

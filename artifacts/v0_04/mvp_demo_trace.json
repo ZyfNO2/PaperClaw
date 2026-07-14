@@ -2,7 +2,7 @@
   "stages": [
     {
       "stage": "1_setup",
-      "db_path": "G:\\PaperClaw\\tmp\\pytest\\test_v0_04_mvp_demo0\\demo.db",
+      "db_path": "<pytest-temp>/demo.db",
       "conversation_id": "conv-demo",
       "run_id": "run-demo",
       "items_seeded": [
@@ -23,13 +23,13 @@
     },
     {
       "stage": "2_compaction",
-      "snapshot_id": "snap-f0cf68dd8aef4594",
+      "snapshot_id": "<snapshot_id>",
       "estimated_tokens": 181,
       "usable_input": 310,
       "source_item_ids": [
         "constraint-1",
         "evidence-1",
-        "summary-074421c092da471d"
+        "<compaction_summary_id>"
       ],
       "excluded_count": 11,
       "budget_overflow_count": 10,
@@ -63,7 +63,7 @@
           "operation_id": "op-file-write-1",
           "state": "started",
           "event_type": "operation.started",
-          "started_at": "2026-07-14T14:52:32.939096+00:00"
+          "started_at": "<runtime_timestamp>"
         }
       ]
     }
