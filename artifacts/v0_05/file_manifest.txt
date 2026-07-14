@@ -41,6 +41,8 @@ tests/e2e/test_v0_05_real_llm.py
 
 INFRASTRUCTURE
 .github/workflows/real-llm-e2e.yml
+.github/workflows/ci.yml
+  - Exclude ``real_llm`` tests from ordinary CI.
 scripts/run_v0_05_real_llm_acceptance.py
 pyproject.toml
   - Registered pytest marker ``real_llm``.
