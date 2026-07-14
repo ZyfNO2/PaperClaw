@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any, Protocol
+
+
+@dataclass(frozen=True)
+class ToolContext:
+    workspace: Path
+    output_limit: int = 20_000
+
+
+@dataclass
+class ToolResult:
+    ok: bool
+    output: str
+    error_code: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+class ToolValidationError(ValueError):
+    pass
+
+
+class Tool(Protocol):
+    name: str
+    description: str
+
+    def validate(self, arguments: dict[str, Any]) -> None: ...
+    def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult: ...
+
+
+def require_string(arguments: dict[str, Any], key: str, *, allow_empty: bool = False) -> str:
+    value = arguments.get(key)
+    if not isinstance(value, str) or (not allow_empty and not value):
+        raise ToolValidationError(f"{key} must be a non-empty string")
+    return value
+
+
+def truncate(text: str, limit: int) -> tuple[str, bool]:
+    if len(text) <= limit:
+        return text, False
+    return text[:limit] + "\n...[truncated]", True
+
+
+def safe_execute(tool: Tool, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
+    try:
+        tool.validate(arguments)
+        return tool.execute(arguments, context)
+    except ToolValidationError as exc:
+        return ToolResult(False, str(exc), "validation_error")
+    except Exception as exc:  # defensive boundary: tools must not crash the flow
+        return ToolResult(False, f"{type(exc).__name__}: {exc}", "internal_error")

@@ -1,0 +1,28 @@
+# Ruff configuration (Re3.5)
+exclude = [
+    "apps/api/tests/_archived_legacy_sessions",
+    ".venv",
+    "tmp_re13_eval",
+    "tmp_re34_eval",
+    "tmp_re33_eval",
+    "tmp_re35_eval",
+    "tmp_re24_eval",
+    "tmp_re11_eval",
+    "tmp_re12_eval",
+    "tmp_re2_eval",
+    "tmp_re30_eval",
+    "tmp_re31_eval",
+    "tmp_re32_eval",
+    "tmp_re36_eval",
+    "tmp_re38_eval",
+    ".codely-cli",
+    ".claude",
+    ".codex",
+    ".opencode",
+    ".understand-anything",
+    ".agents",
+    ".superpowers",
+]
+
+[lint]
+fixable = ["ALL"]

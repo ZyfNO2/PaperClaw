@@ -1,0 +1,11 @@
+{
+  "trace_type": "offline_fake_model",
+  "task": "create hello.py and verify output",
+  "stop_reason": "done",
+  "verification_status": "verified",
+  "steps": [
+    {"step": 1, "tool": "file_write", "ok": true, "output": "wrote 29 characters to hello.py"},
+    {"step": 2, "tool": "bash", "ok": true, "output": "PaperClaw v0.01 OK", "exit_code": 0},
+    {"step": 3, "action": "done", "result": "complete", "verification": "verified by command"}
+  ]
+}
