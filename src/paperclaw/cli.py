@@ -6,8 +6,9 @@ import json
 import os
 import sys
 from pathlib import Path
+from uuid import uuid4
 
-from paperclaw.agent.flow import AgentRuntime
+from paperclaw.harness import AgentRuntimeExecutor, QueryEngine, RunLimits
 from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.multiagent.contracts import AgentTask, TeamBudget
 from paperclaw.multiagent.coordinator import Coordinator
@@ -29,19 +30,13 @@ def load_dotenv(dotenv_path: Path) -> None:
 def console_print(text: str = "") -> None:
     stream = sys.stdout
     encoding = stream.encoding or "utf-8"
-    # CMD often runs in GBK; lossy re-encoding is better than crashing the whole run on one character.
     safe = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
     stream.write(safe + "\n")
     stream.flush()
 
 
 def json_ready(value):
-    """Convert runtime state into JSON-safe data for CLI output.
-
-    The runtime stores dataclasses for stronger internal contracts. The CLI keeps a recursive adapter here so
-    observability can expose the same state without weakening those contracts to raw dicts inside the agent loop.
-    """
-
+    """Convert runtime state and dataclasses into JSON-safe output."""
     if hasattr(value, "to_dict"):
         return json_ready(value.to_dict())
     if is_dataclass(value):
@@ -90,7 +85,10 @@ def _build_print_event(verbose: bool):
             console_print(f"claims: {payload['claim_count']}, checks: {payload['check_count']}")
         elif event == "verification_check_completed":
             evidence = payload["evidence"]
-            console_print(f"[step {payload['step']}] verification check <- {evidence['check_id']} ({evidence['status']})")
+            console_print(
+                f"[step {payload['step']}] verification check <- "
+                f"{evidence['check_id']} ({evidence['status']})"
+            )
             console_print(evidence["observed"])
         elif event == "verification_completed":
             console_print(f"[step {payload['step']}] verification result")
@@ -108,18 +106,48 @@ def _build_print_event(verbose: bool):
 
 def _run_agent(args: argparse.Namespace) -> int:
     load_dotenv(Path.cwd() / ".env")
-    state = AgentRuntime(OpenAICompatibleModel.from_env(), enable_verification_gate=args.enable_verification_gate).run(
-        args.task, args.workspace, args.max_steps, event_handler=_build_print_event(args.verbose_events)
+    executor = AgentRuntimeExecutor(
+        OpenAICompatibleModel.from_env(),
+        args.workspace,
+        enable_verification_gate=args.enable_verification_gate,
+        legacy_event_handler=_build_print_event(args.verbose_events),
     )
-    safe_state = {key: value for key, value in state.items() if key not in {"workspace", "current_tool_call", "event_handler"}}
-    safe_state["history"] = [entry.to_dict() for entry in state["history"]]
-    console_print(json.dumps(json_ready(safe_state), ensure_ascii=False, indent=2))
-    return 0 if state["stop_reason"] in {"done", "completed_verified"} else 1
+    engine = QueryEngine(
+        executor,
+        conversation_id=f"cli-{uuid4().hex[:12]}",
+    )
+    result = engine.submit(
+        args.task,
+        limits=RunLimits(
+            max_steps=args.max_steps,
+            max_model_calls=args.max_model_calls,
+            max_tool_calls=args.max_tool_calls,
+        ),
+    )
+
+    state = executor.last_state
+    if state is None:
+        output = {"query_engine": json_ready(result)}
+    else:
+        output = {
+            key: value
+            for key, value in state.items()
+            if key
+            not in {
+                "workspace",
+                "current_tool_call",
+                "event_handler",
+                "cancel_event",
+            }
+        }
+        output["history"] = [entry.to_dict() for entry in state["history"]]
+        output["query_engine"] = json_ready(result)
+    console_print(json.dumps(json_ready(output), ensure_ascii=False, indent=2))
+    return 0 if result.status == "completed" else 1
 
 
 def _load_team_plan(plan_path: Path) -> tuple[str, list[AgentTask], TeamBudget]:
     """Load a JSON team plan: {goal, tasks: [...], budget: {...}}."""
-
     data = json.loads(plan_path.read_text(encoding="utf-8"))
     goal = data["goal"]
     tasks = [AgentTask(**task) for task in data["tasks"]]
@@ -135,7 +163,10 @@ def _run_team(args: argparse.Namespace) -> int:
     def team_event_handler(event_type: str, envelope: dict) -> None:
         if not args.verbose_events:
             return
-        console_print(f"[{event_type}] agent={envelope['agent_id']} task={envelope['task_id']} seq={envelope['sequence']}")
+        console_print(
+            f"[{event_type}] agent={envelope['agent_id']} "
+            f"task={envelope['task_id']} seq={envelope['sequence']}"
+        )
         payload = envelope.get("payload")
         if payload:
             console_print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -153,8 +184,7 @@ def _run_team(args: argparse.Namespace) -> int:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """Build the CLI argument parser so tests can inspect defaults without running main."""
-
+    """Build the CLI argument parser so tests can inspect defaults."""
     parser = argparse.ArgumentParser(description="Run the PaperClaw coding agent")
     subparsers = parser.add_subparsers(dest="command")
 
@@ -162,6 +192,8 @@ def _build_parser() -> argparse.ArgumentParser:
     agent_parser.add_argument("task")
     agent_parser.add_argument("--workspace", type=Path, default=Path.cwd())
     agent_parser.add_argument("--max-steps", type=int, default=12)
+    agent_parser.add_argument("--max-model-calls", type=int, default=10)
+    agent_parser.add_argument("--max-tool-calls", type=int, default=20)
     agent_parser.add_argument("--verbose-events", action="store_true")
     agent_parser.add_argument(
         "--enable-verification-gate",
@@ -185,21 +217,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
-
-    # Preserve `paperclaw <task>` backward compatibility: if the first positional
-    # argument is not a known subcommand, default to the `agent` subparser.
     if argv is None:
         argv = sys.argv[1:]
     if argv and argv[0] not in {"agent", "team", "-h", "--help", "--version", "-v"}:
         argv = ["agent", *argv]
 
     args = parser.parse_args(argv)
-    # Keep local runs zero-config while still allowing the shell to override any value explicitly.
     load_dotenv(Path.cwd() / ".env")
 
     if args.command == "team":
         return _run_team(args)
-    # Default to single-agent path for backward compatibility.
     return _run_agent(args)
 
 

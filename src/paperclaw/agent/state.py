@@ -33,20 +33,26 @@ class HistoryEntry:
         return data
 
 
-def initial_state(task: str, workspace: Path, max_steps: int = 12, timeout_seconds: int = 0) -> dict[str, Any]:
+def initial_state(
+    task: str,
+    workspace: Path,
+    max_steps: int = 12,
+    timeout_seconds: int = 0,
+    *,
+    run_id: str | None = None,
+) -> dict[str, Any]:
     """Create the smallest structured run state.
 
     The runtime keeps goal progress, tool evidence, and stop reasons here instead of overloading free-form dialogue
     history, which keeps later Context/Session work compatible with the same contract.
-
-    ``timeout_seconds`` sets a Task-level wall-clock deadline. When 0 (default)
-    no timeout is enforced — this preserves v0.01/v0.02 backward compatibility.
+    ``run_id`` may be supplied by the v0.05 QueryEngine; legacy callers keep the
+    existing generated identity.
     """
 
     import time as _time
 
     return {
-        "run_id": f"run-{uuid4()}",
+        "run_id": run_id or f"run-{uuid4()}",
         "task": task,
         "workspace": workspace.resolve(strict=True),
         "history": [],
