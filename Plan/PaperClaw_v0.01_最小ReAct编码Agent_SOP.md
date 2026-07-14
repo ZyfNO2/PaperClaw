@@ -342,6 +342,20 @@ class ToolResult:
 - v0.01 不允许 Agent 自主安装依赖。若任务确需安装，返回明确受限错误，留到 Permission 版本处理；
 - 对明显越界或破坏性命令执行最小 denylist 防护，但必须注明这不是完整 Permission Engine。
 
+#### BashTool 设计复核与后续演进
+
+参考 Claude Code 的 BashTool 后，确认 Bash 不应长期停留在 `subprocess.run()` 的薄封装，而应逐步演进为正式的命令执行子系统。v0.01 不追求完整实现，但必须保留以下扩展边界：
+
+- **语义分类**：命令进入执行器前应可分类为 `read`、`search`、`list`、`test`、`build`、`package`、`git`、`write`、`destructive` 或 `unknown`；分类结果供 Permission、Trace 和 TUI 使用。
+- **专用工具优先**：已存在 FileRead、Grep、FileEdit 等专用工具时，Prompt 应引导模型优先使用专用工具；Bash 不是绕过工具契约和路径策略的后门。
+- **结构化执行结果**：除 stdout/stderr 外，预留 `command_class`、`task_id`、`started_at`、`duration_ms`、`exit_code`、`timed_out`、`truncated` 和 `termination_reason`。
+- **命令解析边界**：不得只靠字符串包含关系判断安全；后续版本应解析管道、重定向、逻辑操作符和多命令组合。无法可靠解析时按较高风险处理。
+- **任务化执行**：长测试、构建和服务进程最终进入 Shell Task 系统，支持前台/后台、进度、通知、中断和结果回流；v0.01 仍只允许前台、非交互、短命令。
+- **Sandbox / Read-only**：后续由 Permission 与 Harness 层决定是否进入 sandbox、是否限制为只读，以及是否需要用户确认；BashTool 本身不能成为唯一策略拥有者。
+- **平台适配**：Agent 侧继续使用稳定的 `BashTool` 名称，Windows 后端明确记录实际 shell 为 PowerShell，不能假设 POSIX Bash 语法成立。
+
+v0.01 的验收不追加后台任务、完整 AST 安全分析或 sandbox，避免追改已经完成的最小地基；上述能力分别进入 Verify/Reflection、Harness 与 Claw 交互层版本。
+
 ### 6.6 内部 `done` 动作
 
 `done` 是 Flow 的终止动作，不进入 Tool Registry。
@@ -763,31 +777,13 @@ artifacts/v0_01/
 
 ## 15. 后续版本边界
 
-v0.01 完成后再规划后续版本，建议顺序：
+v0.01 完成后按以下顺序推进：
 
-### v0.02：Trace 与 Permission
-
-- 结构化 Runtime Event；
-- Tool Call Trace；
-- `allow / deny / ask`；
-- 命令风险分级；
-- Human-in-the-loop 接口。
-
-### v0.03：Session 与 Context
-
-- SQLite Session；
-- Task State；
-- ContextItem；
-- token budget；
-- Checkpoint 与恢复。
-
-### v0.04：TUI
-
-- Textual Chat；
-- Tool Timeline；
-- Permission Dialog；
-- Context Inspector；
-- Session Resume。
+- `v0.02`：Verify / Reflection，建立行动后的客观验证和有界反思；
+- `v0.03`：MultiAgent，加入 Coordinator、Worker、Reviewer 的分工协作；
+- `v0.04`：Context Engineering，加入 Task State、ContextItem、压缩与恢复；
+- `v0.05`：Harness Engineering，加入 QueryEngine、Runtime Event、Permission、Trace、预算和任务治理；
+- `v0.06`：Claw 交互层，加入 TUI、权限交互、Session 操作和可观察面板。
 
 版本号不是当前承诺；应根据 v0.01 验证结果调整。
 
@@ -798,9 +794,9 @@ v0.01 完成后再规划后续版本，建议顺序：
 - [PocketFlow 官方仓库](https://github.com/The-Pocket/PocketFlow)
 - [PocketFlow Coding Agent 示例](https://github.com/The-Pocket/PocketFlow/tree/main/cookbook/pocketflow-coding-agent)
 - [`pocketflow/__init__.py`](https://github.com/The-Pocket/PocketFlow/blob/main/pocketflow/__init__.py)
+- [Claude Code BashTool 解析](https://xuanyuancode.com/learn-claude-code/tutorials/cc14)
 - [`docs/desgin/PaperClaw_项目方向路径与约束.md`](../docs/desgin/PaperClaw_项目方向路径与约束.md)
 - [`docs/desgin/PaperClaw_上下文系统与提示词工程骨架.md`](../docs/desgin/PaperClaw_上下文系统与提示词工程骨架.md)
 - [`docs/desgin/PaperAgent_校招向AgentRuntime_一周MVP与一月Roadmap.md`](../docs/desgin/PaperAgent_校招向AgentRuntime_一周MVP与一月Roadmap.md)
 
 本 SOP 对 PocketFlow 的使用只基于其公开 `Node / Flow / shared / action routing` 契约。官方 Coding Agent 的 Memory、History Compaction、AGENTS.md 加载和 Patch SubFlow 仅作为后续参考，不属于 v0.01 验收范围。
-

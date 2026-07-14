@@ -13,6 +13,7 @@
 
 - 项目方向与约束：`docs/desgin/PaperClaw_项目方向路径与约束.md`。
 - 上下文系统骨架：`docs/desgin/PaperClaw_上下文系统与提示词工程骨架.md`。
+- 当前实施顺序：`Plan/PaperClaw_v0.02_Verify与ReflectionAgent_SOP.md` → `Plan/PaperClaw_v0.03_MultiAgent分工协作_SOP.md` → `Plan/drafts/v0.04-v0.06`。
 - 上述文档中的未实现内容必须保持“设计 / 计划”状态，不得描述为已经实现。
 
 ## 既有项目参考
@@ -37,6 +38,15 @@
 - MVP 默认使用 SQLite，核心机制验证前不引入过重基础设施。
 - 核心模块必须保留可复现用例和可观察 Trace，服务于学习、演示和面试追问。
 - 修改 Context、Session、Memory、Permission、Tool、Trace、Eval 或数据库模型时，同步检查 `docs/desgin`。
+
+## 工程化代码注释
+
+- 新增或修改代码时，注释必须达到真实团队工程协作标准，优先解释设计意图、业务约束、边界条件、失败策略、兼容原因和不直观取舍，而不是逐行翻译代码。
+- 公共接口、核心状态模型、Agent 节点、工具、权限判断、异步并发、重试/降级、数据迁移和安全敏感逻辑必须有必要的 docstring 或块注释。
+- 对临时兼容、已知风险和后续清理使用可检索标记，如 `TODO`、`FIXME`，并说明原因、影响与解除条件；禁止只写“以后优化”。
+- 注释必须随实现同步更新；过期、误导或与代码矛盾的注释视为缺陷。
+- 不为显而易见的赋值、循环和语法添加噪声注释；注释密度服从可维护性，不以数量作为质量指标。
+- 复制或改编外部实现时，在代码或相邻文档中保留来源、许可证和关键差异说明。
 
 ---
 
@@ -122,6 +132,7 @@ else:
 > **Re7.6 起生效**。AI 完成一个完整 Phase（如 Phase B 节点迁移、Phase C Job worker）后必须执行以下留档与审查动作。
 
 1. **Commit 留档**：在确认当前 Phase 的测试通过后，立即执行 `git commit` 保存该 Phase 的全部代码变更；commit message 须说明 Phase 目标、影响节点/模块、验证结果。
+1a. **SOP 收尾 commit**：每次一个 SOP 被宣布完成时，在完成对应测试、交接物同步和 SOP 自检后，必须至少执行一次 `git commit` 留档当前 SOP 的最终状态；除非用户明确禁止 commit。
 2. **分发 Review 子代理**：commit 后必须调用 `Task` 子代理（subagent_type=search 或 general_purpose_task）对本次 Phase 的 diff 进行审查，审查范围包括：
    - 测试是否覆盖新增/修改路径（统一路由路径、legacy 回退路径、异常路径）
    - trace 字段是否一致记录 `provider`、`contract_id`、`model` 等调试信息
