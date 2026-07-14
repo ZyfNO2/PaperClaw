@@ -1,745 +1,330 @@
-# PaperClaw v0.04：Context Engineering、Session 与 SQLite MVP SOP
+# PaperClaw v0.04：Context、Session 与 SQLite MVP 收口 SOP
 
-> 版本：v0.04  
-> 状态：**已冻结 / READY FOR IMPLEMENTATION**  
-> 前置：v0.03 进程内 MultiAgent MVP 已完成并通过验收  
-> 目标：交付按角色裁剪、受预算约束、可持久化、可确定性压缩的 Context / Session 基线，并支持安全的 step-boundary resume。
+> 版本：v0.04
+> 状态：**已完成 / GO（MVP）**
+> 更新：2026-07-14
+> 目标：证明 PaperClaw 能把结构化 Context 持久化到 SQLite，在预算内生成可解释的模型上下文，并从安全 step boundary 恢复。
+> 原则：已经实现的扩展代码可以保留，但不自动成为 v0.04 的完成 Gate。
 
-> 本文件同时记录 v0.04.1 的延后范围，但 **v0.04 实施不得顺手实现 v0.04.1**。任意时刻 crash recovery、pending 副作用自动协调、完整消息通道和 Global Verify 均不属于 v0.04 完成条件。
+## 目录
 
-## 1. 版本拆分结论
+- [1. 为什么重新拆分](#1-为什么重新拆分)
+- [2. MVP 用户故事](#2-mvp-用户故事)
+- [3. MVP 范围](#3-mvp-范围)
+- [4. 最小契约](#4-最小契约)
+- [5. 最小运行闭环](#5-最小运行闭环)
+- [6. 当前实现快照](#6-当前实现快照)
+- [7. 收口工作包](#7-收口工作包)
+- [8. MVP 测试与 Gate](#8-mvp-测试与-gate)
+- [9. 最小演示与交付](#9-最小演示与交付)
+- [10. 后续增强边界](#10-后续增强边界)
+- [11. 既有实现参考](#11-既有实现参考)
 
-### 1.1 v0.04：本次执行范围
+---
 
-v0.04 只交付以下闭环：
+## 1. 为什么重新拆分
+
+旧版 v0.04 虽然名为 MVP，但把下列能力同时放进完成条件：
+
+- schema upgrade、backup、rollback；
+- 并发 writer 与完整 idempotency ledger；
+- 多角色完整演示；
+- migration / lock / crash fault injection；
+- pending 副作用、lease 与 active Worker 恢复边界；
+- 大量 artifacts 和完整工程审查。
+
+这些能力有价值，但不是证明 Context MVP 成立的最短路径。v0.04 现在只回答三个问题：
+
+1. Session 退出后能否重新打开；
+2. Context 是否能在预算内保留关键约束并解释取舍；
+3. Runtime 是否只在可证明安全的边界恢复，遇到未知副作用会停止。
+
+### 两种处理方式
+
+| 方案 | 做法 | 成本 | 风险 |
+|---|---|---:|---|
+| A：保留原验收面 | 把所有已设计能力都做完再宣布 v0.04 完成 | 高 | 继续重复 v0.03 的过度设计 |
+| B：硬切 MVP Gate | 保留已有实现，只验收用户可见闭环；其余进入候选池 | 低 | 需要明确“不代表生产级可靠性” |
+
+本 SOP 采用方案 B。
+
+---
+
+## 2. MVP 用户故事
 
 ```text
-Raw Session Data
-    ↓ persist
-SQLite Session Store
-    ↓ query
-ContextBuilder
-    ↓ role / trust / scope / budget
-RoleContextView
-    ↓ deterministic compaction
+用户让 Agent 完成一个多步文件任务
+→ Runtime 保存消息、事件和 ContextItem
+→ history 超过预算
+→ ContextBuilder 保留目标、约束、失败和 Evidence 引用
+→ 生成并保存 ContextSnapshot
+→ 在一个已提交 step boundary 退出
+→ 重新打开 SQLite Session
+→ 文件状态一致时继续
+→ 存在未知副作用时返回 recovery_required
+```
+
+演示成功即可证明 v0.04 的核心价值。它不需要同时证明任意时刻 crash recovery、跨进程 Worker 恢复或生产级数据库升级。
+
+---
+
+## 3. MVP 范围
+
+### 3.1 必做
+
+- 本地单用户、单项目；
+- Python `sqlite3`；
+- fresh database schema 初始化；
+- Conversation / Run / Message / SessionEvent 基础持久化；
+- `ContextItem` 的 source、trust、scope、priority；
+- `ContextBuilder` 的角色过滤与确定性选择；
+- 保守 token 估算和硬预算；
+- 结构化 compaction；
+- required constraint 与 Evidence 引用保持；
+- immutable `ContextSnapshot`；
+- clean reopen；
+- step-boundary `Checkpoint`；
+- pending mutation 或文件状态变化时 fail-closed。
+
+### 3.2 不作为 v0.04 Gate
+
+- 旧版本数据库 upgrade、自动 backup / restore；
+- 多 writer 压测和高并发 SQLite；
+- 完整 operation ledger；
+- 任意时刻 crash 自动继续；
+- Bash、外部 API 和 file mutation 自动 reconciliation；
+- durable mailbox、Worker、Task 和 FileLease 恢复；
+- Global Verify 和 Semantic Reviewer；
+- 自动长期 Memory；
+- Dense retrieval、向量数据库或 Knowledge Graph；
+- LLM compaction、精确 tokenizer 与 Prompt Cache；
+- 完整 MultiAgent 端到端演示。
+
+已经存在的相关实现只算“额外能力候选”，不能反向扩大当前验收范围。
+
+---
+
+## 4. 最小契约
+
+MVP 只冻结以下概念，不冻结所有未来字段：
+
+```text
+ContextItem
+  item_id
+  run_id / task_id
+  kind
+  content
+  source_ref / trust_level
+  scope / priority
+  estimated_tokens
+
 ContextSnapshot
-    ↓ model call
-Agent Runtime
-    ↓ step boundary
+  snapshot_id
+  run_id / role
+  source_item_ids
+  excluded_items + reason
+  rendered_hash
+  estimated_tokens / estimator
+
+SessionEvent
+  event_id
+  run_id
+  sequence
+  event_type
+  payload
+
 Checkpoint
-```
-
-必须完成：
-
-- `ContextItem`、`ContextSource`、`ContextPolicy`、`ContextBudget`；
-- Coordinator / Worker / Reviewer 的 `RoleContextView`；
-- SQLite schema、migration v1、Repository protocol；
-- append-only `SessionEvent` 与单调 sequence；
-- `ContextSnapshot` 与 `Checkpoint` 分离；
-- 确定性裁剪和结构化压缩；
--关键约束、决策、失败和 Evidence 引用保持；
--正常退出后的 Session reopen；
--仅在安全 step boundary 上恢复；
--恢复前文件状态与 pending operation 检查；
--离线 fixture、故障注入和可复现验收报告。
-
-### 1.2 v0.04.1：延后范围
-
-下列能力只登记，不在 v0.04 中实现：
-
-- 任意时刻进程崩溃后的自动继续；
--运行中的 Bash / file write /外部 API 自动恢复；
-- pending side-effect reconciliation engine；
-- durable FileLease 和 MultiAgent active-worker 恢复；
--完整 `AgentMessage` mailbox、recipient 路由和 dedup；
-- Global Verify；
-- Reviewer 语义审查和 acceptance-claim 覆盖；
-- failed Worker 的完整 retry / repair 状态机；
--跨 Session 自动长期 Memory；
--Dense retrieval、向量数据库和 Knowledge Graph；
--跨机器、多用户和分布式 Session。
-
-## 2. 要解决的问题
-
-当前 Runtime 存在以下结构性问题：
-
-- history 随模型和工具调用线性增长；
--工具大输出会挤占有效上下文；
--Worker 不应看到与自身 Task 无关的完整 Conversation；
--Coordinator、Worker、Reviewer 需要不同 Context View；
--压缩可能丢失用户约束、失败原因、决策和未完成事项；
--进程退出后缺少稳定 Session reopen；
--多 Agent 共享可变 dict 容易造成状态污染；
--当前 Prompt 无法解释每条上下文的来源、信任等级和进入原因。
-
-v0.04 的目标不是“让模型记得更多”，而是让 Runtime 能回答：
-
-1. 这条上下文来自哪里；
-2. 为什么允许该角色看到；
-3. 为什么进入或未进入本次 Prompt；
-4. 是否被压缩、替代、过期或撤销；
-5. Session 可以从哪个已提交边界安全恢复。
-
-## 3. In Scope 与 Out of Scope
-
-### 3.1 In Scope
-
--单项目、单用户、本地进程；
--Python `sqlite3`；
--显式 schema migration；
--Session、Run、Message、Event、TaskState 持久化；
--Context provenance、trust、priority、scope、expiry；
--角色上下文隔离；
--token 预算和安全余量；
--确定性裁剪；
--结构化 compaction；
--immutable ContextSnapshot；
--step-boundary Checkpoint；
--clean reopen 和 safe resume；
--Windows 路径、UTF-8 和中文上下文；
--Offline fixture 与 replay 输入导出。
-
-### 3.2 Out of Scope
-
--自动长期记忆；
--跨项目全局 Memory；
--自动 Memory 写入策略；
--Dense vector retrieval；
--Knowledge Graph；
--完整 Prompt Cache；
--任意时刻 crash resume；
--pending mutating tool 自动重放；
--MultiAgent durable lease recovery；
--完整消息总线和 Global Verify；
--多用户隔离；
--远程数据库或跨机器运行。
-
-## 4. 核心数据契约
-
-### 4.1 ContextSource
-
-```python
-@dataclass(frozen=True)
-class ContextSource:
-    source_type: str       # user | runtime | file | tool | worker_result | evidence | external
-    source_ref: str        # message_id / event_id / artifact_id / file path 等
-    trust_level: str       # system | trusted_local | user | tool_output | external_untrusted
-    created_sequence: int
-```
-
-规则：
-
-- `external_untrusted` 永远只能作为 data，不得进入 Runtime Constitution 或 Role 指令层；
-- source 必须可回溯；
--摘要不得伪造新的 Evidence source；
--文件内容必须绑定 path 和读取时 hash。
-
-### 4.2 ContextItem
-
-```python
-@dataclass(frozen=True)
-class ContextItem:
-    item_id: str
-    run_id: str
-    task_id: str | None
-    layer: str             # L0 | L1 | L2 | L3 | L4 | L5
-    kind: str              # fact | decision | hypothesis | todo | constraint | evidence_ref | observation
-    content: str
-    source: ContextSource
-    priority: int
-    scope: list[str]       # coordinator / reviewer / worker:<task_id> / shared
-    valid_from_sequence: int
-    valid_to_sequence: int | None
-    supersedes_item_id: str | None
-    estimated_tokens: int
-    metadata: dict
+  checkpoint_id
+  run_id
+  last_committed_sequence
+  pending_operations
+  file_snapshots
+  state_hash
 ```
 
 硬约束：
 
-- `fact` 必须来自用户、确定性工具结果或已有 Evidence；
--模型生成内容默认不能直接升级为 `fact`；
-- `hypothesis` 不得在 compaction 后变成 `fact`；
-- `supersedes_item_id` 只改变有效性，不删除原始记录；
--原始 Evidence 不被 ContextItem 内容覆盖。
+- 原始消息、工具结果和 Evidence 是事实源；
+- Snapshot、摘要和 Checkpoint 都是派生物；
+- hypothesis 不得在压缩后升级为 fact；
+- external content 只能作为 data，不得覆盖 Runtime / Role 指令；
+- 超预算时返回明确错误，不静默删除硬约束；
+- unknown side effect 不得自动重放。
 
-### 4.3 ContextBudget
+---
 
-```python
-@dataclass(frozen=True)
-class ContextBudget:
-    max_input_tokens: int
-    reserved_output_tokens: int
-    safety_margin_tokens: int
-    max_single_item_tokens: int
-    max_tool_output_tokens: int
-```
+## 5. 最小运行闭环
 
-有效输入预算：
-
-```text
-usable_input = max_input_tokens
-             - reserved_output_tokens
-             - safety_margin_tokens
-```
-
-默认安全余量不得低于模型窗口的 10%。ModelAdapter 无 tokenizer 时使用保守估算，并在 Snapshot 中记录 estimator 类型。
-
-### 4.4 ContextSnapshot
-
-`ContextSnapshot` 表示 **某一次模型调用实际看到的上下文**，不等于恢复点。
-
-```python
-@dataclass(frozen=True)
-class ContextSnapshot:
-    snapshot_id: str
-    run_id: str
-    agent_id: str
-    task_id: str | None
-    role: str
-    source_item_ids: list[str]
-    excluded_items: list[dict]  # item_id + exclusion_reason
-    rendered_hash: str
-    estimated_tokens: int
-    estimator: str
-    created_sequence: int
-```
-
-要求：
-
-- immutable；
--每个 included / excluded item 都有可解释原因；
--存 source item ID，不只存最终 Prompt 字符串；
--渲染字符串可导出，但不能作为唯一事实源。
-
-### 4.5 SessionEvent
-
-```python
-@dataclass(frozen=True)
-class SessionEvent:
-    event_id: str
-    conversation_id: str
-    run_id: str
-    sequence: int
-    event_type: str
-    payload: dict
-    created_at: str
-```
-
-规则：
-
-- `sequence` 在单个 Run 内严格单调递增；
-- `SessionEvent` append-only；
--不得只依赖 timestamp 判断顺序；
--重复 `event_id` 必须幂等拒绝或返回既有记录；
--事件 payload 必须带 schema version。
-
-### 4.6 Checkpoint
-
-`Checkpoint` 表示 **Runtime 可以判断能否安全恢复的状态边界**。
-
-```python
-@dataclass(frozen=True)
-class Checkpoint:
-    checkpoint_id: str
-    run_id: str
-    last_committed_sequence: int
-    task_state_revision: int
-    budget_state: dict
-    pending_operations: list[dict]
-    file_snapshots: list[dict]
-    state_hash: str
-    schema_version: int
-    created_at: str
-```
-
-Checkpoint 必须能回答：
-
--恢复从哪个 event sequence 开始；
--是否存在未决副作用；
--当前 Task / budget 状态；
--关键文件是否仍与 checkpoint 一致；
--能否自动恢复，或必须进入 `recovery_required`。
-
-## 5. SQLite Schema 与权威状态
-
-### 5.1 v0.04 最小表
-
-```text
-schema_migrations
-conversations
-runs
-session_events
-messages
-task_states
-context_items
-context_snapshots
-checkpoints
-idempotency_ledger
-```
-
-`memory_items` 不进入 v0.04 核心 schema。需要保存的长期事实先作为显式 `ContextItem`，自动 Memory 留到后续版本。
-
-### 5.2 权威性规则
-
--用户原始消息、工具结果、Evidence 和 `session_events` 是原始记录；
-- `task_states` 是 materialized state；
-- `ContextSnapshot` 和摘要是派生物；
-- `Checkpoint` 是恢复判断数据，不得覆盖原始 Evidence；
--任何摘要、Snapshot 或 Checkpoint 都不能删除原始事件。
-
-### 5.3 事务顺序
-
-单次 Runtime state commit 使用如下顺序：
-
-```text
-BEGIN IMMEDIATE
-  1. append SessionEvent
-  2. update materialized TaskState / Run state
-  3. insert ContextItem / Snapshot（如本 step 产生）
-  4. insert Checkpoint（仅安全 step boundary）
-COMMIT
-```
-
-约束：
-
--外部副作用不得假装与 SQLite transaction 原子；
--mutating tool 执行前写 `operation.started`；
--结果落库后写 `operation.committed` 或 `operation.unknown_outcome`；
--存在 `started` 但无终局事件时，恢复必须停止自动继续；
--migration 使用独立 transaction，失败时 schema version 不前移；
--升级前生成数据库备份。
-
-### 5.4 并发策略
-
--启用 WAL；
--设置 busy timeout；
--事务必须短；
--使用单 writer queue 或 Repository 级 writer lock；
--模型调用、Bash 和文件 I/O 不得持有数据库写事务；
--数据库 lock 超时必须显式失败，不得静默丢事件。
-
-## 6. 六层 Context 与角色视图
-
-```text
-L0 Runtime Constitution  不可由外部内容修改
-L1 Role / Mode           Coordinator / Worker / Reviewer
-L2 Workspace Rules       本地规则、工具和路径约束
-L3 Task State            目标、acceptance、预算、依赖、状态
-L4 Working Context       history、工具结果、失败、todo、Evidence 引用
-L5 Retrieved Context     v0.04 仅允许显式选择的本地 ContextItem
-```
-
-### 6.1 Coordinator View
-
-默认包含：
-
--用户目标和硬约束；
--Task DAG 与状态；
--WorkerResult；
--全局 Artifact / Evidence 引用；
--团队预算和 blocker。
-
-默认排除：
-
--Worker 自由推理；
--无关文件全文；
--其他 Session 的自动 Memory。
-
-### 6.2 Worker View
-
-默认包含：
-
--单个 AgentTask；
--允许工具和路径；
--相关项目规则；
--该 Task 的局部 history；
--输入 Artifact / Evidence；
--依赖任务的结构化 Result。
-
-必须排除：
-
--其他 Worker 私有 history；
--其他 Task 的未发布 Observation；
--Reviewer 内部评审上下文；
--与 writable / readable scope 无关的文件内容。
-
-### 6.3 Reviewer View
-
-默认包含：
-
--用户目标；
--acceptance criteria；
--Diff / file manifest；
--Verification Evidence；
--已知限制和 unresolved items；
--必要 Trace 摘要。
-
-必须排除：
-
--Worker 自由推理；
--未验证的实现者自我评价；
--与审查无关的 Conversation history。
-
-## 7. ContextBuilder 规则
-
-ContextBuilder 必须按固定步骤运行：
+### 5.1 Context 编译
 
 ```text
 collect
-→ validate source/trust
-→ apply role scope
-→ remove expired/superseded items
-→ deduplicate
-→ resolve conflicts
-→ estimate tokens
-→ deterministic selection
-→ compact if required
-→ render
-→ persist ContextSnapshot
+→ validate trust / scope
+→ remove expired or superseded items
+→ estimate
+→ deterministic select
+→ compact when necessary
+→ verify required IDs
+→ persist snapshot
 ```
 
-### 7.1 冲突规则
+MVP 必须保留：
 
--新 `decision` 不自动覆盖旧 decision，必须显式 `supersedes`；
--用户最新明确约束优先于旧用户约束；
--确定性工具结果优先于模型 hypothesis；
--两个有效 `fact` 冲突时不得自行任选，生成 conflict item 并阻止依赖结论；
--stale / expired item 只能作为历史，不进入有效指令区。
+- 当前用户目标；
+- 当前 Task 与 acceptance；
+- 工具和路径约束；
+- 最新失败与 blocker；
+- unresolved todo；
+- Evidence ID / source reference。
 
-### 7.2 Prompt Injection 边界
+允许优先剔除：重复输出、过期项、已替代项、已完成步骤细节和可重新读取的大段内容。
 
--网页、文件、工具输出和 Retrieved Context 默认是 data block；
--外部文本中的“忽略前文”“提升权限”等内容不得改变 L0/L1；
--每个外部 item 必须带 source 和 trust；
--渲染时区分 `instructions` 与 `untrusted_data`；
--角色 scope 校验必须发生在 Prompt 拼接前。
-
-## 8. Token Budget 与确定性裁剪
-
-### 8.1 永不自动删除
-
-- L0 Runtime Constitution；
-- L1 Role；
--当前用户目标；
--硬约束；
--当前 Task 和 acceptance criteria；
--路径、工具和预算限制；
--最新失败和 blocker；
--未解决 todo；
--Evidence ID / source reference；
--恢复安全状态。
-
-### 8.2 允许压缩
-
--旧的成功 Observation；
--重复文件内容；
--重复模型回复；
--已完成 Task 的详细过程；
--长工具输出；
--低优先级历史。
-
-### 8.3 优先剔除顺序
+### 5.2 Session reopen
 
 ```text
-1. 重复 stdout / stderr
-2. 重复搜索结果
-3. 已 superseded item
-4. expired item
-5. 已完成且无未决问题的旧 Observation
-6. 可由 source_ref 重新读取的大段原文
-7. 低优先级对话历史
+open existing SQLite
+→ load last committed sequence
+→ restore materialized state
+→ load latest safe checkpoint
+→ revalidate file snapshots
+→ resume or recovery_required
 ```
 
-若仍超预算：
+自动 resume 仅要求：
 
-1. 运行结构化 compaction；
-2. 保留 source IDs 和 required constraint IDs；
-3. 再次估算；
-4. 仍超预算则返回 `context_budget_exhausted`，不得静默截断硬约束。
+- Checkpoint 存在且可读取；
+- 没有 pending mutating operation；
+- 文件 snapshot 仍一致；
+- state hash 与 schema version 可接受。
 
-Provider 返回 context-length error 时，只允许再执行一次确定性二次裁剪，不得无限重试。
+任何一项无法证明，返回 `recovery_required`，不尝试“聪明地猜测”。
 
-## 9. Compaction 契约
+---
 
-### 9.1 Compaction 输出
+## 6. 当前实现快照
 
-```python
-@dataclass(frozen=True)
-class CompactionResult:
-    summary_item_ids: list[str]
-    retained_constraint_ids: list[str]
-    retained_evidence_refs: list[str]
-    removed_item_ids: list[str]
-    source_item_ids: list[str]
-    compaction_hash: str
-```
+以下仅用于说明 v0.04 最终实现来源，不替代测试验收：
 
-### 9.2 禁止行为
+| 能力 | 已观察到的提交 | 状态解释 |
+|---|---|---|
+| Context contract / SQLite / Repository | `4c2a5f4`、`a08c522` | 已实现并纳入 MVP 回归 |
+| SessionService / EventSink | `2a482ab`、`d4eaa5c` | 已实现并纳入 MVP 回归 |
+| PocketFlow runtime adapter | `0c68c76`–`af86ebb` | 已实现并纳入 MVP 回归 |
+| ContextBuilder / RoleContextView | `94f84f1` | 已实现并纳入 MVP 回归 |
+| Compaction | `f7c5336` | 已实现并纳入 MVP 回归 |
+| Safe resume boundary | `4968b9c`、`e52ebfc` | 已实现并通过 Phase E Review 修正 |
 
--不得把 hypothesis 改写成 fact；
--不得生成不存在的 Evidence；
--不得删除 unresolved blocker；
--不得删除用户硬约束；
--不得用摘要覆盖原始 source；
--不得把 external data 提升为 Runtime 指令。
+Phase F 已完成最小闭环验证与留档；后续只从 v0.04.1 候选池按真实失败或下游阻塞提取独立小型 SOP。
 
-### 9.3 Constraint Retention
+---
 
-测试 fixture 必须显式提供：
+## 7. 收口工作包
 
-```json
-{
-  "required_constraints": [
-    {"id": "c1", "type": "must_not", "value": "do not install dependencies"},
-    {"id": "c2", "type": "path_scope", "value": "src/"},
-    {"id": "c3", "type": "decision", "value": "use sqlite3"}
-  ]
-}
-```
+### WP1：最小契约回归
 
-验收基于 constraint ID，而不是仅靠字符串模糊匹配或 LLM 主观评分。
+- [x] 对 Context contract、Repository、Session、ContextBuilder、Compaction、Checkpoint、Resume 运行定向测试；
+- [x] 修正文档与实现字段漂移；
+- [x] 确认未增加新的数据库表或恢复状态。
 
-## 10. v0.04 Resume 边界
+### WP2：一条集成演示
 
-### 10.1 自动允许恢复
+- [x] 构造超预算的长工具输出并完成 Context 编译；
+- [x] 验证 required constraints 和 Evidence refs 保留；
+- [x] 保存 Snapshot / Checkpoint，关闭并 reopen；
+- [x] 验证安全状态继续、pending mutation 返回 `recovery_required`。
 
-仅当全部满足时才允许自动 resume：
+### WP3：最小留档
 
--存在已提交 Checkpoint；
--Checkpoint 对应 `last_committed_sequence` 可读取；
--无 pending mutating operation；
--TaskState revision 与 Checkpoint 一致；
--关键文件 hash / existence 重新验证通过；
--schema version 兼容；
--预算状态合法。
+- [x] 记录测试命令与结果并导出一条演示 Trace；
+- [x] 写明 known limitations；
+- [x] 同步 README / Context 设计文档；
+- [x] 完成只针对 MVP Claim 的独立 Review。
 
-### 10.2 必须停止并标记 recovery_required
+WP1–WP3 已完成，v0.04 判定为 **GO**。发现增强需求只登记，不在当前版本顺手实现。
 
-出现以下任一情况不得自动继续：
+---
 
-- `operation.started` 无对应 committed / failed / unknown_outcome；
--Bash、file write、file edit 或外部 API 结果未知；
--文件 hash 与 Checkpoint 不一致；
--数据库 migration 未完成；
--Checkpoint state hash 不一致；
--MultiAgent Worker 在崩溃时仍标记 active；
--lease 状态无法确认；
--恢复将导致副作用重放。
-
-输出必须包含：
-
-```text
-status = recovery_required
-last_safe_sequence
-pending_operations
-file_conflicts
-recommended_action
-```
-
-### 10.3 v0.04 不承诺
-
--自动重放 mutating tool；
--自动判断外部 API 是否成功；
--恢复运行中的进程树；
--恢复 active Worker 和 FileLease；
--任意时刻 crash 后无人工介入继续。
-
-## 11. 实施阶段
-
-### Phase A：数据契约与 migration
-
-- [ ] A1. 定义 ContextSource / ContextItem / ContextBudget；
-- [ ] A2. 定义 SessionEvent / ContextSnapshot / Checkpoint；
-- [ ] A3. 建立 schema_migrations 和 migration v1；
-- [ ] A4. 实现 Repository protocol；
-- [ ] A5. 实现 WAL、busy timeout 和 writer serialization；
-- [ ] A6. 实现升级前 backup 和 migration rollback fixture。
-
-### Phase B：Session persistence
-
-- [ ] B1. Conversation / Run / Message 持久化；
-- [ ] B2. append-only SessionEvent 与单调 sequence；
-- [ ] B3. TaskState revision；
-- [ ] B4. idempotency ledger；
-- [ ] B5. 正常退出后 reopen；
-- [ ] B6. 原始 Evidence 与派生摘要分离。
-
-### Phase C：ContextBuilder 与 RoleContextView
-
-- [x] C1. 六层 Context 收集；
-- [x] C2. trust / priority / scope / expiry；
-- [x] C3. Coordinator / Worker / Reviewer View；
-- [x] C4. conflict / supersedes / stale 规则；
-- [x] C5. inclusion / exclusion reason；
-- [x] C6. Prompt injection 数据边界。
-
-### Phase D：Budget 与 Compaction
-
-- [x] D1. tokenizer adapter 与保守 fallback；
-- [x] D2. 确定性裁剪顺序；
-- [x] D3. 工具输出裁剪；
-- [x] D4. 结构化 compaction；
-- [x] D5. Constraint Retention fixture；
-- [x] D6. Compaction Drift fixture；
-- [x] D7. immutable ContextSnapshot。
-
-### Phase E：Safe resume
-
-- [x] E1. step-boundary Checkpoint；
-- [x] E2. clean reopen；
-- [x] E3. last committed sequence restore；
-- [x] E4. pending operation 检测；
-- [x] E5. 文件 hash / existence 重验；
-- [x] E6. `recovery_required` 输出；
-- [x] E7. 禁止未知副作用自动重放。
-
-### Phase F：集成与留档
-
-- [ ] F1. 单 Agent 长上下文演示；
-- [ ] F2. MultiAgent RoleContextView 演示；
-- [ ] F3. 多次压缩演示；
-- [ ] F4. SQLite lock / migration failure injection；
-- [ ] F5. Windows 路径与中文 Context；
-- [ ] F6. 生成 artifacts/v0_04；
-- [ ] F7. 更新 README 和架构文档；
-- [ ] F8. 独立 Reviewer 审核实现与证据。
-
-## 12. 测试与验收
+## 8. MVP 测试与 Gate
 
 | 编号 | 场景 | 通过标准 |
 |---|---|---|
-| C-01 | RoleContextView | Worker A 看不到 Worker B 私有 ContextItem |
-| C-02 | Reviewer 隔离 | Reviewer 看不到 Worker 自由推理 |
-| C-03 | Provenance | 每个 included item 可回溯 source_ref |
-| C-04 | Exclusion reason | 每个未进入 Prompt 的候选 item 有原因 |
-| C-05 | Budget overflow | 按固定顺序裁剪且最终不超 usable_input |
-| C-06 | Constraint retention | required constraint ID 保留率 100% |
-| C-07 | Evidence integrity | compaction 不生成、不修改 Evidence |
-| C-08 | Hypothesis safety | hypothesis 不得升级为 fact |
-| C-09 | Repeated compaction | 多轮压缩后 required IDs 无漂移 |
-| C-10 | Injection boundary | external item 不得进入 L0/L1 |
-| S-01 | Fresh migration | 空库 migration v1 成功 |
-| S-02 | Upgrade migration | 旧 schema 可升级且数据保持 |
-| S-03 | Migration failure | transaction 回滚，version 不前移 |
-| S-04 | Concurrent writers | 无未处理 database is locked，事件不丢失 |
-| S-05 | Event idempotency | 重复 event_id 不产生重复状态 |
-| S-06 | Sequence | 单 Run sequence 严格递增 |
-| S-07 | Session reopen | 正常退出重开后状态和预算一致 |
-| R-01 | Step-boundary resume | 从最后 committed checkpoint 恢复 |
-| R-02 | Pending Bash | 不自动重放，返回 recovery_required |
-| R-03 | Pending file write | 不自动重放，返回 recovery_required |
-| R-04 | External file change | hash 重验失败并停止恢复 |
-| R-05 | Corrupt checkpoint | state_hash 失败并停止恢复 |
-| R-06 | Active Worker marker | 不尝试自动恢复 MultiAgent active Worker |
-| P-01 | Provider context error | 最多一次二次裁剪，不无限重试 |
-| P-02 | Token estimator fallback | Snapshot 记录 estimator 和安全余量 |
-
-### 12.1 硬门槛
-
-- Worker Context 跨 Task 泄漏：0；
-- Reviewer 获得 Worker 自由推理：0；
-- required constraint 丢失：0；
--摘要伪造 Evidence：0；
--外部文本升级为高优先级指令：0；
--SessionEvent 丢失或 sequence 重复：0；
--migration 失败后 schema 半升级：0；
--未知副作用被自动重放：0；
--Context 超预算后仍发往 Provider：0。
-
-## 13. 最小演示
-
-1. 创建一个超过 ContextBudget 的长工具链；
-2. ContextBuilder 对工具输出确定性裁剪；
-3. required constraint ID 和 Evidence 引用全部保留；
-4. 保存 ContextSnapshot；
-5. 正常退出并 reopen Session；
-6. 从安全 step boundary 继续；
-7. 构造 pending Bash，恢复返回 `recovery_required`；
-8. 并行两个 Worker，证明彼此私有 Context 不可见；
-9. Reviewer 只收到目标、Diff、Evidence 和限制。
-
-## 14. 交付物
-
-```text
-artifacts/v0_04/
-├── schema.md
-├── migration_report.md
-├── context_contract.md
-├── role_context_matrix.md
-├── context_budget_report.md
-├── compaction_eval.json
-├── constraint_retention_fixture.json
-├── resume_boundary_report.md
-├── failure_injection_report.md
-├── session_reopen_trace.json
-├── file_manifest.txt
-└── implementation_summary.md
-```
-
-## 15. GO / NO-GO
+| M04-01 | fresh database | schema 初始化并可写入 Session |
+| M04-02 | clean reopen | 消息、事件和最后 sequence 一致 |
+| M04-03 | role scope | 不相关私有 ContextItem 不进入 Snapshot |
+| M04-04 | budget overflow | 结果不超预算，选择顺序确定 |
+| M04-05 | constraint retention | required IDs 与 Evidence refs 保留率 100% |
+| M04-06 | compaction safety | hypothesis 不升级、原始 source 不被覆盖 |
+| M04-07 | safe resume | 文件一致且无 pending mutation 时从 checkpoint 恢复 |
+| M04-08 | unsafe resume | pending mutation 或文件变化时返回 recovery_required |
 
 ### GO
 
-同时满足：
-
-- Phase A–F 全部完成；
--测试矩阵全部通过；
--硬门槛无例外；
--migration、角色隔离、约束保持和 safe resume 可复现；
--文档没有宣称支持任意时刻 crash recovery；
--独立 Reviewer 确认证据与实现一致。
+- M04-01–M04-08 全部通过；
+- 一条集成演示可复现；
+- 未出现 Context 跨 scope 泄漏；
+- 未丢失 required constraint / Evidence ref；
+- 未自动重放未知副作用；
+- 交付物只描述已验证能力。
 
 ### NO-GO
 
-出现任一项：
+- 摘要覆盖或伪造 Evidence；
+- 超预算仍发送模型请求；
+- Session reopen 后状态或 sequence 漂移；
+- unsafe state 被自动 resume；
+- 为通过测试修改原始事实或放宽硬约束。
 
--恢复会重复副作用；
--摘要可以覆盖原始 Evidence；
--Worker 能看到其他 Task 私有上下文；
--外部文本可进入 L0/L1；
--数据库升级无事务或无备份；
--ContextBuilder 静默丢失硬约束；
--Snapshot 只存最终 Prompt、无法回溯 source item；
--pending mutating operation 被自动继续。
+数据库 upgrade、并发 writer、自动 recovery 等增强项失败，不阻止 v0.04 MVP GO，因为它们已不在当前 Gate。
 
-## 16. v0.04.1 后续执行草案
+---
 
-v0.04 完成后，v0.04.1 再按两个独立工作包执行，禁止合并成一次大提交。
+## 9. 最小演示与交付
 
-### Work Package A：Runtime protocol closure
+### 演示
 
-- AgentMessage mailbox 与 recipient routing；
--message dedup / attempt / idempotency；
--Global Verify；
--Reviewer acceptance-claim coverage；
--failed Worker retry / repair 状态机；
--完整 stop_reason、provider、model、contract_id Trace。
+只保留一条 3–5 分钟演示：
 
-### Work Package B：Recovery reconciliation
+```text
+长任务 → Context 超预算 → 确定性压缩
+→ 约束/Evidence 保留 → Snapshot
+→ 退出/reopen → safe resume
+→ 注入 pending mutation → recovery_required
+```
 
-- arbitrary crash fixture；
--pending Bash / write / external API reconciler；
--durable Worker / Task state；
--durable lease reconciliation；
--人工确认与 recovery decision UI；
--重复副作用防护和故障注入。
+### 交付物
 
-v0.04.1 的进入条件：
+```text
+artifacts/v0_04/
+├── test_report.md
+├── mvp_demo_trace.json
+├── known_limitations.md
+├── implementation_summary.md
+└── file_manifest.txt
+```
 
-- v0.04 GO；
--所有 mutating tool 已具备 operation ID；
--SessionEvent / Checkpoint 契约冻结；
--未知副作用统一进入 `recovery_required`；
--不得依赖模型自由文本判断副作用是否已发生。
+现有更细的 JSON artifact 可以保留，但不要求为了填满旧清单继续制造报告。
 
-## 17. 实施者约束
+---
 
--不要引入向量数据库；
--不要引入 SQLAlchemy，除非显式变更 SOP；
--不要实现自动长期 Memory；
--不要实现任意时刻 crash resume；
--不要重构 v0.03 MultiAgent 调度器，除非是接入 Context 接口所必需；
--不要把 v0.04.1 项目标记为 v0.04 已完成；
--每个 Phase 单独提交并附测试证据；
--发现范围外缺口时记录到 implementation_summary，不得顺手扩大实现。
+## 10. 后续增强边界
+
+后续候选统一进入：
+
+[`PaperClaw_v0.04.1_RuntimeProtocolRecovery_SOP草案.md`](PaperClaw_v0.04.1_RuntimeProtocolRecovery_SOP草案.md)
+
+该文件已降级为增强候选池，不再是“v0.04 完成后必须整体执行”的 SOP。每次最多提取一个独立用户故事重新冻结。
+
+---
+
+## 11. 既有实现参考
+
+| 参考项目 | 必读路径 | 借鉴目标 | 禁止照搬 |
+|---|---|---|---|
+| AutoResearchClaw | `researchclaw/hitl/context_manager.py` | Context 分区和 artifact summary | 字符硬截断、stage 强耦合 |
+| AutoResearchClaw | `researchclaw/hitl/chat.py` | Session 序列化与 reopen | 复制其科研 stage state |
+| AutoResearchClaw | `researchclaw/memory/store.py` | provenance、confidence、生命周期字段 | 在 MVP 引入自动长期 Memory |
+| AutoResearchClaw | `researchclaw/pipeline/runner.py` | checkpoint 与安全恢复边界 | 任意副作用自动恢复 |
+| Draftpaper-loop | `docs/DPL_SCHEMA.md`、`draftpaper_cli/loop_contract.py` | 稳定 ID、原始记录与派生物分离 | 论文流水线数据模型 |
+| PaperAgent | `apps/api/app/services/agents/graph/nodes/evidence_context.py` | Evidence Context 与来源追踪 | LangGraph State 强耦合 |
+
+Implementation Summary 只需说明实际借鉴的契约、测试和失败策略，以及为何没有复制原模块。

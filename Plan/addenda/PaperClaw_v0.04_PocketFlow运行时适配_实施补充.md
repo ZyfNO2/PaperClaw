@@ -607,7 +607,7 @@ artifacts/v0_04/pocketflow_adapter/
 -完整 Permission Engine；
 -OS/container Shell Sandbox。
 
-上述能力仍按 v0.04.1、v0.05 等既定版本推进。
+上述能力不再按既定版本默认推进；它们进入 v0.04.1 / v0.05.1 Post-MVP 候选池，只有真实失败或下游用户故事证明必要性时才单独立项。
 
 ---
 

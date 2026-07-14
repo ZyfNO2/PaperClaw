@@ -1,0 +1,111 @@
+PaperClaw v0.04 File Manifest
+==============================
+
+Scope: all files added or modified between baseline commit 5083534 and the
+current v0.04 closeout HEAD (including the post-commit audit correction).
+Generated: 2026-07-14 (Asia/Bangkok).
+Verified against GitHub compare: 5083534..ace27d2, then updated for the audit
+commit's deterministic-trace fixture. All entries below are tracked files.
+
+Legend:
+  [A] = added during v0.04
+  [M] = existing file modified during v0.04
+
+
+## Phase F Tracking / Spec
+
+- [A] .trae/specs/finalize-v0-04-phase-f/checklist.md
+- [A] .trae/specs/finalize-v0-04-phase-f/spec.md
+- [A] .trae/specs/finalize-v0-04-phase-f/tasks.md
+
+
+## Source Code (src/paperclaw/)
+
+### context/
+- [A] src/paperclaw/context/__init__.py
+- [A] src/paperclaw/context/builder.py
+- [A] src/paperclaw/context/compaction.py
+- [A] src/paperclaw/context/contracts.py
+- [A] src/paperclaw/context/migrations.py
+- [A] src/paperclaw/context/repository.py
+- [A] src/paperclaw/context/session.py
+
+### runtime/
+- [A] src/paperclaw/runtime/__init__.py
+- [A] src/paperclaw/runtime/checkpoint.py
+- [A] src/paperclaw/runtime/error_codes.py
+- [A] src/paperclaw/runtime/file_snapshot.py
+- [A] src/paperclaw/runtime/flow_contracts.py
+- [A] src/paperclaw/runtime/flow_runner.py
+- [A] src/paperclaw/runtime/node_registry.py
+- [A] src/paperclaw/runtime/resume.py
+- [A] src/paperclaw/runtime/resume_coordinator.py
+
+### agent/ (modified during v0.04)
+- [M] src/paperclaw/agent/flow.py
+- [M] src/paperclaw/agent/nodes.py
+
+
+## Tests
+
+### tests/unit/
+- [A] tests/unit/test_checkpoint_wiring.py
+- [A] tests/unit/test_compaction.py
+- [A] tests/unit/test_context_builder.py
+- [A] tests/unit/test_context_contracts.py
+- [A] tests/unit/test_context_session.py
+- [A] tests/unit/test_instrumented_flow_runner.py
+- [A] tests/unit/test_node_registry.py
+- [A] tests/unit/test_resume_coordinator.py
+
+### tests/integration/
+- [A] tests/integration/test_v0_04_mvp_demo.py
+
+### tests/ (root)
+- [M] tests/conftest.py
+- [A] tests/test_pocketflow_vendor_integrity.py
+
+
+## Artifacts (artifacts/v0_04/)
+
+- [A] artifacts/v0_04/compaction.json
+- [A] artifacts/v0_04/context_builder.json
+- [A] artifacts/v0_04/file_manifest.txt
+- [A] artifacts/v0_04/implementation_summary.md
+- [A] artifacts/v0_04/known_limitations.md
+- [A] artifacts/v0_04/mvp_demo_trace.json
+- [A] artifacts/v0_04/pocketflow_adapter/instrumented_flow_runner.json
+- [A] artifacts/v0_04/pocketflow_adapter/node_registry.json
+- [A] artifacts/v0_04/resume_boundary.json
+- [A] artifacts/v0_04/test_report.md
+
+
+## Plan / Docs / Repository Guidance
+
+- [M] AGENTS.md
+- [M] README.md
+- [M] UPSTREAM.md
+- [M] Plan/PaperClaw_v0.02-v0.10_SOP总路线与风险推演.md
+- [A] Plan/addenda/PaperClaw_v0.04_PocketFlow运行时适配_实施补充.md
+- [A] Plan/drafts/PaperClaw_v0.04.1_RuntimeProtocolRecovery_SOP草案.md
+- [M] Plan/drafts/PaperClaw_v0.04_ContextSessionSQLite_SOP草案.md
+- [A] Plan/drafts/PaperClaw_v0.05.1_Harness增强候选池.md
+- [M] Plan/drafts/PaperClaw_v0.05_HarnessQueryEngine_SOP草案.md
+- [M] docs/desgin/PaperClaw_QueryEngine设计讨论稿.md
+- [M] docs/desgin/PaperClaw_上下文系统与提示词工程骨架.md
+- [M] docs/reference/PaperClaw_参考项目与可复用模块索引.md
+
+
+## Summary
+
+  Phase F tracking/spec :  3 files (all added)
+  Source - context/     :  7 files (all added)
+  Source - runtime/     :  9 files (all added)
+  Source - agent/       :  2 files (modified)
+  Tests  - unit/        :  8 files (all added)
+  Tests  - integration/ :  1 file  (added)
+  Tests  - root         :  2 files (1 modified, 1 added)
+  Artifacts             : 10 files (all added and tracked)
+  Plan/docs/guidance    : 12 files (4 added, 8 modified)
+  -------------------------------------------------
+  Total                 : 54 files

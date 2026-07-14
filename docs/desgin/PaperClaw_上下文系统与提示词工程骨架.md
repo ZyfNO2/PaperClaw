@@ -1,6 +1,6 @@
 # PaperClaw 上下文系统与提示词工程骨架
 
-> 状态：设计讨论稿
+> 状态：设计讨论稿（v0.04 已落地 Section 4 数据模型、Section 5 ContextBuilder 主流程、Section 6 压缩与 Checkpoint、Section 9 部分 MVP 项；L5 长期记忆、Section 7 权限系统、Section 8 Tool Governance 仍为 Roadmap）
 >
 > 目标：为轻量 Coding / Research Agent 建立可观察、可压缩、可恢复且有权限边界的 Context Runtime。
 
@@ -116,6 +116,8 @@ $$
 
 ## 4. 统一数据模型：ContextItem
 
+> **已实现（v0.04）**：`ContextItem`、`ContextSource`、`ContextBudget`、`ContextSnapshot`、`SessionEvent`、`Checkpoint` 契约已在 `src/paperclaw/context/contracts.py` 冻结为不可变 dataclass。下方代码块为设计原型；实际字段以 `contracts.py` 为准（额外包含 `layer`、`source`、`valid_from_sequence`、`valid_to_sequence`、`superseded_by`、`metadata` 等生命周期与 provenance 字段）。`memory_items` 表延后至后续版本，未在 v0.04 引入。
+
 所有模块提交结构化 `ContextItem`，而不是直接拼字符串：
 
 ```python
@@ -149,6 +151,8 @@ prompt = render(items)
 
 ## 5. ContextBuilder 流程
 
+> **已实现（v0.04）**：`ContextBuilder`（`src/paperclaw/context/builder.py`）落地了 collect → validate → scope → expire → dedup → conflict → estimate → select → compact → render → persist 主流程，配合 `RoleContextView` 按 Coordinator / Worker / Reviewer 角色裁剪，`external_untrusted` 不入 L0/L1。下方流程图中「检索记忆」(retrieve_relevant_memory) 与「敏感信息过滤」(enforce_permissions) 在 MVP 阶段为 no-op，待长期 Memory 与 Permission Engine 接入。每轮装配结果以 `ContextSnapshot` 持久化到 SQLite，支持后续 Trace 与 Eval。
+
 ```text
 收集候选上下文 → 检查来源与作用域 → 处理优先级和冲突
 → 检索记忆 → 去重与时效检查 → 敏感信息过滤
@@ -172,6 +176,8 @@ prompt = render(items)
 工程价值在装配过程，而不在最终格式是否复杂。
 
 ## 6. 压缩与 Checkpoint
+
+> **已实现（v0.04）**：结构化压缩由 `src/paperclaw/context/compaction.py` 的 `CompactionPolicy` + `Char4TokenEstimator` 实现——仅合并 `kind == "observation"` 项，摘要 `source_ref = compaction:item_id1,...` 可回溯，`trust_level = trusted_local`（确定性代码产出，非 LLM 生成），`hypothesis` 不被提升为 `fact`，超 protected 项预算时 fail-closed 抛 `ContextBudgetExhausted`。Checkpoint 写入由 `src/paperclaw/runtime/checkpoint.py`（`CheckpointWriter` Protocol + `SqliteCheckpointWriter`）实现，`InstrumentedFlowRunner` 在 `node.completed` 后提交；安全恢复边界由 `src/paperclaw/runtime/resume.py`（`evaluate_resume_safety`）+ `src/paperclaw/runtime/resume_coordinator.py`（`ResumeCoordinator` 端到端 `decide_resume`）+ `src/paperclaw/runtime/file_snapshot.py`（`FileSnapshotVerifier` hash 校验）落地，检测到 pending mutation / active Worker / registry mismatch / 文件 hash 不匹配时返回 `recovery_required`，fail-closed 阻止不安全 resume。LLM 摘要、Prompt Cache、任意时刻 crash 自动恢复、Bash/file/外部 API 自动 reconciliation 仍为 v0.04.1 候选。
 
 轻量压缩负责删除重复日志、保留关键错误和退出码、将文件全文变成摘要加引用，以及合并搜索结果。
 
@@ -238,6 +244,8 @@ result_policy: [大文件返回片段和引用]
 8. 一个压缩前后约束保持率测试。
 
 建议的数据表：`sessions`、`messages`、`task_states`、`tool_calls`、`context_items`、`checkpoints`、`memory_items`、`eval_runs`。
+
+> **v0.04 实现状态**：上述第 2（`ContextItem` 统一数据模型）、3（结构化 Task State，`task_states` 表）、4（工具结果摘要，observation compaction）、5（token 预算与裁剪，`Char4TokenEstimator` + `CompactionPolicy`）、6（SQLite 持久化 Session / Message / Checkpoint，`session_events` / `messages` / `checkpoints` 等表）、7（每轮 Context Trace，`ContextSnapshot` 持久化）、8（压缩前后约束保持率测试，`tests/unit/test_compaction.py::TestConstraintRetention`）项已由 v0.04 落地。第 1 项「分层 Prompt Section」由 `ContextBuilder` 渲染层级化 Context，但完整 L0–L5 六层模型中 L5 Retrieved Memory 仍为 no-op。建议数据表中 `memory_items` 与 `eval_runs` 延后至后续版本，v0.04 实际建表 10 张（见 `src/paperclaw/context/migrations.py`）。
 
 ## 10. 评估指标
 
