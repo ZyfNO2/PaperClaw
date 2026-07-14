@@ -586,13 +586,13 @@ recommended_action
 
 ### Phase E：Safe resume
 
-- [ ] E1. step-boundary Checkpoint；
-- [ ] E2. clean reopen；
-- [ ] E3. last committed sequence restore；
-- [ ] E4. pending operation 检测；
-- [ ] E5. 文件 hash / existence 重验；
-- [ ] E6. `recovery_required` 输出；
-- [ ] E7. 禁止未知副作用自动重放。
+- [x] E1. step-boundary Checkpoint；
+- [x] E2. clean reopen；
+- [x] E3. last committed sequence restore；
+- [x] E4. pending operation 检测；
+- [x] E5. 文件 hash / existence 重验；
+- [x] E6. `recovery_required` 输出；
+- [x] E7. 禁止未知副作用自动重放。
 
 ### Phase F：集成与留档
 
