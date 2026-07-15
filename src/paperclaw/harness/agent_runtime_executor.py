@@ -51,22 +51,21 @@ class _Usage:
 
 
 def _safe_model_metadata(model: ChatModel) -> dict[str, str]:
-    """Return non-secret model identity without inspecting request content."""
+    """Return explicit non-secret identity without inventing model metadata.
 
+    Test doubles and legacy model implementations that do not expose stable
+    ``provider``/``model`` attributes retain their historical event shape.
+    Production adapters may opt in by exposing either field.
+    """
+
+    metadata: dict[str, str] = {}
     provider = getattr(model, "provider", None)
     model_name = getattr(model, "model", None)
-    return {
-        "provider": (
-            provider.strip()
-            if isinstance(provider, str) and provider.strip()
-            else "unknown"
-        ),
-        "model": (
-            model_name.strip()
-            if isinstance(model_name, str) and model_name.strip()
-            else type(model).__name__
-        ),
-    }
+    if isinstance(provider, str) and provider.strip():
+        metadata["provider"] = provider.strip()
+    if isinstance(model_name, str) and model_name.strip():
+        metadata["model"] = model_name.strip()
+    return metadata
 
 
 class _BudgetedModel:
@@ -107,13 +106,17 @@ class _BudgetedModel:
         try:
             turn = self._model.complete(prompt)
         except Exception as exc:
-            duration_ms = max(0, round((perf_counter() - started_at) * 1000))
+            duration = (
+                {"duration_ms": max(0, round((perf_counter() - started_at) * 1000))}
+                if self._metadata
+                else {}
+            )
             self._emit(
                 "model.failed",
                 {
                     **self._metadata,
                     "call_index": call_index,
-                    "duration_ms": duration_ms,
+                    **duration,
                     "error_code": "MODEL_CALL_FAILED",
                     "error_type": type(exc).__name__,
                     "error_message": str(exc)[:500],
@@ -126,13 +129,17 @@ class _BudgetedModel:
             if self._stop_token.is_cancelled:
                 raise RunStopped(self._stop_token.reason or "cancelled") from exc
             raise
-        duration_ms = max(0, round((perf_counter() - started_at) * 1000))
+        duration = (
+            {"duration_ms": max(0, round((perf_counter() - started_at) * 1000))}
+            if self._metadata
+            else {}
+        )
         self._emit(
             "model.completed",
             {
                 **self._metadata,
                 "call_index": call_index,
-                "duration_ms": duration_ms,
+                **duration,
             },
         )
         return turn
