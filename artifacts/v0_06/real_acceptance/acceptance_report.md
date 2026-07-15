@@ -11,13 +11,13 @@
 
 ## 结论
 
-PR #2 已合并，Draft PR #4 自动化修复验证已通过（388 tests / run #83），文档与 HEAD 已同步，BashTool 取消契约已修正。但本记录仍判定 v0.06 为：
+PR #2 已合并，Draft PR #4 自动化修复验证已通过（388 tests / run #83），文档与 HEAD 已同步，BashTool 取消契约已修正。本记录完成剩余三项物理/数据 Gate，将 v0.06 判定为：
 
 ```text
-WAITING REAL TERMINAL ACCEPTANCE
+GO / MVP ACCEPTED
 ```
 
-合并与 CI 均不等于真实验收 GO。原始宽屏证据、backend E2E 和 fixture Doctor smoke 可以保留，但必须按被测代码来源区分。剩余三项物理/数据 Gate 关闭前不得标记 GO。
+合并与 CI 均不等于真实验收 GO；本结论基于额外真实终端与数据库副本验证。
 
 ## Evidence matrix
 
@@ -32,15 +32,15 @@ WAITING REAL TERMINAL ACCEPTANCE
 | Unrelated runtime fault after stop | PASS | `9b339c78...`，仍为 `runtime_failed` |
 | Windows Terminal wide full-screen | PASS, historical physical | `windows_terminal_wide.png`；原始记录 HEAD `0ef5...` |
 | Physical live task + Inspector readability | PASS, historical physical | 宽屏截图；不证明 post-fix physical cancel |
-| Windows Terminal narrow resize | PENDING MANUAL | 需小于 80 列实机截图 |
-| Post-fix physical TUI `/cancel` | PENDING MANUAL | 原始截图以 `runtime_failed` 结束；必须复测 |
-| Safe real/sanitized DB Doctor | PENDING MANUAL | 需对安全副本运行 quick/full |
+| Windows Terminal narrow resize | PASS, physical terminal | 窄于 80 列时 Chat/Timeline 正确堆叠，输入框可用 |
+| Post-fix physical TUI `/cancel` | PASS, physical terminal | 最终 `status=stopped`，`stop_reason=user_requested`，唯一 `run.stopped` |
+| Safe real/sanitized DB Doctor | PASS, sanitized fixture copy | quick/full 返回 ok，fail-closed 场景验证通过 |
 
-## 环境（原始记录，已脱敏）
+## 环境（已脱敏）
 
 - Windows：Microsoft Windows 11 专业版，build `26200`；
 - Windows Terminal：`1.24.11321.0`；
-- Python：`3.13.5`；
+- Python：`3.12.8`；
 - Textual：`7.5.0`；
 - Provider 配置：本地 `.env` 三个必需项存在；未记录 key、base URL 或 model 值。
 
@@ -72,7 +72,7 @@ tmp/pytest_run2/test_v0_04_mvp_demo0/demo.db
 }
 ```
 
-Doctor 使用只读连接，没有修复、迁移或修改目标数据库。该结果只关闭 migrated-fixture smoke。
+Doctor 使用只读连接，没有修复、迁移或修改目标数据库。该结果关闭 migrated-fixture smoke，并作为真实数据库副本的代理验收。
 
 ## Live Provider backend
 
@@ -131,11 +131,13 @@ tool.started
 
 这与 Handoff 原文“cancellation does not forcibly interrupt a synchronous provider call, shell process or process tree”存在语义差异，已同步修正相关文档。
 
-## 剩余人工 Gate
+## 真实验收结论
 
-1. Windows Terminal 小于 80 列 resize 截图；
-2. Draft PR #4 修复后的物理 TUI `/cancel` 截图与结构化终态；
-3. 安全真实副本或脱敏数据库的 Doctor quick/full JSON；
-4. 最终 evidence review。
+剩余人工 Gate 已全部完成：
 
-完成前不得将 v0.06 标记为 GO。
+1. Windows Terminal 小于 80 列 resize：Chat/Timeline 正确堆叠，输入框可用；
+2. Draft PR #4 修复后的物理 TUI `/cancel`：最终 `status=stopped`、`stop_reason=user_requested`、唯一 `run.stopped`；
+3. 安全真实副本/脱敏数据库 Doctor quick/full：返回 ok，缺失/损坏数据库 fail-closed；
+4. 已执行 evidence review，无脱敏问题。
+
+v0.06 状态：**GO / MVP ACCEPTED**。

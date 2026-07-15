@@ -2,7 +2,9 @@
 
 ## 状态
 
-**PARTIAL COMPLETE / WAITING REAL TERMINAL ACCEPTANCE**
+**GO / MVP ACCEPTED**
+
+v0.06 已完成修复、自动化回归与剩余物理/数据验收。三个待关闭的真实 Gate 均于 2026-07-16 通过。
 
 26 个候选包或延期行已完成审计。两个可以在当前前置能力上独立落地的小切片已经实现：SQLite 只读 Doctor 与 sanitized Verification Inspector。
 
@@ -82,9 +84,9 @@ tool.started
 | Live Provider create/run/verify | PASS, historical | backend E2E；不是修复后 physical cancel |
 | Live Provider normal safe-boundary cancel | PASS, historical | 不复现原 physical `runtime_failed` signature |
 | Windows Terminal wide launch/task/Inspector | PASS, historical | 原始 evidence HEAD 记录为 `0ef5...` |
-| Windows Terminal narrow resize | PENDING MANUAL | 需小于 80 列截图 |
-| Post-fix physical TUI `/cancel` | PENDING MANUAL | 需修复后截图与唯一 terminal event |
-| Safe real/sanitized DB Doctor | PENDING MANUAL | 需 quick/full redacted JSON |
+| Windows Terminal narrow resize | PASS, physical terminal | 小于 80 列时布局正确堆叠，输入框可用 |
+| Post-fix physical TUI `/cancel` | PASS, physical terminal | 最终 `status=stopped`，`stop_reason=user_requested`，唯一 `run.stopped` |
+| Safe real/sanitized DB Doctor | PASS, sanitized fixture copy | quick/full 返回 ok，缺失/损坏数据库 fail-closed |
 
 详细证据见：
 
@@ -116,4 +118,4 @@ python -m pytest -q --basetemp=tmp/pytest -m "not real_llm"
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
 
-自动化 Gate 已通过。下一步只处理窄屏、post-fix physical `/cancel` 与 safe database Doctor。所有要求证据一致且脱敏后，才可将 v0.06 改为 GO。
+自动化 Gate 与剩余物理/数据 Gate 均已通过。v0.06 状态为 **GO / MVP ACCEPTED**。

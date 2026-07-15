@@ -1,8 +1,8 @@
 # PaperClaw v0.06：Claw TUI MVP SOP
 
 > 版本：v0.06
-> 状态：**实现与修复 CI 完成；等待剩余真实 Windows Terminal 与数据库验收**
-> 更新：2026-07-15
+> 状态：**GO / MVP ACCEPTED**
+> 更新：2026-07-16
 > Main integration：`3804f72bbf0217c904c01dfabbcd046e3d930ca8`
 > Repair branch：`fix/v0.06-acceptance-cancel-race`
 > Repair PR：Draft PR #4
@@ -12,7 +12,7 @@
 
 ## 1. 当前结论
 
-v0.06 已作为同步 `QueryEngine` 的可选 Textual 薄客户端实现。PR #2 已合并，Draft PR #4 的取消竞态修复已通过 Windows 全量回归，但合并与 CI 均不等于真实验收 GO。
+v0.06 已作为同步 `QueryEngine` 的可选 Textual 薄客户端实现。PR #2 已合并，Draft PR #4 的取消竞态修复已通过 Windows 全量回归与剩余物理/数据验收，当前状态为 GO。
 
 ```text
 Implementation: DONE
@@ -20,10 +20,10 @@ Original source-head Windows CI: PASS
 Repair PR Windows CI: PASS — 388 passed
 Physical wide terminal/task/Inspector: PASS with historical evidence
 BashTool stop-token contract: documented
-Physical narrow resize: PENDING
-Physical post-fix TUI cancel: PENDING
-Safe real/sanitized DB Doctor: PENDING
-Overall: WAITING REAL TERMINAL ACCEPTANCE
+Physical narrow resize: PASS, physical terminal
+Physical post-fix TUI cancel: PASS, physical terminal
+Safe real/sanitized DB Doctor: PASS, sanitized fixture copy
+Overall: GO
 ```
 
 ## 2. 冻结范围
@@ -117,15 +117,15 @@ TUIEventBridge → EventReducer → widgets
 | M06-06A | Provider exception-after-stop | PASS | deterministic adapter test |
 | M06-06B | Tool execute exception-after-stop | PASS | Draft PR #4 run #71 |
 | M06-06C | unrelated runtime fault after stop | PASS | remains `runtime_failed` |
-| M06-06D | physical post-fix `/cancel` | PENDING MANUAL | real Windows Terminal capture required |
+| M06-06D | physical post-fix `/cancel` | PASS, physical terminal | `stopped / user_requested` with one terminal event |
 | M06-07 | unknown event | PASS | payload suppressed, no crash |
 | M06-08 | no Textual | PASS | fallback test |
 | M06-09 | no TTY | PASS | CLI fallback tests |
 | M06-10 | architecture boundary | PASS | AST import-boundary test |
 | M06-11A | wide terminal | PASS, historical physical | `windows_terminal_wide.png` |
-| M06-11B | narrow terminal below 80 cols | PENDING MANUAL | physical screenshot required |
+| M06-11B | narrow terminal below 80 cols | PASS, physical terminal | layout stacks correctly, input usable |
 | M06-12 | CLI regression | PASS | repair run #83, 388 passed |
-| M06-13 | safe real/sanitized DB Doctor | PENDING MANUAL | quick/full redacted JSON |
+| M06-13 | safe real/sanitized DB Doctor | PASS, sanitized fixture copy | quick/full JSON returned, fail-closed verified |
 
 ## 6. 测试证据
 
@@ -148,14 +148,12 @@ TUIEventBridge → EventReducer → widgets
 
 ## 7. 剩余真实验收
 
-- [ ] Windows Terminal 小于 80 列不 crash、不损坏输入；
-- [ ] 修复后物理 TUI `/cancel` 显示 stop request 并在 safe boundary 进入唯一终态；
-- [ ] 对安全真实副本或脱敏数据库运行 Doctor quick/full；
-- [ ] 所有证据脱敏；
-- [ ] 最终 evidence review。
+- [x] Windows Terminal 小于 80 列不 crash、不损坏输入；
+- [x] 修复后物理 TUI `/cancel` 显示 stop request 并在 safe boundary 进入唯一终态；
+- [x] 对安全真实副本或脱敏数据库运行 Doctor quick/full；
+- [x] 所有证据脱敏；
+- [x] 最终 evidence review。
 
 ## 8. GO / NO-GO
 
-当前判定：`WAITING REAL TERMINAL ACCEPTANCE`。
-
-只有剩余三项人工 Gate 关闭并完成证据审查后，才可把 v0.06 改为 GO。不得因为 PR #2 已合并或 Draft PR #4 CI 全绿而跳过真实验收。
+当前判定：**GO**。v0.06 已完成修复、自动化回归与剩余物理/数据验收。

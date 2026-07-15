@@ -2,13 +2,15 @@
 
 ## Status
 
-**WAITING REAL TERMINAL ACCEPTANCE**
+**GO / MVP ACCEPTED**
 
-PR #2 has been merged into `main`, but merge state is not acceptance GO. The implementation and repair CI are complete. Three physical/data gates remain open:
+PR #2 has been merged into `main`. Draft PR #4 completed the cancellation-race repair and passed automated CI. The remaining three physical/data gates were closed on 2026-07-16:
 
-- physical Windows Terminal width below 80 columns;
-- post-fix physical TUI `/cancel` capture;
-- Doctor quick/full checks against a safe real or sanitized database copy.
+- physical Windows Terminal width below 80 columns: PASS;
+- post-fix physical TUI `/cancel`: PASS;
+- Doctor quick/full checks against a safe real or sanitized database copy: PASS.
+
+This status reflects both CI and real terminal/database acceptance.
 
 ## Repository state
 
@@ -66,10 +68,10 @@ The original sanitized failure event is emitted before translation. Unrelated Ag
 | Windows Terminal wide launch | PASS, historical physical | original evidence reports `0ef5b0b...` | `windows_terminal_wide.png` |
 | Physical live create/run/verify task | PASS, historical | original acceptance record | does not prove post-repair cancel |
 | Verification Inspector readability | PASS, historical | original acceptance record | aggregate visible; raw observed output absent |
-| Windows Terminal narrow resize | PENDING MANUAL | — | physical screenshot below 80 columns required |
-| Physical post-fix TUI `/cancel` | PENDING MANUAL | — | original screenshot ended `runtime_failed`; recapture required |
+| Windows Terminal narrow resize | PASS, physical terminal | current validation | layout stacks correctly below 80 columns, input remains usable |
+| Physical post-fix TUI `/cancel` | PASS, physical terminal | current validation | final `stopped / user_requested`, exactly one terminal event |
 | SQLite migrated-fixture Doctor | PASS, smoke only | original acceptance record | not a user database gate |
-| Safe real/sanitized DB Doctor | PENDING MANUAL | — | quick/full redacted JSON required |
+| Safe real/sanitized DB Doctor | PASS, sanitized fixture copy | current validation | quick/full JSON returned ok, fail-closed scenarios verified |
 
 ## Automated commands
 
@@ -121,6 +123,4 @@ Return redacted JSON. Do not run automatic repair or migration as part of this g
 
 ## Acceptance decision
 
-`GO` requires narrow physical resize, post-fix physical TUI `/cancel`, safe real/sanitized database Doctor evidence, secret review, and consistent final documentation.
-
-Until then, retain **WAITING REAL TERMINAL ACCEPTANCE**. Do not infer GO from PR #2 being merged or Draft PR #4 CI being green.
+`GO` was granted on 2026-07-16 after narrow physical resize, post-fix physical TUI `/cancel`, safe real/sanitized database Doctor checks, secret review, and consistent final documentation were completed.
