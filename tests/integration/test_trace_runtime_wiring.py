@@ -63,6 +63,10 @@ def test_query_engine_run_projects_to_canonical_durable_trace(
     ]
     assert trace[0].component == "harness"
     assert trace[0].status == "started"
+    assert trace[1].provider == "unknown"
+    assert trace[1].model == "FakeModel"
+    assert trace[2].duration_ms is not None
+    assert trace[2].duration_ms >= 0
     assert trace[-1].status == "completed"
     assert trace[-1].payload["stop_reason"] == "done"
     assert trace[-1].payload["source_event_type"] == "flow.stopped"
