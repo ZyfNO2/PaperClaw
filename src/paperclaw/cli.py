@@ -262,6 +262,48 @@ def _run_trace_inspect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_trace_replay(args: argparse.Namespace) -> int:
+    """Replay recorded control flow without executing models or tools."""
+
+    from paperclaw.replay import (
+        RecordedReplayError,
+        render_recorded_replay_text,
+        replay_recorded_trace,
+    )
+    from paperclaw.trace import TraceReadError
+
+    try:
+        result = replay_recorded_trace(
+            _trace_reader(args.database),
+            args.run_id,
+            require_terminal=not args.allow_partial,
+            strict=args.strict,
+            max_frames=args.max_frames,
+        )
+    except (RecordedReplayError, TraceReadError, OSError, ValueError) as exc:
+        console_print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:500],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1
+
+    if args.format == "json":
+        output = result.to_dict()
+        output["ok"] = result.faithful
+        output["partial_allowed"] = bool(args.allow_partial)
+        console_print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        console_print(render_recorded_replay_text(result))
+    return 0 if result.faithful else 1
+
+
 def _load_team_plan(plan_path: Path) -> tuple[str, list[AgentTask], TeamBudget]:
     """Load a JSON team plan: {goal, tasks: [...], budget: {...}}."""
     data = json.loads(plan_path.read_text(encoding="utf-8"))
@@ -310,6 +352,21 @@ def _add_single_agent_runtime_arguments(parser: argparse.ArgumentParser) -> None
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Run the v0.02 Verify/Reflection Gate (default: True)",
+    )
+
+
+def _add_trace_read_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--database", type=Path, required=True)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+    )
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Allow reading when the run has no terminal event",
     )
 
 
@@ -379,22 +436,27 @@ def _build_parser() -> argparse.ArgumentParser:
         "inspect",
         help="Show a read-only trace summary, timeline and error chain",
     )
-    trace_inspect_parser.add_argument("--database", type=Path, required=True)
-    trace_inspect_parser.add_argument("--run-id", required=True)
-    trace_inspect_parser.add_argument(
-        "--format",
-        choices=("text", "json"),
-        default="text",
-    )
+    _add_trace_read_arguments(trace_inspect_parser)
     trace_inspect_parser.add_argument(
         "--max-events",
         type=int,
         help="Limit displayed timeline entries without changing aggregate counts",
     )
-    trace_inspect_parser.add_argument(
-        "--allow-partial",
+
+    trace_replay_parser = trace_subparsers.add_parser(
+        "replay",
+        help="Replay recorded control flow without model/tool execution",
+    )
+    _add_trace_read_arguments(trace_replay_parser)
+    trace_replay_parser.add_argument(
+        "--max-frames",
+        type=int,
+        help="Limit displayed replay frames without changing applied event count",
+    )
+    trace_replay_parser.add_argument(
+        "--strict",
         action="store_true",
-        help="Allow inspection when the run has no terminal event",
+        help="Fail immediately when replay detects an error-level invariant issue",
     )
 
     team_parser = subparsers.add_parser("team", help="Run a MultiAgent Coordinator team from a JSON plan")
@@ -439,6 +501,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "trace":
         if args.trace_command == "inspect":
             return _run_trace_inspect(args)
+        if args.trace_command == "replay":
+            return _run_trace_replay(args)
         return _run_trace_export(args)
     return _run_agent(args)
 
