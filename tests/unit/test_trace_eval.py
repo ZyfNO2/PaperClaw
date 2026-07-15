@@ -84,12 +84,14 @@ def test_eval_scores_trace_and_applies_explicit_thresholds() -> None:
 
     metrics = {metric.name: metric for metric in report.metrics}
     assert report.overall_passed is False
-    assert report.failed_checks == ("provider_retries",)
+    assert report.failed_checks == (
+        "tool_failure_rate",
+        "provider_retries",
+    )
     assert metrics["terminal_completed"].passed is True
     assert metrics["recorded_replay_faithful"].passed is True
     assert metrics["tool_failure_rate"].value == 1.0
     assert metrics["tool_failure_rate"].passed is False
-    assert "tool_failure_rate" in report.failed_checks
     assert metrics["provider_retries"].value == 1
     assert metrics["verification"].value == "not_recorded"
     assert metrics["total_tokens"].value == 15
