@@ -8,7 +8,9 @@ import pytest
 from paperclaw.context.repository import SQLiteRepository
 from paperclaw.context.session import SessionService
 from paperclaw.context.session_picker import SafeSessionPicker, SessionPickerError
+from paperclaw.harness import AgentRuntimeExecutor, QueryEngine
 from paperclaw.tui.commands import SessionCommandAPI
+from tests.helpers import FakeModel, done
 
 
 def test_picker_lists_only_conversations_without_active_runs(tmp_path: Path) -> None:
@@ -73,6 +75,54 @@ def test_preview_and_reopen_are_read_only_and_revalidate_safety(
 
     repository.end_run("run-active", stop_reason="cancelled")
     repository.close()
+
+
+def test_reopened_conversation_creates_fresh_run_and_preserves_ended_run(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "paperclaw.db"
+    repository = SQLiteRepository(database)
+    original = SessionService.open(repository, conversation_id="conversation-1")
+    original.append_message("user", "original task")
+    original.append_message("assistant", "original result")
+    original.close(stop_reason="done")
+
+    reopened = SessionCommandAPI(SafeSessionPicker(database)).reopen(
+        "conversation-1"
+    )
+    executor = AgentRuntimeExecutor(
+        FakeModel([done(result="continued result")]),
+        tmp_path,
+        enable_verification_gate=False,
+        repository=repository,
+    )
+    result = QueryEngine(
+        executor,
+        conversation_id=reopened.conversation_id,
+    ).submit("continue with a fresh run")
+    repository.close()
+
+    assert result.status == "completed"
+    assert result.run_id != original.run_id
+    with sqlite3.connect(database) as connection:
+        runs = connection.execute(
+            "SELECT run_id, ended_at, stop_reason FROM runs "
+            "WHERE conversation_id = ? ORDER BY created_at, run_id",
+            ("conversation-1",),
+        ).fetchall()
+        message_count = connection.execute(
+            "SELECT COUNT(*) FROM messages WHERE conversation_id = ?",
+            ("conversation-1",),
+        ).fetchone()
+
+    assert len(runs) == 2
+    assert runs[0][0] == original.run_id
+    assert runs[0][1] is not None
+    assert runs[0][2] == "done"
+    assert runs[1][0] == result.run_id
+    assert runs[1][1] is not None
+    assert message_count is not None
+    assert int(message_count[0]) == 4
 
 
 def test_picker_fails_closed_for_missing_database(tmp_path: Path) -> None:
