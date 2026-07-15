@@ -353,6 +353,22 @@ class AgentRuntimeExecutor:
             run_id=request.run_id,
             agent_id="query_engine",
         )
+        # QueryEngine emits run.started before invoking this executor, so the
+        # corresponding in-memory sequence is always 1. Persist that lifecycle
+        # fact explicitly; all later adapter events preserve their actual
+        # QueryEngine sequence through runtime_emit.
+        session.emit(
+            "run.started",
+            {
+                "query_event_sequence": 1,
+                "conversation_id": request.conversation_id,
+                "limits": {
+                    "max_steps": request.limits.max_steps,
+                    "max_model_calls": request.limits.max_model_calls,
+                    "max_tool_calls": request.limits.max_tool_calls,
+                },
+            },
+        )
         session.append_message("user", request.text)
         return session
 
