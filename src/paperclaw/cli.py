@@ -179,24 +179,24 @@ def _run_doctor(args: argparse.Namespace) -> int:
     return 0 if report.ok else 1
 
 
+def _trace_reader(database: Path):
+    from paperclaw.trace import SQLiteTraceReader, TraceRedactor
+
+    api_key = os.environ.get("PAPERCLAW_API_KEY", "")
+    return SQLiteTraceReader(
+        database,
+        redactor=TraceRedactor(secret_values=[api_key]),
+    )
+
+
 def _run_trace_export(args: argparse.Namespace) -> int:
     """Export one durable run trace without migrating or mutating SQLite."""
 
-    from paperclaw.trace import (
-        SQLiteTraceReader,
-        TraceReadError,
-        TraceRedactor,
-        export_trace_jsonl,
-    )
+    from paperclaw.trace import TraceReadError, export_trace_jsonl
 
-    api_key = os.environ.get("PAPERCLAW_API_KEY", "")
-    reader = SQLiteTraceReader(
-        args.database,
-        redactor=TraceRedactor(secret_values=[api_key]),
-    )
     try:
         summary = export_trace_jsonl(
-            reader,
+            _trace_reader(args.database),
             args.run_id,
             args.output,
             require_terminal=not args.allow_partial,
@@ -219,6 +219,46 @@ def _run_trace_export(args: argparse.Namespace) -> int:
     output["ok"] = True
     output["partial_allowed"] = bool(args.allow_partial)
     console_print(json.dumps(output, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _run_trace_inspect(args: argparse.Namespace) -> int:
+    """Render a bounded, read-only timeline and aggregate summary."""
+
+    from paperclaw.trace import (
+        TraceReadError,
+        inspect_run_trace,
+        render_inspection_text,
+    )
+
+    try:
+        inspection = inspect_run_trace(
+            _trace_reader(args.database),
+            args.run_id,
+            require_terminal=not args.allow_partial,
+            max_events=args.max_events,
+        )
+    except (TraceReadError, OSError, ValueError) as exc:
+        console_print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:500],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1
+
+    if args.format == "json":
+        output = inspection.to_dict()
+        output["ok"] = True
+        output["partial_allowed"] = bool(args.allow_partial)
+        console_print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        console_print(render_inspection_text(inspection))
     return 0
 
 
@@ -335,6 +375,28 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Allow export when the run has no terminal event",
     )
 
+    trace_inspect_parser = trace_subparsers.add_parser(
+        "inspect",
+        help="Show a read-only trace summary, timeline and error chain",
+    )
+    trace_inspect_parser.add_argument("--database", type=Path, required=True)
+    trace_inspect_parser.add_argument("--run-id", required=True)
+    trace_inspect_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+    )
+    trace_inspect_parser.add_argument(
+        "--max-events",
+        type=int,
+        help="Limit displayed timeline entries without changing aggregate counts",
+    )
+    trace_inspect_parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Allow inspection when the run has no terminal event",
+    )
+
     team_parser = subparsers.add_parser("team", help="Run a MultiAgent Coordinator team from a JSON plan")
     team_parser.add_argument("--plan", type=Path, required=True)
     team_parser.add_argument("--workspace", type=Path, default=Path.cwd())
@@ -375,6 +437,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "doctor":
         return _run_doctor(args)
     if args.command == "trace":
+        if args.trace_command == "inspect":
+            return _run_trace_inspect(args)
         return _run_trace_export(args)
     return _run_agent(args)
 
