@@ -211,8 +211,10 @@ paperclaw tui --workspace .
 启用 SQLite 持久化与 Safe Session Picker：
 
 ```powershell
-paperclaw tui --workspace . --database .paperclaw/paperclaw.db
+paperclaw tui --workspace . --database paperclaw.db
 ```
+
+`--database` 的父目录必须已经存在；SQLite 可创建数据库文件，但不会创建缺失的目录。
 
 启动后使用：
 
