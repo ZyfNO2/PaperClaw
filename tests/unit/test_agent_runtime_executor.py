@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from paperclaw.context.repository import SQLiteRepository
@@ -137,6 +138,49 @@ def test_max_steps_maps_to_budget_exhausted(tmp_path: Path) -> None:
     assert result.status == "budget_exhausted"
     assert result.stop_reason == "max_steps"
     assert tool.executions == 1
+
+
+def test_inflight_error_after_stop_maps_to_stopped(tmp_path: Path) -> None:
+    """A provider failure racing with an accepted stop keeps stop semantics."""
+
+    class FailingInflightModel:
+        def __init__(self) -> None:
+            self.started = threading.Event()
+            self.release = threading.Event()
+
+        def complete(self, prompt: str):
+            self.started.set()
+            assert self.release.wait(timeout=2)
+            raise RuntimeError("provider call ended after cancellation")
+
+    model = FailingInflightModel()
+    events: list[tuple[str, dict]] = []
+    engine = QueryEngine(
+        AgentRuntimeExecutor(
+            model,
+            tmp_path,
+            registry=ToolRegistry([]),
+            enable_verification_gate=False,
+        ),
+        conversation_id="conv-stop-race",
+        event_handler=lambda event_type, payload: events.append((event_type, payload)),
+    )
+    results = []
+    thread = threading.Thread(
+        target=lambda: results.append(engine.submit("wait then stop")),
+        daemon=True,
+    )
+
+    thread.start()
+    assert model.started.wait(timeout=1)
+    run_id = events[0][1]["run_id"]
+    assert engine.request_stop(run_id, "user_requested") is True
+    model.release.set()
+    thread.join(timeout=2)
+
+    assert results[0].status == "stopped"
+    assert results[0].stop_reason == "user_requested"
+    assert results[0].model_calls == 1
 
 
 def test_optional_session_binding_persists_messages_and_events(

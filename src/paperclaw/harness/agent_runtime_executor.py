@@ -289,17 +289,31 @@ class AgentRuntimeExecutor:
             )
         except Exception:
             self.last_state = runtime.last_state
-            # The model wrapper has already counted the attempted provider call
-            # and emitted a sanitized failure event. Preserve those truthful
-            # counters in the terminal report instead of re-raising and letting
-            # QueryEngine replace them with zeroes.
-            report = ExecutionReport(
-                status="failed",
-                output=(runtime.last_state or {}).get("result"),
-                stop_reason="runtime_failed",
-                model_calls=usage.model_calls,
-                tool_calls=usage.tool_calls,
-            )
+            # A synchronous provider or tool can surface its own exception
+            # after a cooperative stop was accepted while that call was in
+            # flight. At that point cancellation owns the terminal outcome:
+            # preserve the truthful call counters, but do not misclassify the
+            # user-requested stop as an unrelated runtime failure.
+            if stop_token.is_cancelled:
+                report = ExecutionReport(
+                    status="stopped",
+                    output=(runtime.last_state or {}).get("result"),
+                    stop_reason=stop_token.reason or "cancelled",
+                    model_calls=usage.model_calls,
+                    tool_calls=usage.tool_calls,
+                )
+            else:
+                # The model wrapper has already counted the attempted provider
+                # call and emitted a sanitized failure event. Preserve those
+                # truthful counters instead of re-raising and letting
+                # QueryEngine replace them with zeroes.
+                report = ExecutionReport(
+                    status="failed",
+                    output=(runtime.last_state or {}).get("result"),
+                    stop_reason="runtime_failed",
+                    model_calls=usage.model_calls,
+                    tool_calls=usage.tool_calls,
+                )
 
         self._finish_session(session, report)
         return report

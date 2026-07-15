@@ -66,9 +66,11 @@ Implementation, focused offline validation, full automated CI, SQLite Doctor and
 - Python `3.13.5`; Textual `7.5.0`;
 - SQLite Doctor quick/integrity checks: PASS, schema version 3;
 - live-provider QueryEngine create/run/verify: `1 passed in 31.12s`;
+- live-provider cooperative cancel regression: `1 passed in 19.04s`, ending as `stopped / user_requested` with one `run.stopped` event;
 - sanitized evidence: `artifacts/v0_06/real_acceptance/acceptance_report.md`.
+- physical wide-terminal screenshot: `artifacts/v0_06/real_acceptance/windows_terminal_wide.png`.
 
-The live-provider result is backend E2E evidence, not proof that the same task was entered and rendered inside a physical TUI.
+The live-provider tests cover backend create/run/verify and the cancellation race. The supplied Windows Terminal screenshot separately confirms physical TUI launch, task completion and Inspector rendering. Narrow resize and a post-fix physical TUI `/cancel` capture remain pending.
 
 ## Known limitations
 

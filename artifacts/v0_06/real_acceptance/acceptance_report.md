@@ -11,9 +11,13 @@
 | SQLite Doctor fixture `quick_check` | PASS (smoke) | 只读检查 pytest 生成的 v0.04 迁移后样本 |
 | SQLite Doctor fixture `integrity_check` | PASS (smoke) | 不代表真实/脱敏用户数据库或业务语义正确 |
 | Live Provider create/run/verify | PASS | 通过 QueryEngine E2E；不是物理 TUI 输入 |
-| Windows Terminal full-screen / resize | PENDING MANUAL | 自动化规范禁止代替用户操控终端应用 |
+| Live Provider cooperative cancel | PASS | 真实工具执行期间请求停止，终态 `stopped` |
+| Windows Terminal wide full-screen | PASS | 用户提供脱敏实机截图 |
+| Windows Terminal narrow resize | PENDING MANUAL | 仍需小于 80 列的实机截图 |
 | TUI 内 live `/cancel` | PENDING MANUAL | 必须在真实交互窗口观察 safe-boundary 行为 |
-| Verification Inspector 实机可读性 | PENDING MANUAL | headless 测试已过，物理终端截图待补 |
+| Verification Inspector 实机可读性 | PASS | 宽屏截图显示 aggregate 可读且无 raw observed 输出 |
+
+用户提供的脱敏宽屏截图随后确认 Windows Terminal 启动、Live Provider create/run/verify 终态以及 Verification Inspector aggregate 均可读。证据：`windows_terminal_wide.png`。截图中的首次 `/cancel` 以 `runtime_failed` 结束，这正是本轮修复目标；修复后的真实 LLM backend cancel 已 PASS，物理 TUI 复测截图仍待补。
 
 ## 环境（已脱敏）
 
@@ -80,6 +84,25 @@ test call: 31.06s
 - 唯一 terminal event 为 `run.completed`。
 
 首次执行使用 pytest 默认临时目录时遇到 `WinError 5`，发生在 setup 阶段且未调用 Provider；改用仓库内独立 `--basetemp` 后通过。临时目录已清理。
+
+### Cooperative cancel regression
+
+针对实机截图中 stop request 最终误报 `runtime_failed` 的问题，修复后运行：
+
+```powershell
+python -m pytest tests/e2e/test_v0_05_real_llm.py::test_real_llm_cancel_at_safe_boundary -v -m real_llm --basetemp <isolated-path>
+```
+
+结果：
+
+```text
+1 passed in 19.04s
+status=stopped
+stop_reason=user_requested
+terminal_event=run.stopped
+```
+
+测试在真实 LLM 发起的工具执行期间提交 stop request，并确认运行在 safe boundary 产生唯一 `run.stopped` 终态。未输出 Provider 地址或 secret。
 
 ## 剩余人工 Gate
 

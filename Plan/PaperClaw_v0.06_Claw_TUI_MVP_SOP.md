@@ -121,24 +121,24 @@ TUIEventBridge → EventReducer → widgets
 - [x] Ruff high-signal gate；
 - [x] artifacts 与 Handoff；
 - [ ] 真实 Windows Terminal full-screen / resize smoke；
-- [ ] 通过物理 TUI 输入真实 Provider 任务并渲染结构化终态；
+- [x] 通过物理 TUI 输入真实 Provider 任务并渲染结构化终态；
 - [ ] 在物理 TUI 真实运行期间观察 `/cancel` safe-boundary 行为。
 
 ## 6. Gate 矩阵
 
 | 编号 | 场景 | 状态 | 证据 |
 |---|---|---|---|
-| M06-01 | TUI launch | PASS | Textual headless App，四个组件存在 |
+| M06-01 | TUI launch | PASS | Windows Terminal 实机截图，四个组件存在 |
 | M06-02 | submit / UI non-blocking | PASS | Worker thread headless test |
 | M06-03 | event order | PASS | stale / duplicate / post-terminal reducer tests |
 | M06-04 | terminal result | PASS | completed 与 stopped headless tests |
 | M06-05 | duplicate submit | PASS | blocking-engine headless test |
-| M06-06 | cooperative cancel | PASS (offline) | `/cancel` → `request_stop`; real provider pending |
+| M06-06 | cooperative cancel | PASS (backend) | 真实 LLM 工具运行中 stop → `run.stopped`；物理 TUI 修复后截图待补 |
 | M06-07 | unknown event | PASS | unknown payload 不渲染、不 crash |
 | M06-08 | no Textual | PASS | optional dependency fallback test |
 | M06-09 | no TTY | PASS | CLI fallback / usage error tests |
 | M06-10 | architecture boundary | PASS | AST import-boundary test |
-| M06-11 | terminal smoke | PARTIAL | Windows CI + narrow headless PASS；真实终端 pending |
+| M06-11 | terminal smoke | PARTIAL | Windows Terminal 宽屏 PASS + narrow headless PASS；真实窄屏截图 pending |
 | M06-12 | CLI regression | PASS | full Windows pytest suite |
 
 ## 7. 测试结论
@@ -148,8 +148,10 @@ TUIEventBridge → EventReducer → widgets
 - Windows pytest：`376 passed`，`0 failed`，`0 skipped`；
 - Ruff：PASS；
 - 2026-07-15 Live Provider QueryEngine create/run/verify：`1 passed in 31.12s`；
+- 2026-07-15 Live Provider cooperative cancel regression：`1 passed in 19.04s`，终态 `stopped / user_requested`，唯一终态事件 `run.stopped`；
 - SQLite Doctor quick/integrity checks：PASS，schema version 3；
-- 真实 Windows Terminal、TUI resize、Inspector 可读性和 TUI 内 `/cancel`：未执行，不得描述为真实 UI E2E。
+- 真实 Windows Terminal 宽屏启动、Live Provider 任务与 Inspector 可读性：PASS，证据见 `real_acceptance/windows_terminal_wide.png`；
+- 真实窄屏 resize 与修复后物理 TUI `/cancel`：仍待补充截图，不得描述为全量真实 UI E2E。
 
 ## 8. GO / NO-GO
 
@@ -157,8 +159,8 @@ TUIEventBridge → EventReducer → widgets
 
 转为 GO 的条件：
 
-- [ ] Windows Terminal 中 `paperclaw tui` 正常启动；
+- [x] Windows Terminal 中 `paperclaw tui` 正常启动；
 - [ ] 100+ 列双栏与小于 80 列单列均不 crash；
-- [ ] 通过物理 TUI 完成一条 Live Provider create/run/verify 任务；
+- [x] 通过物理 TUI 完成一条 Live Provider create/run/verify 任务；
 - [ ] 在物理 TUI 运行期间 `/cancel` 显示 stop request，最终在安全边界得到 terminal result；
 - [ ] 将真实日志、截图与环境信息补入 `artifacts/v0_06/`，且完成脱敏。

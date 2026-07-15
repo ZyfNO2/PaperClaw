@@ -19,6 +19,8 @@ without filesystem collisions.
 from __future__ import annotations
 
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +113,51 @@ def test_real_llm_create_run_verify(tmp_path: Path) -> None:
     terminal = _terminal_events(events)
     assert len(terminal) == 1, f"expected exactly one terminal event, got {len(terminal)}"
     assert terminal[0][0] == "run.completed"
+
+
+def test_real_llm_cancel_at_safe_boundary(tmp_path: Path) -> None:
+    """E2E-04: an accepted stop during a real tool run ends as stopped."""
+
+    engine, events = _make_engine(
+        tmp_path,
+        RunLimits(max_steps=8, max_model_calls=8, max_tool_calls=8),
+    )
+    results = []
+    errors = []
+
+    def submit() -> None:
+        try:
+            results.append(
+                engine.submit(
+                    "Use the bash tool to run exactly: "
+                    'python -c "import time; time.sleep(5); print(\'done\')". '
+                    "After that command, continue working until told to stop.",
+                )
+            )
+        except Exception as exc:  # pragma: no cover - diagnostic capture
+            errors.append(exc)
+
+    thread = threading.Thread(target=submit, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if any(event == "tool.started" for event, _ in events):
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("real model did not start a tool call")
+    run_id = next(payload["run_id"] for event, payload in events if event == "run.started")
+
+    assert engine.request_stop(run_id, "user_requested") is True
+    thread.join(timeout=90)
+
+    assert not thread.is_alive(), "cancelled real-provider run did not reach a safe boundary"
+    assert not errors, f"real-provider run raised unexpectedly: {errors!r}"
+    assert results[0].status == "stopped"
+    assert results[0].stop_reason == "user_requested"
+    terminal = _terminal_events(events)
+    assert len(terminal) == 1, f"expected exactly one terminal event, got {len(terminal)}"
+    assert terminal[0][0] == "run.stopped"
 
 
 def test_real_llm_repair_after_error(tmp_path: Path) -> None:
