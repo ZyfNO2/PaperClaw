@@ -7,7 +7,7 @@
 - Branch: `feat/v0.07-trace-foundation-mvp`
 - Pull request: `#5` (Draft)
 - Merge status: not merged
-- Overall status: **MVP_OFFLINE_GO / LIVE_ACCEPTANCE_BLOCKED**
+- Overall status: **MVP_OFFLINE_GO / OPENCODE_LIVE_ACCEPTANCE_PASS / STACK_REVIEW_PENDING**
 
 ## Scope delivered
 
@@ -72,6 +72,16 @@ URLError → socket.gaierror → [Errno -3] Temporary failure in name resolution
 ```
 
 No HTTP response was received. Key validity remains unknown. This is recorded in `artifacts/v0_07/live_smoke/blocker_report.md` and must not be described as live PASS.
+
+### Later OpenCode live acceptance update
+
+On 2026-07-16 the user selected the existing OpenCode-compatible provider for
+the live Gate. `deepseek-v4-flash` completed a real request and produced a
+four-event durable Trace (`run.started`, `model.started`, `model.completed`,
+`run.completed`). Provider/model/duration, single terminal, JSONL round-trip,
+and SQLite/JSONL secret absence all passed. Real-model Live Replay also passed
+without tools, with isolated `file_write`, and with the Windows PowerShell
+backend. The earlier Mistral DNS report remains historical evidence only.
 
 ## Main files
 

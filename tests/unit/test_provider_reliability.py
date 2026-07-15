@@ -13,9 +13,84 @@ from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.models.reliability import (
     ProviderError,
     RetryPolicy,
+    classify_http_error,
     normalize_provider_response,
     parse_retry_after,
 )
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "retriable"),
+    [
+        (400, "INVALID_REQUEST", False),
+        (401, "AUTHENTICATION_FAILED", False),
+        (403, "PERMISSION_DENIED", False),
+        (404, "MODEL_OR_ENDPOINT_NOT_FOUND", False),
+        (408, "PROVIDER_TEMPORARILY_UNAVAILABLE", True),
+        (409, "PROVIDER_TEMPORARILY_UNAVAILABLE", True),
+        (429, "RATE_LIMITED", True),
+        (500, "PROVIDER_TEMPORARILY_UNAVAILABLE", True),
+        (501, "PROVIDER_SERVER_ERROR", True),
+        (502, "PROVIDER_TEMPORARILY_UNAVAILABLE", True),
+        (503, "PROVIDER_TEMPORARILY_UNAVAILABLE", True),
+        (504, "PROVIDER_TEMPORARILY_UNAVAILABLE", True),
+    ],
+)
+def test_provider_http_error_matrix(
+    status: int, code: str, retriable: bool
+) -> None:
+    assert classify_http_error(status) == (code, retriable)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"max_attempts": 0},
+        {"max_attempts": -1},
+        {"max_attempts": True},
+        {"max_attempts": 11},
+        {"max_attempts": 100},
+        {"max_attempts": 1.5},
+        {"max_attempts": "2"},
+        {"base_delay_seconds": -1},
+        {"max_delay_seconds": -1},
+        {"base_delay_seconds": float("inf")},
+        {"base_delay_seconds": 2, "max_delay_seconds": 1},
+    ],
+)
+def test_retry_policy_rejects_unsafe_configuration(kwargs: dict[str, Any]) -> None:
+    with pytest.raises(ValueError):
+        RetryPolicy(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("payload", "code"),
+    [
+        ({}, "INVALID_PROVIDER_RESPONSE"),
+        ({"choices": []}, "INVALID_PROVIDER_RESPONSE"),
+        ({"choices": [{}]}, "INVALID_PROVIDER_RESPONSE"),
+        ({"choices": [{"message": None}]}, "INVALID_PROVIDER_RESPONSE"),
+        ({"choices": [{"message": {"content": ""}}]}, "EMPTY_PROVIDER_RESPONSE"),
+    ],
+)
+def test_normalizer_rejects_malformed_provider_shapes(
+    payload: dict[str, Any], code: str
+) -> None:
+    with pytest.raises(ProviderError) as caught:
+        normalize_provider_response(payload)
+    assert caught.value.code == code
+
+
+def test_invalid_retry_after_and_usage_types_are_ignored() -> None:
+    assert parse_retry_after("not-a-delay") is None
+    assert parse_retry_after("-1") is None
+    normalized = normalize_provider_response(
+        {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": "wrong type",
+        }
+    )
+    assert normalized.usage == {}
 
 
 class _Response:

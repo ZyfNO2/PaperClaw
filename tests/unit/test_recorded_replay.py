@@ -92,3 +92,51 @@ def test_recorded_replay_detects_unmatched_call_end() -> None:
 
     with pytest.raises(RecordedReplayError, match="UNMATCHED_TOOL_CALL_END"):
         replay_recorded_trace(_Reader(events), "run-replay", strict=True)
+
+
+@pytest.mark.parametrize(
+    ("events", "issue_code"),
+    [
+        (
+            (
+                _event(1, "run.started", component="harness"),
+                _event(2, "tool.started", component="tool", payload={"call_index": 1}),
+                _event(3, "tool.started", component="tool", payload={"call_index": 1}),
+                _event(4, "run.completed", component="harness"),
+            ),
+            "DUPLICATE_TOOL_CALL_START",
+        ),
+        (
+            (
+                _event(1, "run.started", component="harness"),
+                _event(2, "tool.started", component="tool", payload={"call_index": 1}),
+                _event(3, "run.completed", component="harness"),
+            ),
+            "TOOL_CALL_OPEN_AT_TERMINAL",
+        ),
+        (
+            (
+                _event(1, "run.started", component="harness"),
+                _event(2, "run.completed", component="harness"),
+                _event(3, "tool.completed", component="tool", payload={"call_index": 1}),
+            ),
+            "EVENT_AFTER_TERMINAL",
+        ),
+    ],
+)
+def test_recorded_replay_corruption_suite(
+    events: tuple[TraceEvent, ...], issue_code: str
+) -> None:
+    result = replay_recorded_trace(_Reader(events), "run-replay")
+    assert result.faithful is False
+    assert issue_code in {issue.code for issue in result.issues}
+
+
+def test_recorded_replay_is_deterministic() -> None:
+    events = (
+        _event(1, "run.started", component="harness", status="started"),
+        _event(2, "run.completed", component="harness", status="completed"),
+    )
+    first = replay_recorded_trace(_Reader(events), "run-replay").to_dict()
+    second = replay_recorded_trace(_Reader(events), "run-replay").to_dict()
+    assert first == second

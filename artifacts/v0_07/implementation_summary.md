@@ -4,10 +4,15 @@
 
 - Offline implementation: **GO**
 - Windows CI: **PASS**
-- Mistral live acceptance: **BLOCKED_BY_EXECUTION_ENVIRONMENT**
-- PR: `#5` (Draft, not merged)
+- OpenCode live Provider acceptance: **PASS** (`deepseek-v4-flash`)
+- Real-model Live Replay: **PASS** (no-tool, `file_write`, and PowerShell backend)
+- HTTPS loopback collector: **PASS**
+- PR stack: `#5` through `#11`, with final hardening in `#13`
 
-The live attempt failed during DNS name resolution before any HTTP response. This does not prove the key is valid or invalid.
+The supplied OpenCode-compatible configuration completed a real model call and
+persisted/exported a four-event durable Trace. The API key was absent from both
+SQLite and JSONL. Mistral-specific behavior remains outside this acceptance
+because the user selected the already configured OpenCode provider instead.
 
 ## Delivered
 
@@ -70,14 +75,22 @@ The command is read-only, does not migrate or create the database, requires a te
 
 ### Live runner
 
-`scripts/run_v0_07_mistral_trace_smoke.py` performs a real Mistral call when configured, persists the Run, exports/reloads JSONL and checks provider metadata, terminal integrity and key absence from SQLite/JSONL/summary.
+`scripts/run_v0_07_mistral_trace_smoke.py` retains its historical filename but
+now accepts `PAPERCLAW_PROVIDER`. It performs a real OpenAI-compatible call,
+persists the Run, exports/reloads JSONL and checks provider metadata, terminal
+integrity and key absence from SQLite/JSONL/summary.
 
-## Explicitly deferred
+## Follow-on slices implemented on the v0.07 contract
 
-- Provider retry and 429/Retry-After policy;
-- thinking-only / empty-content normalization;
-- Trace Inspector;
-- Recorded or live Replay;
-- Eval scorers;
-- OpenTelemetry/Langfuse/Phoenix exporters;
-- a generic plugin manager or plugin installation system.
+- v0.07.1 bounded Provider Reliability policy and normalized metadata;
+- v0.07.2 read-only Trace Inspector;
+- v0.07.3 side-effect-free Recorded Replay;
+- v0.07.4 deterministic Trace Eval;
+- v0.07.5 guarded HTTPS JSON exporter;
+- v0.07.6 explicitly authorized Live Replay into a separate target Run.
+
+These remain separate modules and do not introduce a generic PluginManager.
+OpenCode live Provider, HTTPS loopback collector, and real-model Live Replay
+without tools, with `file_write`, and with the PowerShell backend have passed.
+Mistral-specific response/rate-limit behavior and a third-party production
+collector remain pending.

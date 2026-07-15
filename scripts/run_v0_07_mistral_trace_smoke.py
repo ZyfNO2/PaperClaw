@@ -7,6 +7,7 @@ Required environment variables:
     PAPERCLAW_MODEL
 
 Optional environment variables:
+    PAPERCLAW_PROVIDER (default: mistral)
     PAPERCLAW_TIMEOUT_SECONDS (default: 120)
 
 The script performs one real provider call through the production
@@ -49,9 +50,9 @@ from paperclaw.trace import (
 
 TASK = (
     "Do not call any tool. Finish directly with a done response whose result "
-    "contains exactly: PaperClaw v0.07 Mistral trace smoke OK."
+    "contains exactly: PaperClaw v0.07 Provider trace smoke OK."
 )
-EXPECTED_TEXT = "PaperClaw v0.07 Mistral trace smoke OK."
+EXPECTED_TEXT = "PaperClaw v0.07 Provider trace smoke OK."
 WORK_DIR = REPO_ROOT / "tmp" / "v0_07_mistral_trace_smoke"
 ARTIFACT_DIR = REPO_ROOT / "artifacts" / "v0_07" / "live_smoke"
 DATABASE = WORK_DIR / "paperclaw.db"
@@ -79,6 +80,7 @@ def _require_environment() -> dict[str, str]:
         "PAPERCLAW_API_KEY": os.getenv("PAPERCLAW_API_KEY", "").strip(),
         "PAPERCLAW_BASE_URL": os.getenv("PAPERCLAW_BASE_URL", "").strip(),
         "PAPERCLAW_MODEL": os.getenv("PAPERCLAW_MODEL", "").strip(),
+        "PAPERCLAW_PROVIDER": os.getenv("PAPERCLAW_PROVIDER", "mistral").strip(),
         "PAPERCLAW_TIMEOUT_SECONDS": os.getenv(
             "PAPERCLAW_TIMEOUT_SECONDS",
             "120",
@@ -156,7 +158,7 @@ def main() -> int:
             base_url=env["PAPERCLAW_BASE_URL"],
             model=env["PAPERCLAW_MODEL"],
             timeout=timeout,
-            provider="mistral",
+            provider=env["PAPERCLAW_PROVIDER"],
         )
         result = QueryEngine(
             AgentRuntimeExecutor(
@@ -166,7 +168,7 @@ def main() -> int:
                 repository=repository,
                 enable_verification_gate=False,
             ),
-            conversation_id="v0-07-mistral-trace-smoke",
+            conversation_id=f"v0-07-{env['PAPERCLAW_PROVIDER']}-trace-smoke",
         ).submit(
             TASK,
             limits=RunLimits(
@@ -204,7 +206,8 @@ def main() -> int:
         in {"run.completed", "run.failed", "run.stopped", "run.cancelled"}
     ]
     provider_metadata_ok = bool(model_events) and all(
-        event.provider == "mistral" and event.model == env["PAPERCLAW_MODEL"]
+        event.provider == env["PAPERCLAW_PROVIDER"]
+        and event.model == env["PAPERCLAW_MODEL"]
         for event in model_events
     )
     durations_ok = all(
@@ -212,7 +215,10 @@ def main() -> int:
         for event in model_events
         if event.event_type in {"model.completed", "model.failed"}
     )
-    output_ok = bool(result.output and EXPECTED_TEXT in result.output)
+    output_ok = bool(
+        result.output
+        and EXPECTED_TEXT.rstrip(" .") in result.output.rstrip(" .")
+    )
 
     checks = {
         "run_completed": result.status == "completed",
@@ -232,9 +238,9 @@ def main() -> int:
 
     summary = {
         "schema_version": 1,
-        "scenario": "v0.07-mistral-durable-trace-smoke",
+        "scenario": "v0.07-provider-durable-trace-smoke",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "provider": "mistral",
+        "provider": env["PAPERCLAW_PROVIDER"],
         "provider_host": host,
         "model": env["PAPERCLAW_MODEL"],
         "timeout_seconds": timeout,

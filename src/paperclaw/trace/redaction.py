@@ -29,6 +29,25 @@ _SECRET_KEYS = frozenset(
         "private_key",
     }
 )
+_SENSITIVE_CONTENT_KEYS = frozenset(
+    {
+        "prompt",
+        "system_prompt",
+        "user_prompt",
+        "messages",
+        "reasoning",
+        "reasoning_content",
+        "thinking",
+        "chain_of_thought",
+        "tool_output",
+        "stdout",
+        "stderr",
+        "file_content",
+        "raw_input",
+        "request_body",
+        "response_body",
+    }
+)
 _HOME_PATTERNS = (
     re.compile(r"(?i)(?<![A-Za-z0-9_])[A-Z]:\\Users\\[^\\/\s]+"),
     re.compile(r"(?<![A-Za-z0-9_])/(?:home|Users)/[^/\s]+"),
@@ -101,6 +120,8 @@ class TraceRedactor:
             "output_token",
         }:
             return _REDACTED
+        if normalized_key in _SENSITIVE_CONTENT_KEYS:
+            return _summarize_sensitive_content(value)
         if depth >= self._max_depth:
             return "<MAX_DEPTH>"
         if value is None or isinstance(value, (bool, int)):
@@ -148,3 +169,23 @@ class TraceRedactor:
                 )
             return result
         return self.redact_text(repr(value))
+
+
+def _summarize_sensitive_content(value: Any) -> dict[str, Any]:
+    """Return a deterministic non-preview summary for sensitive full text."""
+
+    if isinstance(value, bytes):
+        encoded = value
+        length = len(value)
+        unit = "bytes"
+    else:
+        text = value if isinstance(value, str) else repr(value)
+        encoded = text.encode("utf-8", errors="replace")
+        length = len(text)
+        unit = "chars"
+    return {
+        "redacted": True,
+        "length": length,
+        "length_unit": unit,
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+    }

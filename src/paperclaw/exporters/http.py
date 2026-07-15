@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
-from paperclaw.trace import TraceReader
+from paperclaw.trace import TraceReader, TraceRedactor
 
 Urlopen = Callable[..., Any]
 
@@ -110,12 +110,13 @@ class HttpTraceExporter:
                 f"trace contains {len(events)} events; limit is "
                 f"{self._policy.max_events}"
             )
+        redactor = TraceRedactor()
         envelope = {
             "schema_version": 1,
             "exporter": "paperclaw-http-json-v1",
             "run_id": run_id,
             "event_count": len(events),
-            "events": [event.to_dict() for event in events],
+            "events": [redactor.redact_payload(event.to_dict()) for event in events],
         }
         payload = json.dumps(
             envelope,

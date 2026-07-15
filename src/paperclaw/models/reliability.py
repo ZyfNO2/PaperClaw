@@ -7,7 +7,7 @@ provider-specific client libraries.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import math
@@ -30,8 +30,12 @@ class RetryPolicy:
     respect_retry_after: bool = True
 
     def __post_init__(self) -> None:
-        if isinstance(self.max_attempts, bool) or self.max_attempts < 1:
-            raise ValueError("max_attempts must be a positive integer")
+        if (
+            isinstance(self.max_attempts, bool)
+            or not isinstance(self.max_attempts, int)
+            or not 1 <= self.max_attempts <= 10
+        ):
+            raise ValueError("max_attempts must be an integer in [1, 10]")
         for name, value in (
             ("base_delay_seconds", self.base_delay_seconds),
             ("max_delay_seconds", self.max_delay_seconds),
