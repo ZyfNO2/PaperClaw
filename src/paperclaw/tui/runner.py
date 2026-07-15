@@ -29,6 +29,7 @@ def run_tui(
     enable_verification_gate: bool,
     initial_task: str | None,
     no_tui: bool,
+    database: Path | None = None,
     fallback: Fallback | None = None,
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
@@ -54,16 +55,33 @@ def run_tui(
 
     from .app import PaperClawApp
 
+    repository = None
+    session_commands = None
+    if database is not None:
+        from paperclaw.context.repository import SQLiteRepository
+        from paperclaw.context.session_picker import SafeSessionPicker
+
+        from .commands import SessionCommandAPI
+
+        repository = SQLiteRepository(database, migrate=True)
+        session_commands = SessionCommandAPI(SafeSessionPicker(database))
+
     app = PaperClawApp(
         engine_factory=_build_engine_factory(
             workspace=workspace,
             enable_verification_gate=enable_verification_gate,
+            repository=repository,
         ),
         limits=limits,
         initial_task=initial_task,
+        session_commands=session_commands,
     )
-    result = app.run()
-    return int(result or 0)
+    try:
+        result = app.run()
+        return int(result or 0)
+    finally:
+        if repository is not None:
+            repository.close()
 
 
 def _unavailable_reason(*, no_tui: bool, stdin: TextIO, stdout: TextIO) -> str | None:
@@ -83,12 +101,17 @@ def _is_tty(stream: TextIO) -> bool:
         return False
 
 
-def _build_engine_factory(*, workspace: Path, enable_verification_gate: bool):
-    """Build one fresh conversation-scoped engine for each `/new` command."""
+def _build_engine_factory(
+    *,
+    workspace: Path,
+    enable_verification_gate: bool,
+    repository=None,
+):
+    """Build one conversation-scoped engine for `/new` or safe reopen."""
 
     resolved_workspace = Path(workspace).resolve(strict=True)
 
-    def create_engine(event_handler):
+    def create_engine(event_handler, conversation_id: str | None = None):
         from .bridge import TUIEventBridge
 
         bridge = TUIEventBridge(event_handler)
@@ -101,11 +124,12 @@ def _build_engine_factory(*, workspace: Path, enable_verification_gate: bool):
             OpenAICompatibleModel.from_env(),
             resolved_workspace,
             enable_verification_gate=enable_verification_gate,
+            repository=repository,
             legacy_event_handler=bridge.handle_legacy_event,
         )
         return QueryEngine(
             executor,
-            conversation_id=f"tui-{uuid4().hex[:12]}",
+            conversation_id=conversation_id or f"tui-{uuid4().hex[:12]}",
             event_handler=bridge.handle_query_event,
         )
 
