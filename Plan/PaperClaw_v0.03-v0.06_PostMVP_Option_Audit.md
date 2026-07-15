@@ -1,8 +1,8 @@
 # PaperClaw v0.03–v0.06 Post-MVP 选做项审计
 
-> 状态：候选审计完成；两个最小切片已实现
+> 状态：候选审计完成；三个最小切片已实现
 > 日期：2026-07-15
-> 分支：`feat/v0.06-tui-mvp`
+> 分支：`feat/v0.06.1-safe-session-picker`
 > 规则：候选池不是默认 Roadmap；只有前置契约存在、用户故事明确且能独立验证的切片才可动工。
 
 ## 1. 结论
@@ -18,8 +18,8 @@
 
 | 分类 | 数量 | 结论 |
 |---|---:|---|
-| 可立即提取并实现的独立切片 | 2 | 已实现：SQLite 只读 Doctor、Verification Inspector |
-| 条件性可启动 | 3 | Global Verify、MultiAgent View、Safe Session Picker；仍缺失败 fixture、event adapter 或真实使用触发器 |
+| 已提取并实现的独立切片 | 3 | SQLite 只读 Doctor、Verification Inspector、Safe Session Picker |
+| 条件性可启动 | 2 | Global Verify、MultiAgent View；仍缺失败 fixture、event adapter 或真实收益证据 |
 | 当前不应启动、已被吸收或属于后续版本 | 21 | 保持 backlog，不做假接口或空 UI |
 
 ## 2. 已实现切片
@@ -56,6 +56,22 @@
 - 不展示隐藏 reasoning、命令完整输出或任意 payload。
 
 本切片没有加入 Context、Trace 或 Cost Inspector，也没有扩展 Runtime 契约。
+
+### 2.3 v0.06.1 U5：Safe Session Picker
+
+用户故事：用户需要在 TUI 中查看已安全关闭的 conversation，先预览再重新打开，并保证旧 Run 不被追加或修改。
+
+实现：
+
+- `paperclaw tui --database <path>` 显式启用持久化与 picker；
+- `/sessions` 只列出不存在 active Run 的 conversation；
+- `/preview <index|conversation_id>` 通过只读 SQLite 显示最近消息摘要；
+- `/open <index|conversation_id>` 重新验证 safe-closed 条件；
+- open 后复用原 `conversation_id`，下一次 submit 创建 fresh Run；
+- list / preview / selection 不写数据库；
+- 旧 Run 保持 ended，不执行 checkpoint replay 或事件追加。
+
+本切片不包含 active process reconnect、crash reconciliation、arbitrary resume，也不把历史消息自动注入模型 prompt。
 
 ## 3. 逐版本审计
 
@@ -102,18 +118,20 @@
 | U2 Shell Task UX | 暂缓 | H2 前置不存在，禁止用 UI 假装 streaming/cancel semantics |
 | U3 Inspector Panels | **部分实现** | 只实现 Verification Inspector；Context/Trace/Cost 仍缺稳定输入契约 |
 | U4 MultiAgent View | 条件性 | MultiAgent Runtime 已存在，但缺 team-to-TUI adapter 与相对收益验收故事 |
-| U5 Session Picker / Resume | 条件性 | 首切片可限定 safe-closed session，但仍缺列表 Command API 和真实使用反馈 |
+| U5 Session Picker / Resume | **部分实现** | 已实现 safe-closed conversation list/preview/open；crash/active/checkpoint resume 仍 backlog |
 | U6 UX Hardening | 部分已有 | 窄终端已支持；其余项目应由真实兼容失败逐项提取 |
 
 ## 4. 停止条件
 
-本轮明确停止在两个切片，不继续实现以下内容：
+本轮明确停止在三个切片，不继续实现以下内容：
 
 - async QueryEngine 或 token streaming；
 - ShellTaskManager、background task 或强制进程树取消；
 - Permission Dialog 或授权缓存；
 - EventBus；
 - arbitrary crash recovery；
+- active process reconnect；
+- checkpoint replay；
 - durable MultiAgent mailbox；
 - 空的 Context/Trace/Cost 面板；
 - 未经失败 fixture 支撑的 Global Verify。
