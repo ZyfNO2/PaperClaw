@@ -4,128 +4,116 @@
 
 **PARTIAL COMPLETE / WAITING REAL TERMINAL ACCEPTANCE**
 
-26 个候选包或延期行已完成审计。两个可以在当前前置能力上独立落地的小切片已实现并通过自动化 CI；其余项目保持条件性或 backlog，没有伪造 Runtime 前置能力。
+26 个候选包或延期行已完成审计。两个可以在当前前置能力上独立落地的小切片已经实现：SQLite 只读 Doctor 与 sanitized Verification Inspector。
 
-## 仓库与分支
+PR #2 已合并到 `main`，但合并不等于 v0.06 acceptance GO。Draft PR #4 用于修复 Tool `execute()` 取消竞态覆盖缺口并校正文档证据状态。
+
+## 仓库状态
 
 - Repository：`ZyfNO2/PaperClaw`
-- Branch：`feat/v0.06-tui-mvp`
 - Base：`main`
-- Draft PR：`#2`
-- 实现提交：
-  - `6f42a06d2c00d6d9c43974d2ac62f6881b8505a1` — SQLite Doctor
-  - `973139a6e7c2e5544c6b4f3b2285fbf64f2ed930` — Verification Inspector
+- PR #2 source HEAD：`d5d43e3cd74e80d35190e16253446f37841a4b2e`
+- Main integration commit：`3804f72bbf0217c904c01dfabbcd046e3d930ca8`
+- Repair branch：`fix/v0.06-acceptance-cancel-race`
+- Repair PR：Draft PR #4
 
 ## 已完成内容
 
 ### SQLite Doctor
 
-- 新增只读数据库健康检查模块；
-- 新增 `paperclaw doctor --database ... [--full]`；
-- quick/integrity check、foreign-key check、schema version；
-- read-only/query-only 打开方式；
+- `paperclaw doctor --database ... [--full]`；
+- SQLite quick/integrity check；
+- foreign-key check；
+- schema version report；
+- read-only/query-only connection；
 - missing/corrupt fail-closed；
-- 确定性测试和 CLI 测试。
+- 不创建、不迁移、不修复目标数据库。
 
 ### Verification Inspector
 
-- 在现有 TUI timeline 区增加单一 Verify 面板；
-- 只显示结构化 aggregate；
-- Bridge 在 UI 前删除 raw checks/observed；
-- 保持 monotonic reducer 与现有 QueryEngine 契约；
-- headless Textual、sanitization 和 reset 测试。
+- TUI 中单一 Verify aggregate 面板；
+- 展示 status、passed/failed/uncovered 与 `verified_after_last_write`；
+- Bridge 删除 raw `checks` 和 `observed`；
+- 不扩展 QueryEngine contract；
+- 不实现 Context/Trace/Cost panel。
 
-## 主要文件
+### Cancellation correction
 
-- `src/paperclaw/context/health.py`
-- `src/paperclaw/cli.py`
-- `src/paperclaw/tui/bridge.py`
-- `src/paperclaw/tui/widgets.py`
-- `src/paperclaw/tui/app.py`
-- `src/paperclaw/tui/paperclaw.tcss`
-- `tests/unit/test_context_health.py`
-- `tests/unit/test_verification_inspector.py`
-- `tests/unit/test_tui_bridge.py`
-- `tests/unit/test_tui_app.py`
-- `Plan/PaperClaw_v0.03-v0.06_PostMVP_Option_Audit.md`
-- `artifacts/post_mvp_v003_v006/`
+PR #2 已覆盖 Provider exception-after-stop 与非 adapter runtime failure 边界。Draft PR #4 进一步补齐此前缺失的 Tool `execute()` exception-after-stop 路径：
 
-## 关键架构决定
-
-1. Doctor 独立于 Repository runtime lifecycle，不通过 `SQLiteRepository(..., migrate=True)` 打开目标库，避免诊断本身改变现场。
-2. Doctor 只报告事实，不自动 backup、repair、rollback 或 purge。
-3. Verification Inspector 消费现有结构化 Verify event，不反向增加 QueryEngine 字段或第二套状态机。
-4. raw check observed output 在 Bridge 边界删除，而不是依赖 Widget 自觉隐藏。
-5. 没有实现 async、ShellTask、Permission、EventBus、durable mailbox 或 Global Verify；这些能力仍需要各自启动证据。
-
-## 测试与 CI
-
-代码提交 `973139a6e7c2e5544c6b4f3b2285fbf64f2ed930`：
-
-- GitHub Actions run #42 / `29363818831`：SUCCESS；
-- Windows pytest：380 passed，0 failed，0 skipped；
-- Ruff high-signal checks：PASS；
-- artifact：`pytest-results-29363818831`。
-
-## 真实验收补充（2026-07-15）
-
-### A. SQLite Doctor migrated-fixture smoke — PASS
-
-在 pytest 生成的 v0.04 migrated database 样本上执行 `quick_check` 与 `integrity_check`，两者均返回 `ok=true`、`messages=["ok"]`、schema version 3。检查使用只读连接，没有 migration、repair 或数据修改。该 smoke 不等于真实或脱敏用户数据库副本验收。
-
-### B. Live Provider backend — PASS
-
-`test_real_llm_create_run_verify` 使用本地 Provider 配置通过：`1 passed in 31.12s`。已确认真实 model/tool 调用、文件创建、completed RunResult 和唯一 `run.completed` 终态。
-
-完整脱敏证据见 `artifacts/v0_06/real_acceptance/acceptance_report.md`。
-
-## 仍未执行的真实验收
-
-### 真实或脱敏数据库副本
-
-准备一个非唯一生产副本或脱敏副本，然后执行：
-
-```powershell
-paperclaw doctor --database path\to\copy.db
-paperclaw doctor --database path\to\copy.db --full
+```text
+tool.started
+→ request_stop(user_requested)
+→ in-flight Tool execute raises
+→ sanitized tool.failed remains
+→ adapter translates to cooperative control flow
+→ stopped / user_requested
+→ exactly one run.stopped
 ```
 
-预期 JSON 中 `ok=true`、messages 仅含 `ok`、schema version 合理。失败时不要对原库运行自动修复；保留脱敏输出和数据库备份状态供人工判断。
+该修复不改变以下规则：AgentRuntime、Session、Repository、SQLite 或 persistence fault 仍保持 `runtime_failed`。
 
-### Windows Terminal + Live Provider
+## 自动化证据
+
+### PR #2 source HEAD
+
+- SHA：`d5d43e3cd74e80d35190e16253446f37841a4b2e`；
+- GitHub Actions：run `29413807619` / #45；
+- Windows pytest：382 call-phase tests passed；
+- Ruff high-signal checks：PASS。
+
+### Draft PR #4
+
+必须完成：
 
 ```powershell
-python -m pip install -e ".[dev,tui]"
-paperclaw tui --workspace .
+python -m pytest tests/unit/test_agent_runtime_executor.py -q
+python -m pytest -q --basetemp=tmp/pytest -m "not real_llm"
+python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
 
-提交会触发 Verify Gate 的文件创建/运行任务，确认：
+在 CI 结果确认前，不得把 Tool execute race 标为 PASS。
 
-- Inspector 显示 passed/failed/uncovered 数量；
-- `verified_after_last_write` 与实际验证顺序一致；
-- summary 可读且没有原始命令完整输出；
-- 窄终端 resize 不 crash；
-- `/cancel` 仍只承诺 safe-boundary cooperative stop。
+## 真实验收状态
 
-请返回脱敏后的截图、终端日志、TUI RunResult 和真实/脱敏数据库副本的 Doctor JSON。Backend live-provider 证据已经留档，无需重复执行。
+| Gate | 状态 | 边界 |
+|---|---|---|
+| SQLite migrated-fixture Doctor | PASS smoke | 不等于真实/脱敏用户数据库 |
+| Live Provider create/run/verify | PASS historical | backend E2E；不是修复后 physical cancel |
+| Live Provider normal safe-boundary cancel | PASS historical | 不复现原 physical `runtime_failed` signature |
+| Windows Terminal wide launch/task/Inspector | PASS historical | 原始 evidence HEAD 记录为 `0ef5...` |
+| Windows Terminal narrow resize | PENDING MANUAL | 需小于 80 列截图 |
+| Post-fix physical TUI `/cancel` | PENDING MANUAL | 需修复后截图与唯一 terminal event |
+| Safe real/sanitized DB Doctor | PENDING MANUAL | 需 quick/full redacted JSON |
 
-## 已知限制
+详细证据见：
 
-- Doctor 不执行 backup、restore、migration rollback、retention 或自动修复；
-- SQLite `integrity_check` 成功不等于业务语义正确；
-- Inspector 只显示最终 VerificationResult，不逐条流式显示 checks；
-- Inspector 不等于 project-level Global Verify；
-- TUI 仍是单 QueryEngine active run，不支持 MultiAgent View；
-- v0.06 的真实 Windows Terminal / Live Provider Gate 仍未关闭。
+- `artifacts/v0_06/real_acceptance/acceptance_report.md`
+- `artifacts/v0_06/acceptance_correction.md`
+- `docs/handoff/PaperClaw_v0.06_TUI_MVP_HANDOFF.md`
 
-## 下一位开发者接手步骤
+## 仍未启动的候选方向
+
+- Global Verify；
+- MultiAgent View；
+- safe-closed Session Picker；
+- async/token streaming；
+- ShellTask/process-tree cancellation；
+- Permission UX；
+- EventBus；
+- durable mailbox；
+- arbitrary crash recovery。
+
+这些方向仍需各自 fixture、runtime contract 与用户收益证据，不得因为 PR #2 已合并而自动启动。
+
+## 下一位开发者接手
 
 ```powershell
 git fetch origin
-git switch feat/v0.06-tui-mvp
+git switch fix/v0.06-acceptance-cancel-race
 python -m pip install -e ".[dev,tui]"
 python -m pytest -q --basetemp=tmp/pytest -m "not real_llm"
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
 
-随后完成上述两组真实测试。只有证据齐备后，才更新 PR 描述和对应状态；不要把本 Handoff 当作 v0.03–v0.06 所有 Post-MVP 能力已经完成。
+完成 CI 后，继续执行窄屏、post-fix physical `/cancel` 与 safe database Doctor。只有所有要求的证据一致且脱敏后，才可将 v0.06 改为 GO。
