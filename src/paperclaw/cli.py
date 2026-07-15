@@ -330,6 +330,103 @@ def _run_trace_push(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_live_replay_task(args: argparse.Namespace) -> str:
+    if args.task is not None:
+        return args.task
+    return args.task_file.read_text(encoding="utf-8")
+
+
+def _run_trace_live_replay(args: argparse.Namespace) -> int:
+    from paperclaw.agent.flow import default_registry
+    from paperclaw.context.repository import SQLiteRepository
+    from paperclaw.replay import (
+        LIVE_REPLAY_CONFIRMATION,
+        LiveReplayAgentRuntimeExecutor,
+        LiveReplayError,
+        LiveReplayPolicy,
+        execute_live_replay,
+        prepare_live_replay,
+    )
+    from paperclaw.tools.registry import ToolRegistry
+    from paperclaw.trace import TraceReadError
+
+    source_database = args.database.expanduser().resolve()
+    target_database = args.output_database.expanduser().resolve()
+    try:
+        if source_database == target_database:
+            raise LiveReplayError(
+                "source and target databases must be different files"
+            )
+        if not target_database.parent.is_dir():
+            raise LiveReplayError(
+                f"target database parent does not exist: {target_database.parent}"
+            )
+        if target_database.exists() and not target_database.is_file():
+            raise LiveReplayError(
+                f"target database is not a file: {target_database}"
+            )
+        task = _read_live_replay_task(args)
+        policy = LiveReplayPolicy(
+            enabled=args.enable_live_replay,
+            confirmation=args.confirm,
+            require_source_completed=not args.allow_source_noncompleted,
+            require_recorded_faithful=True,
+            allowed_tools=tuple(args.allow_tool or ()),
+            allow_mutating_tools=args.allow_mutating_tools,
+            limits=RunLimits(
+                max_steps=args.max_steps,
+                max_model_calls=args.max_model_calls,
+                max_tool_calls=args.max_tool_calls,
+            ),
+        )
+        if args.confirm != LIVE_REPLAY_CONFIRMATION:
+            raise LiveReplayError(
+                "confirmation must equal LIVE_REPLAY_EXECUTES_EXTERNAL_ACTIONS"
+            )
+        plan = prepare_live_replay(
+            _trace_reader(source_database),
+            args.run_id,
+            task,
+            policy=policy,
+        )
+        catalog = default_registry()
+        unknown = [name for name in plan.allowed_tools if name not in catalog.names]
+        if unknown:
+            raise LiveReplayError(
+                "unknown live replay tools: " + ", ".join(sorted(unknown))
+            )
+        registry = ToolRegistry(catalog.get(name) for name in plan.allowed_tools)
+        repository = SQLiteRepository(target_database, migrate=True)
+        try:
+            executor = LiveReplayAgentRuntimeExecutor(
+                OpenAICompatibleModel.from_env(),
+                args.workspace,
+                plan=plan,
+                registry=registry,
+                repository=repository,
+                enable_verification_gate=args.enable_verification_gate,
+            )
+            result = execute_live_replay(plan, executor)
+        finally:
+            repository.close()
+    except (
+        KeyError,
+        LiveReplayError,
+        OSError,
+        RuntimeError,
+        TraceReadError,
+        ValueError,
+    ) as exc:
+        return _print_error(exc)
+
+    output = result.to_dict()
+    output["ok"] = result.run_result.status == "completed"
+    output["source_database"] = str(source_database)
+    output["target_database"] = str(target_database)
+    console_print(json.dumps(output, ensure_ascii=False, indent=2))
+    return 0 if result.run_result.status == "completed" else 1
+
+
 def _load_team_plan(plan_path: Path) -> tuple[str, list[AgentTask], TeamBudget]:
     data = json.loads(plan_path.read_text(encoding="utf-8"))
     return (
@@ -456,6 +553,31 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     trace_push_parser.add_argument("--allow-partial", action="store_true")
 
+    live_replay_parser = trace_subparsers.add_parser("live-replay")
+    live_replay_parser.add_argument("--database", type=Path, required=True)
+    live_replay_parser.add_argument("--run-id", required=True)
+    live_replay_parser.add_argument("--output-database", type=Path, required=True)
+    live_replay_parser.add_argument("--workspace", type=Path, default=Path.cwd())
+    task_group = live_replay_parser.add_mutually_exclusive_group(required=True)
+    task_group.add_argument("--task")
+    task_group.add_argument("--task-file", type=Path)
+    live_replay_parser.add_argument("--enable-live-replay", action="store_true")
+    live_replay_parser.add_argument("--confirm", required=True)
+    live_replay_parser.add_argument("--allow-tool", action="append", default=[])
+    live_replay_parser.add_argument("--allow-mutating-tools", action="store_true")
+    live_replay_parser.add_argument(
+        "--allow-source-noncompleted",
+        action="store_true",
+    )
+    live_replay_parser.add_argument("--max-steps", type=int, default=8)
+    live_replay_parser.add_argument("--max-model-calls", type=int, default=6)
+    live_replay_parser.add_argument("--max-tool-calls", type=int, default=6)
+    live_replay_parser.add_argument(
+        "--enable-verification-gate",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+
     team_parser = subparsers.add_parser("team")
     team_parser.add_argument("--plan", type=Path, required=True)
     team_parser.add_argument("--workspace", type=Path, default=Path.cwd())
@@ -501,6 +623,7 @@ def main(argv: list[str] | None = None) -> int:
             "replay": _run_trace_replay,
             "eval": _run_trace_eval,
             "push": _run_trace_push,
+            "live-replay": _run_trace_live_replay,
         }
         return handlers[args.trace_command](args)
     return _run_agent(args)
