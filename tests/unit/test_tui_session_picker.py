@@ -89,3 +89,66 @@ def test_tui_session_commands_select_conversation_for_fresh_engine() -> None:
             assert app._reducer.snapshot.status == "idle"
 
     asyncio.run(scenario())
+
+
+def test_tui_session_commands_preview_and_open_by_conversation_id() -> None:
+    async def scenario() -> None:
+        picker = FakePicker()
+        factory_calls = []
+
+        def factory(_handler, conversation_id=None):
+            factory_calls.append(conversation_id)
+            return FakeEngine()
+
+        app = PaperClawApp(
+            engine_factory=factory,
+            limits=RunLimits(),
+            session_commands=SessionCommandAPI(picker),
+        )
+        async with app.run_test(size=(100, 24)) as pilot:
+            prompt = app.query_one(PromptInput)
+            for command in ("/preview conversation-1", "/open conversation-1"):
+                prompt.value = command
+                prompt.focus()
+                await pilot.press("enter")
+                await pilot.pause()
+
+            assert app._conversation_id == "conversation-1"
+            assert factory_calls == [None, "conversation-1"]
+            assert picker.preview_calls == [
+                ("conversation-1", 8),
+                ("conversation-1", 8),
+            ]
+            assert app._reducer.snapshot.status == "idle"
+
+    asyncio.run(scenario())
+
+
+class EmptyPicker:
+    def list_safe_sessions(self, *, limit=20):
+        assert limit == 20
+        return ()
+
+    def preview_safe_session(self, conversation_id, *, message_limit=8):
+        raise AssertionError("preview should not be called for an empty catalog")
+
+
+def test_tui_sessions_command_handles_empty_safe_catalog() -> None:
+    async def scenario() -> None:
+        app = PaperClawApp(
+            engine_factory=lambda _handler: FakeEngine(),
+            limits=RunLimits(),
+            session_commands=SessionCommandAPI(EmptyPicker()),
+        )
+        async with app.run_test(size=(100, 24)) as pilot:
+            prompt = app.query_one(PromptInput)
+            prompt.value = "/sessions"
+            prompt.focus()
+            await pilot.press("enter")
+            await pilot.pause()
+
+            assert app._conversation_id is None
+            assert app._session_summaries == ()
+            assert app._reducer.snapshot.status == "idle"
+
+    asyncio.run(scenario())
