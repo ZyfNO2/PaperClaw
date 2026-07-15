@@ -50,6 +50,25 @@ def test_no_tty_without_task_returns_usage_error(tmp_path: Path) -> None:
     assert "paperclaw agent" in stderr.getvalue()
 
 
+def test_explicit_fallback_does_not_create_requested_database(tmp_path: Path) -> None:
+    database = tmp_path / "missing-parent" / "paperclaw.db"
+    code = run_tui(
+        workspace=tmp_path,
+        limits=RunLimits(),
+        enable_verification_gate=True,
+        initial_task="task",
+        no_tui=True,
+        database=database,
+        fallback=lambda: 0,
+        stdin=Stream(tty=False),
+        stdout=Stream(tty=False),
+        stderr=Stream(tty=False),
+    )
+    assert code == 0
+    assert database.exists() is False
+    assert database.parent.exists() is False
+
+
 def test_missing_textual_falls_back_even_with_tty(tmp_path: Path, monkeypatch) -> None:
     from paperclaw.tui import runner
 
