@@ -11,10 +11,13 @@ from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import Input
 
-from paperclaw.context.session_picker import SafeSessionPreview, SafeSessionSummary
 from paperclaw.harness import RunLimits, RunResult
+from paperclaw.session_commands import (
+    SafeSessionPreview,
+    SafeSessionSummary,
+    SessionCommandAPI,
+)
 
-from .commands import SessionCommandAPI
 from .state import EventReducer
 from .widgets import (
     ChatLog,
