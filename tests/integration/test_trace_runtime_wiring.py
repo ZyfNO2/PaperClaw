@@ -11,10 +11,13 @@ from tests.helpers import FakeModel, done
 def test_query_engine_run_projects_to_canonical_durable_trace(
     tmp_path: Path,
 ) -> None:
+    model = FakeModel([done(result="trace-ok")])
+    model.provider = "test-provider"
+    model.model = "test-model"
     repository = SQLiteRepository(tmp_path / "paperclaw.db", migrate=True)
     try:
         executor = AgentRuntimeExecutor(
-            FakeModel([done(result="trace-ok")]),
+            model,
             tmp_path,
             repository=repository,
             enable_verification_gate=False,
@@ -63,8 +66,8 @@ def test_query_engine_run_projects_to_canonical_durable_trace(
     ]
     assert trace[0].component == "harness"
     assert trace[0].status == "started"
-    assert trace[1].provider == "unknown"
-    assert trace[1].model == "FakeModel"
+    assert trace[1].provider == "test-provider"
+    assert trace[1].model == "test-model"
     assert trace[2].duration_ms is not None
     assert trace[2].duration_ms >= 0
     assert trace[-1].status == "completed"
