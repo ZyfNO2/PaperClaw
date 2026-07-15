@@ -17,6 +17,7 @@ from paperclaw.agent.flow import AgentRuntime, default_registry
 from paperclaw.context.repository import Repository
 from paperclaw.context.session import SessionService
 from paperclaw.models.base import ChatModel, ModelTurn
+from paperclaw.models.reliability import ProviderError
 from paperclaw.tools.base import (
     ToolContext,
     ToolControlFlow,
@@ -29,6 +30,18 @@ from paperclaw.trace.redaction import TraceRedactor
 from .contracts import EventEmitter, ExecutionReport, RunLimits, RunRequest, StopToken
 
 LegacyEventHandler = Callable[[str, dict], None]
+
+_PROVIDER_METADATA_KEYS = frozenset(
+    {
+        "request_id",
+        "finish_reason",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "attempt_count",
+        "retry_count",
+    }
+)
 
 
 class RunBudgetExhausted(RuntimeError):
@@ -66,6 +79,21 @@ def _safe_model_metadata(model: ChatModel) -> dict[str, str]:
     if isinstance(model_name, str) and model_name.strip():
         metadata["model"] = model_name.strip()
     return metadata
+
+
+def _safe_turn_metadata(turn: ModelTurn) -> dict[str, Any]:
+    """Allow only normalized scalar provider facts into runtime events."""
+
+    result: dict[str, Any] = {}
+    for key in _PROVIDER_METADATA_KEYS:
+        value = turn.metadata.get(key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int) and value >= 0:
+            result[key] = value
+        elif isinstance(value, str) and value.strip():
+            result[key] = value.strip()[:200]
+    return result
 
 
 class _BudgetedModel:
@@ -111,13 +139,20 @@ class _BudgetedModel:
                 if self._metadata
                 else {}
             )
+            provider_metadata = (
+                exc.to_metadata() if isinstance(exc, ProviderError) else {}
+            )
+            error_code = (
+                exc.code if isinstance(exc, ProviderError) else "MODEL_CALL_FAILED"
+            )
             self._emit(
                 "model.failed",
                 {
                     **self._metadata,
                     "call_index": call_index,
                     **duration,
-                    "error_code": "MODEL_CALL_FAILED",
+                    **provider_metadata,
+                    "error_code": error_code,
                     "error_type": type(exc).__name__,
                     "error_message": str(exc)[:500],
                 },
@@ -129,9 +164,10 @@ class _BudgetedModel:
             if self._stop_token.is_cancelled:
                 raise RunStopped(self._stop_token.reason or "cancelled") from exc
             raise
+        turn_metadata = _safe_turn_metadata(turn)
         duration = (
             {"duration_ms": max(0, round((perf_counter() - started_at) * 1000))}
-            if self._metadata
+            if self._metadata or turn_metadata
             else {}
         )
         self._emit(
@@ -140,6 +176,7 @@ class _BudgetedModel:
                 **self._metadata,
                 "call_index": call_index,
                 **duration,
+                **turn_metadata,
             },
         )
         return turn
