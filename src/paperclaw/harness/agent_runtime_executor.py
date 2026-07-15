@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Callable
 
 from paperclaw.agent.flow import AgentRuntime, default_registry
@@ -23,6 +24,7 @@ from paperclaw.tools.base import (
     ToolValidationError,
 )
 from paperclaw.tools.registry import ToolRegistry
+from paperclaw.trace.redaction import TraceRedactor
 
 from .contracts import EventEmitter, ExecutionReport, RunLimits, RunRequest, StopToken
 
@@ -48,6 +50,24 @@ class _Usage:
     tool_calls: int = 0
 
 
+def _safe_model_metadata(model: ChatModel) -> dict[str, str]:
+    """Return explicit non-secret identity without inventing model metadata.
+
+    Test doubles and legacy model implementations that do not expose stable
+    ``provider``/``model`` attributes retain their historical event shape.
+    Production adapters may opt in by exposing either field.
+    """
+
+    metadata: dict[str, str] = {}
+    provider = getattr(model, "provider", None)
+    model_name = getattr(model, "model", None)
+    if isinstance(provider, str) and provider.strip():
+        metadata["provider"] = provider.strip()
+    if isinstance(model_name, str) and model_name.strip():
+        metadata["model"] = model_name.strip()
+    return metadata
+
+
 class _BudgetedModel:
     def __init__(
         self,
@@ -60,6 +80,7 @@ class _BudgetedModel:
         self._usage = usage
         self._emit = emit
         self._stop_token = stop_token
+        self._metadata = _safe_model_metadata(model)
 
     def complete(self, prompt: str) -> ModelTurn:
         if self._stop_token.is_cancelled:
@@ -68,6 +89,7 @@ class _BudgetedModel:
             self._emit(
                 "model.failed",
                 {
+                    **self._metadata,
                     "error_code": "MODEL_BUDGET_EXHAUSTED",
                     "limit": self._usage.limits.max_model_calls,
                 },
@@ -76,14 +98,25 @@ class _BudgetedModel:
 
         self._usage.model_calls += 1
         call_index = self._usage.model_calls
-        self._emit("model.started", {"call_index": call_index})
+        started_at = perf_counter()
+        self._emit(
+            "model.started",
+            {**self._metadata, "call_index": call_index},
+        )
         try:
             turn = self._model.complete(prompt)
         except Exception as exc:
+            duration = (
+                {"duration_ms": max(0, round((perf_counter() - started_at) * 1000))}
+                if self._metadata
+                else {}
+            )
             self._emit(
                 "model.failed",
                 {
+                    **self._metadata,
                     "call_index": call_index,
+                    **duration,
                     "error_code": "MODEL_CALL_FAILED",
                     "error_type": type(exc).__name__,
                     "error_message": str(exc)[:500],
@@ -96,7 +129,19 @@ class _BudgetedModel:
             if self._stop_token.is_cancelled:
                 raise RunStopped(self._stop_token.reason or "cancelled") from exc
             raise
-        self._emit("model.completed", {"call_index": call_index})
+        duration = (
+            {"duration_ms": max(0, round((perf_counter() - started_at) * 1000))}
+            if self._metadata
+            else {}
+        )
+        self._emit(
+            "model.completed",
+            {
+                **self._metadata,
+                "call_index": call_index,
+                **duration,
+            },
+        )
         return turn
 
 
@@ -236,6 +281,10 @@ class AgentRuntimeExecutor:
         self._enable_verification_gate = enable_verification_gate
         self._repository = repository
         self._legacy_event_handler = legacy_event_handler
+        api_key = getattr(model, "api_key", "")
+        self._event_redactor = TraceRedactor(
+            secret_values=[api_key] if isinstance(api_key, str) else (),
+        )
         self.last_state: dict[str, Any] | None = None
 
     def execute(
@@ -249,11 +298,12 @@ class AgentRuntimeExecutor:
         session = self._open_session(request)
 
         def runtime_emit(event_type: str, payload: dict) -> int:
-            sequence = emit(event_type, payload)
+            safe_payload = self._event_redactor.redact_payload(payload)
+            sequence = emit(event_type, safe_payload)
             if session is not None:
                 session.emit(
                     event_type,
-                    {**payload, "query_event_sequence": sequence},
+                    {**safe_payload, "query_event_sequence": sequence},
                 )
             return sequence
 
@@ -352,6 +402,22 @@ class AgentRuntimeExecutor:
             conversation_id=request.conversation_id,
             run_id=request.run_id,
             agent_id="query_engine",
+        )
+        # QueryEngine emits run.started before invoking this executor, so the
+        # corresponding in-memory sequence is always 1. Persist that lifecycle
+        # fact explicitly; all later adapter events preserve their actual
+        # QueryEngine sequence through runtime_emit.
+        session.emit(
+            "run.started",
+            {
+                "query_event_sequence": 1,
+                "conversation_id": request.conversation_id,
+                "limits": {
+                    "max_steps": request.limits.max_steps,
+                    "max_model_calls": request.limits.max_model_calls,
+                    "max_tool_calls": request.limits.max_tool_calls,
+                },
+            },
         )
         session.append_message("user", request.text)
         return session
