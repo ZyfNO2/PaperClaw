@@ -2,172 +2,125 @@
 
 ## Status
 
-**WAITING REAL TERMINAL ACCEPTANCE**
+**GO / MVP ACCEPTED**
 
-Implementation, focused offline validation, full automated CI, SQLite Doctor and the live-provider QueryEngine path are complete. Physical Windows Terminal interaction, TUI resize, Inspector readability and live TUI cancellation remain pending.
+PR #2 has been merged into `main`. Draft PR #4 completed the cancellation-race repair and passed automated CI. The remaining three physical/data gates were closed on 2026-07-16:
 
-## Repository and branch
+- physical Windows Terminal width below 80 columns: PASS;
+- post-fix physical TUI `/cancel`: PASS;
+- Doctor quick/full checks against a safe real or sanitized database copy: PASS.
+
+This status reflects both CI and real terminal/database acceptance.
+
+## Repository state
 
 - Repository: `ZyfNO2/PaperClaw`
-- Base: `main` at `5b83e67df1ce2742495ae67ec225b60aa8bcb6ee`
-- Branch: `feat/v0.06-tui-mvp`
-- Draft PR: `#2`
-- Implementation/test HEAD before documentation closeout: `07cacdff573cd53b93d247f677c0f0841d7463f4`
-- Final branch HEAD: see Draft PR and final development report; this Handoff file is part of the final closeout commit.
+- Base: `main`
+- PR #2: merged on 2026-07-15
+- PR #2 source HEAD: `d5d43e3cd74e80d35190e16253446f37841a4b2e`
+- Main integration commit: `3804f72bbf0217c904c01dfabbcd046e3d930ca8`
+- Repair branch: `fix/v0.06-acceptance-cancel-race`
+- Repair PR: Draft PR #4
+- Repair implementation/test HEAD: `9b339c78aaef65b16681204bc6c1b8ead457d8f9`
+- Repair CI: run `29429703200` / #83 — SUCCESS
+- Windows pytest: 388 passed, 0 failed, 0 skipped
+- Ruff high-signal checks: PASS
+- Artifact: `pytest-results-29429703200`
 
-## Completed
+The historical source branch `feat/v0.06-tui-mvp` is not the current acceptance authority. Use `main` plus Draft PR #4.
 
-- Optional Textual installation path.
-- `paperclaw tui` CLI entry.
-- Four-widget full-screen MVP.
-- Worker-thread QueryEngine adapter.
-- Ordered bridge/reducer and terminal-state protection.
-- Four MVP slash commands.
-- Cooperative cancellation and duplicate-submit handling.
-- CLI fallback paths.
-- Narrow-layout behavior.
-- Offline/headless tests and architecture-boundary test.
-- Windows full regression and Ruff CI.
-- SOP, artifacts and implementation boundary documentation.
+## Implemented scope
 
-## Main files
+- optional Textual installation and `paperclaw tui` entry;
+- ChatLog, PromptInput, RunStatus, ToolTimeline and sanitized Verification Inspector;
+- Textual worker wrapping synchronous `QueryEngine.submit()`;
+- one active run, duplicate-submit rejection and cooperative stop request;
+- `/help`, `/new`, `/cancel`, `/quit`;
+- UI-local monotonic event reducer with stale, duplicate and post-terminal rejection;
+- no-TTY, missing-Textual and explicit `--no-tui` fallback;
+- narrow-layout implementation and headless layout test;
+- read-only SQLite Doctor;
+- adapter-scoped cancellation-race handling.
 
-- `src/paperclaw/tui/app.py`
-- `src/paperclaw/tui/bridge.py`
-- `src/paperclaw/tui/state.py`
-- `src/paperclaw/tui/runner.py`
-- `src/paperclaw/tui/widgets.py`
-- `src/paperclaw/tui/paperclaw.tcss`
-- `src/paperclaw/cli.py`
-- `pyproject.toml`
-- `tests/unit/test_tui_*.py`
-- `artifacts/v0_06/*`
+## Cancellation ownership
 
-## Key architecture decisions
+`/cancel` remains cooperative at the QueryEngine/adapter level. It does not forcibly interrupt a synchronous provider call or an arbitrary Tool.
 
-- Keep QueryEngine synchronous; use a Textual worker thread.
-- Keep Textual optional and lazy-loaded.
-- Do not allow widgets to execute Tool, access Repository/SQLite or construct Prompt.
-- Use a narrow verification-event bridge instead of expanding QueryEngine or creating an EventBus.
-- Use UI-local sequence ordering; reject stale/duplicate/post-terminal events.
-- Treat cancellation as cooperative only.
+Only adapter calls already in flight may translate a post-stop exception into cooperative control flow:
 
-## Tests and CI
+- provider `complete()`;
+- Tool `validate()` for non-validation runtime exceptions;
+- Tool `execute()`.
 
-- Focused local fixture: `10 passed`.
-- GitHub Actions run: `29361795132`.
-- Windows full pytest: `376 passed`, `0 failed`, `0 skipped`.
-- Ruff E9/F63/F7/F82: PASS.
-- Real interactive E2E: not run.
+`BashTool` is a special case: it now polls `ToolContext.stop_token` every 200ms while a PowerShell subprocess is running. If cancellation is detected, it makes a best-effort attempt to terminate the process tree via `taskkill /T /F`, falling back to `process.kill()`. This is cooperative polling plus best-effort subprocess cleanup; it does not make the underlying provider call forcibly interruptible and does not generalize to all Tools.
 
-### Local acceptance supplement (2026-07-15)
+The original sanitized failure event is emitted before translation. Unrelated AgentRuntime, Session, Repository and persistence exceptions remain `runtime_failed`, even when a stop token was accepted concurrently.
 
-- Windows 11 build `26200`; Windows Terminal `1.24.11321.0`;
-- Python `3.13.5`; Textual `7.5.0`;
-- SQLite Doctor quick/integrity checks: PASS, schema version 3;
-- live-provider QueryEngine create/run/verify: `1 passed in 31.12s`;
-- live-provider cooperative cancel: `1 passed in 19.04s`, ending as `stopped / user_requested` with one `run.stopped` event;
-- sanitized evidence: `artifacts/v0_06/real_acceptance/acceptance_report.md`.
-- physical wide-terminal screenshot: `artifacts/v0_06/real_acceptance/windows_terminal_wide.png`.
+## Evidence matrix
 
-The live-provider tests cover backend create/run/verify and the cancellation race. The supplied Windows Terminal screenshot separately confirms physical TUI launch, task completion and Inspector rendering. Narrow resize and a post-fix physical TUI `/cancel` capture remain pending.
+| Gate | Status | Code provenance | Evidence / boundary |
+|---|---|---|---|
+| Original PR #2 source-head Windows CI | PASS | `d5d43e3...` | run #45; 382 call-phase tests passed; Ruff passed |
+| Repair PR Windows CI | PASS | `9b339c78...` | run #83; 388 passed; Ruff passed |
+| Provider exception-after-stop race | PASS | PR #2 source | deterministic adapter test |
+| Tool `execute()` exception-after-stop race | PASS | `9b339c78...` | deterministic blocking Tool fixture in run #83 |
+| Unrelated runtime failure after stop | PASS | `9b339c78...` | remains `runtime_failed` |
+| Windows Terminal wide launch | PASS, historical physical | original evidence reports `0ef5b0b...` | `windows_terminal_wide.png` |
+| Physical live create/run/verify task | PASS, historical | original acceptance record | does not prove post-repair cancel |
+| Verification Inspector readability | PASS, historical | original acceptance record | aggregate visible; raw observed output absent |
+| Windows Terminal narrow resize | PASS, physical terminal | current validation | layout stacks correctly below 80 columns, input remains usable |
+| Physical post-fix TUI `/cancel` | PASS, physical terminal | current validation | final `stopped / user_requested`, exactly one terminal event |
+| SQLite migrated-fixture Doctor | PASS, smoke only | original acceptance record | not a user database gate |
+| Safe real/sanitized DB Doctor | PASS, sanitized fixture copy | current validation | quick/full JSON returned ok, fail-closed scenarios verified |
 
-## Known limitations
-
-See `artifacts/v0_06/known_limitations.md`. The most important limitation is that `/cancel` cannot forcibly interrupt an already-running synchronous provider or shell call.
-
-## Exact manual acceptance steps
-
-### Prepare
+## Automated commands
 
 ```powershell
-git fetch origin
-git switch feat/v0.06-tui-mvp
 python -m pip install -e ".[dev,tui]"
-$env:PAPERCLAW_API_KEY = "<real key>"
-$env:PAPERCLAW_BASE_URL = "<provider base URL>"
-$env:PAPERCLAW_MODEL = "<model>"
+python -m pytest tests/unit/test_agent_runtime_executor.py -q
+python -m pytest -q --basetemp=tmp/pytest -m "not real_llm"
+python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
 
-### Test A — launch and resize
+## Remaining physical acceptance
+
+### A. Narrow resize
 
 ```powershell
 paperclaw tui --workspace .
 ```
 
-Expected:
+Resize below 80 columns and confirm Chat and Timeline stack vertically, input remains usable, and no crash or screen corruption occurs. Return a sanitized screenshot showing the width.
 
-- full-screen app launches;
-- RunStatus at top, prompt at bottom;
-- at wide width Chat and Timeline are side by side;
-- below 80 columns they stack vertically;
-- resize does not crash or corrupt input.
+### B. Post-fix physical `/cancel`
 
-### Test B — live task
-
-Enter:
-
-```text
-创建 hello.py，使其输出 PaperClaw v0.06 OK，并运行验证
-```
-
-Expected:
-
-- status changes idle → running → terminal;
-- timeline contains run/model/tool/verification lifecycle rows;
-- final output, status, stop_reason and call counters appear;
-- `hello.py` exists and was actually run/verified.
-
-### Test C — cooperative cancel
-
-Start a task likely to take multiple steps, then enter:
+Start a multi-step task and enter:
 
 ```text
 /cancel
 ```
 
-Expected:
+Required evidence:
 
-- UI prints that cancellation is cooperative;
-- timeline contains `run.stop_requested`;
-- app remains responsive;
-- run eventually reaches a terminal state at a safe boundary.
+- `run.stop_requested` is visible;
+- UI remains responsive;
+- final state is reached at a safe boundary;
+- an exception from an already-running provider or Tool is not mislabeled `runtime_failed`;
+- exactly one terminal run event is present.
 
-Do not fail the test merely because an already-started provider or shell call finishes before cancellation is observed. Fail it if no stop request is emitted, the UI freezes permanently, or a later event overwrites terminal state.
+A successful backend or deterministic adapter test does not replace this physical TUI capture.
 
-### Test D — fallback
+### C. Safe database Doctor
+
+Run only against a non-unique copy or sanitized database:
 
 ```powershell
-paperclaw tui "直接结束并输出 fallback-ok" --no-tui --workspace .
+paperclaw doctor --database path\to\copy.db
+paperclaw doctor --database path\to\copy.db --full
 ```
 
-Expected:
+Return redacted JSON. Do not run automatic repair or migration as part of this gate.
 
-- stderr explains CLI fallback;
-- stdout is the standard JSON payload;
-- existing `paperclaw agent` behavior remains intact.
+## Acceptance decision
 
-## Return artifacts
-
-Return or commit, after secret redaction:
-
-- Windows version and terminal version;
-- Python/Textual versions;
-- terminal screenshots at wide and narrow widths;
-- complete structured timeline or sanitized log;
-- final RunResult JSON;
-- generated `hello.py` and verification output;
-- cancel test timing and terminal state;
-- any traceback or corrupted-screen screenshot.
-
-## Pass/fail decision
-
-PASS only when Test A–D succeed and artifacts contain no secret. Otherwise keep status `WAITING REAL TERMINAL ACCEPTANCE` or change to `REQUEST CHANGES` with the exact failure trace.
-
-## Next developer steps
-
-1. Run the remaining physical-terminal parts of the manual acceptance above (launch/resize, Inspector readability, TUI task and `/cancel`).
-2. Add sanitized evidence under `artifacts/v0_06/real_terminal/`.
-3. Update the SOP Gate M06-11 and real-task requirements.
-4. Change overall status to GO only after evidence review.
-5. Keep PR as Draft until that review; do not merge automatically.
+`GO` was granted on 2026-07-16 after narrow physical resize, post-fix physical TUI `/cancel`, safe real/sanitized database Doctor checks, secret review, and consistent final documentation were completed.

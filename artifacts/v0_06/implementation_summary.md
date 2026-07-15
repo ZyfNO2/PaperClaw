@@ -32,7 +32,9 @@ QueryEngine already owns ordered run/model/tool lifecycle events, while verifica
 
 ### Cooperative cancellation
 
-`/cancel` calls `QueryEngine.request_stop(active_run_id)`. The UI explicitly states that an in-flight synchronous provider or shell call can continue until the next safe boundary.
+`/cancel` calls `QueryEngine.request_stop(active_run_id)`. The UI explicitly states that an in-flight synchronous provider or arbitrary Tool call can continue until the next safe boundary.
+
+`BashTool` adds a narrow exception: it polls `ToolContext.stop_token` every 200ms while a PowerShell subprocess is running and performs best-effort process-tree termination if cancellation is detected. This is still best-effort and does not generalize to provider calls or other Tools.
 
 ## Reference use
 

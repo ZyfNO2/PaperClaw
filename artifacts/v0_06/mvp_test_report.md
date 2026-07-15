@@ -1,53 +1,81 @@
 # PaperClaw v0.06 TUI MVP — Test Report
 
-## Automated results
+## Status
 
-| Layer | Command / environment | Result |
-|---|---|---|
-| Focused TUI tests | isolated local fixture | `10 passed` |
-| Full regression | GitHub Actions Windows, run `29361795132` | `376 passed, 0 failed, 0 skipped` |
-| Static lint | GitHub Actions Ubuntu Ruff E9/F63/F7/F82 | PASS |
+`WAITING REAL TERMINAL ACCEPTANCE`
 
-## v0.06 focused coverage
+PR #2 is merged. Draft PR #4 closes the missing Tool `execute()` cancellation-race coverage and has passed automated CI. The remaining gates are physical narrow resize, post-fix physical TUI `/cancel`, and safe real/sanitized database Doctor evidence.
+
+## Automated evidence
+
+| Layer | Code provenance | Command / environment | Result |
+|---|---|---|---|
+| Original final source-head regression | `d5d43e3cd74e80d35190e16253446f37841a4b2e` | GitHub Actions Windows run #45 | 382 call-phase tests passed |
+| Original source-head static lint | `d5d43e3...` | Ubuntu Ruff E9/F63/F7/F82 | PASS |
+| Repair focused + full regression | `9b339c78aaef65b16681204bc6c1b8ead457d8f9` | GitHub Actions Windows run `29429703200` / #83 | 388 passed, 0 failed, 0 skipped |
+| Repair static lint | `9b339c78...` | Ruff high-signal checks | PASS |
+| Repair artifact | `9b339c78...` | `pytest-results-29429703200` | available |
+
+## Focused coverage
 
 - reducer monotonicity and post-terminal protection;
 - unknown-event payload suppression;
 - QueryEngine/verification bridge ordering;
 - legacy reasoning-event exclusion;
-- Textual headless launch and four-widget composition;
-- narrow-width single-column layout;
-- completed terminal result rendering;
+- Textual headless launch and widget composition;
+- narrow-width single-column layout implementation;
+- completed/stopped terminal rendering;
 - active-run duplicate-submit rejection;
-- cooperative `/cancel` request and stopped result;
-- no-TTY fallback;
-- missing-Textual fallback;
-- explicit `--no-tui` CLI integration;
-- architecture import boundary.
+- cooperative `/cancel` request;
+- no-TTY, missing-Textual and explicit `--no-tui` fallback;
+- architecture import boundary;
+- Provider exception-after-stop translation;
+- Tool `execute()` exception-after-stop translation;
+- BashTool cooperative stop-token polling with best-effort process-tree termination;
+- CLI Doctor quick/full JSON output and database immutability;
+- unrelated runtime failure after stop remains `runtime_failed`.
 
-## Existing regression evidence
+## Repair regression contract
 
-The full suite also covers QueryEngine terminal uniqueness, budget enforcement, Tool validation, Session/SQLite behavior, Verify/Reflection, MultiAgent and legacy single-agent CLI compatibility.
+The deterministic Tool fixture passed as part of run #83 and proves:
 
-## Test classification
+```text
+tool.started
+→ request_stop(user_requested)
+→ in-flight Tool execute raises RuntimeError
+→ tool.failed / TOOL_EXECUTION_FAILED remains observable
+→ final status stopped
+→ stop_reason user_requested
+→ tool_calls == 1
+→ exactly one terminal event: run.stopped
+```
 
-- Headless Textual and FakeEngine tests: **offline control-flow/UI-state validation**.
-- GitHub Actions Windows suite: **automated platform regression**, not interactive terminal E2E.
-- Live-provider interactive TUI: **not executed / pending**.
+This closes the missing adapter path. It does not authorize translating arbitrary AgentRuntime, Session, Repository or persistence failures into cancellation.
 
-## Pending manual acceptance
+## Evidence classification
 
-1. Launch in Windows Terminal with Textual installed.
-2. Verify wide and narrow layouts.
-3. Complete one live create/run/verify task.
-4. Start a second task and issue `/cancel` during active work.
-5. Capture sanitized environment, screenshots, terminal output and final RunResult.
+- Headless Textual and FakeEngine tests: offline control-flow/UI-state validation.
+- Windows CI: automated platform regression, not physical terminal E2E.
+- Live-provider QueryEngine tests: backend integration, not physical TUI interaction.
+- Historical wide screenshot: physical evidence for launch/task/Inspector on the recorded older HEAD.
+- Physical narrow resize and post-fix TUI `/cancel`: still pending.
+- Fixture Doctor: storage smoke only, not a real/sanitized user database gate.
 
-## 2026-07-15 local acceptance supplement
+## Historical live acceptance
 
-- SQLite Doctor quick/integrity checks: PASS, schema version 3.
-- Live Provider QueryEngine create/run/verify: `1 passed in 31.12s`.
-- Live Provider cooperative cancel: `1 passed in 19.04s`; terminal status `stopped`, reason `user_requested`, unique event `run.stopped`.
+- SQLite migrated-fixture Doctor quick/full: PASS, schema version 3.
+- Live Provider create/run/verify: `1 passed in 31.12s`.
+- Live Provider normal safe-boundary cancel: `1 passed in 19.04s`, ending `stopped / user_requested` with one `run.stopped`.
 - Environment: Windows 11 build 26200, Windows Terminal 1.24.11321.0, Python 3.13.5, Textual 7.5.0.
 - Evidence: `artifacts/v0_06/real_acceptance/acceptance_report.md`.
 
-This proves the normal live backend safe-boundary cancellation path. A deterministic adapter-boundary unit test covers the in-flight exception race; the original physical TUI `runtime_failed` signature still requires a post-fix screenshot. These results do not replace the remaining narrow resize evidence or the real/sanitized user-database Doctor gate.
+The normal backend cancel test does not reproduce the original physical TUI `runtime_failed` signature and cannot replace the post-fix physical capture.
+
+## Remaining gates
+
+1. Physical Windows Terminal width below 80 columns passes.
+2. Post-fix physical TUI `/cancel` reaches one truthful terminal state.
+3. Doctor quick/full passes against a safe real or sanitized database copy.
+4. Final evidence review confirms no secret and consistent status.
+
+Do not mark v0.06 GO before all required gates are reviewed.

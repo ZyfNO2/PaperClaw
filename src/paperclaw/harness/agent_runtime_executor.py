@@ -177,8 +177,13 @@ class _BudgetedTool:
         arguments: dict[str, Any],
         context: ToolContext,
     ) -> ToolResult:
+        tool_context = ToolContext(
+            workspace=context.workspace,
+            output_limit=context.output_limit,
+            stop_token=self._stop_token,
+        )
         try:
-            result = self._tool.execute(arguments, context)
+            result = self._tool.execute(arguments, tool_context)
         except Exception as exc:
             self._emit(
                 "tool.failed",
@@ -190,6 +195,14 @@ class _BudgetedTool:
                     "error_message": str(exc)[:500],
                 },
             )
+            # As with provider calls, an exception from a tool that was already
+            # executing when a cooperative stop was accepted belongs to the
+            # adapter cancellation boundary. Preserve the diagnostic event,
+            # then translate only this in-flight tool outcome into control flow.
+            if self._stop_token.is_cancelled:
+                raise ToolControlFlow(
+                    self._stop_token.reason or "cancelled"
+                ) from exc
             raise
 
         self._emit(

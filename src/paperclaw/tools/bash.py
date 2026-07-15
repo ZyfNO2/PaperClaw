@@ -47,22 +47,28 @@ class BashTool:
                 stdin=subprocess.DEVNULL,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
         )
+        timeout_seconds = arguments.get("timeout_seconds", 30)
+        deadline = time.monotonic() + timeout_seconds
         try:
-            stdout, stderr = process.communicate(timeout=arguments.get("timeout_seconds", 30))
-        except subprocess.TimeoutExpired as exc:
-            cleanup_failed = False
-            try:
-                killed = subprocess.run(
-                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                    capture_output=True,
-                    timeout=5,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                )
-                cleanup_failed = killed.returncode not in (0, 128)
-            except (OSError, subprocess.TimeoutExpired):
-                cleanup_failed = True
-            if cleanup_failed and process.poll() is None:
-                process.kill()
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(process.args, timeout_seconds)
+                try:
+                    process.wait(timeout=min(0.2, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    if context.stop_token is not None and context.stop_token.is_cancelled:
+                        self._terminate_process_tree(process)
+                        try:
+                            stdout, stderr = process.communicate(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            stdout, stderr = process.communicate(timeout=2)
+                        raise RuntimeError("bash execution cancelled")
+            stdout, stderr = process.communicate(timeout=2)
+        except subprocess.TimeoutExpired:
+            cleanup_failed = self._terminate_process_tree(process)
             try:
                 stdout, stderr = process.communicate(timeout=2)
             except subprocess.TimeoutExpired:
@@ -105,6 +111,24 @@ class BashTool:
                 "truncated": truncated_flag,
             },
         )
+
+    @staticmethod
+    def _terminate_process_tree(process: subprocess.Popen) -> bool:
+        """Kill a process tree with taskkill, falling back to process.kill()."""
+        try:
+            killed = subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                capture_output=True,
+                timeout=5,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if killed.returncode in (0, 128):
+                return False
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        if process.poll() is None:
+            process.kill()
+        return True
 
 
 def _classify_command(command: str) -> str:

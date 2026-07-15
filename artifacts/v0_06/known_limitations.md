@@ -3,7 +3,8 @@
 ## Runtime limitations
 
 - `QueryEngine.submit()` remains synchronous; Textual uses a worker thread rather than an async runtime rewrite.
-- `/cancel` is cooperative. It does not forcibly interrupt an active provider request, shell process or process tree.
+- `/cancel` is cooperative. It does not forcibly interrupt an active provider request or an arbitrary Tool.
+- `BashTool` is an exception: it polls `ToolContext.stop_token` every 200ms and attempts best-effort process-tree termination via `taskkill /T /F` (falling back to `process.kill()`). This is not a general forced-cancellation mechanism and does not guarantee cleanup of all child processes.
 - Only one run may be active in a TUI conversation.
 - No token or stdout/stderr streaming.
 - Verification events currently enter through a narrow legacy-event bridge.

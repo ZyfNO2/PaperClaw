@@ -179,10 +179,79 @@ def test_inflight_error_after_stop_maps_to_stopped(tmp_path: Path) -> None:
     model.release.set()
     thread.join(timeout=2)
 
+    assert not thread.is_alive()
     assert results[0].status == "stopped"
     assert results[0].stop_reason == "user_requested"
     assert results[0].model_calls == 1
     assert any(event == "model.failed" for event, _ in events)
+
+
+def test_inflight_tool_execute_error_after_stop_maps_to_stopped(
+    tmp_path: Path,
+) -> None:
+    """A tool-execution failure racing with an accepted stop is stopped."""
+
+    class FailingInflightTool:
+        name = "fail_inflight"
+        description = "Block until released, then fail."
+
+        def __init__(self) -> None:
+            self.started = threading.Event()
+            self.release = threading.Event()
+
+        def validate(self, arguments: dict) -> None:
+            return None
+
+        def execute(self, arguments: dict, context: ToolContext) -> ToolResult:
+            self.started.set()
+            assert self.release.wait(timeout=2)
+            raise RuntimeError("tool execution ended after cancellation")
+
+    tool = FailingInflightTool()
+    events: list[tuple[str, dict]] = []
+    engine = QueryEngine(
+        AgentRuntimeExecutor(
+            FakeModel([action("fail_inflight", {})]),
+            tmp_path,
+            registry=ToolRegistry([tool]),
+            enable_verification_gate=False,
+        ),
+        conversation_id="conv-tool-stop-race",
+        event_handler=lambda event_type, payload: events.append((event_type, payload)),
+    )
+    results = []
+    thread = threading.Thread(
+        target=lambda: results.append(engine.submit("run tool then stop")),
+        daemon=True,
+    )
+
+    thread.start()
+    assert tool.started.wait(timeout=1)
+    run_id = next(
+        payload["run_id"]
+        for event_type, payload in events
+        if event_type == "run.started"
+    )
+    assert engine.request_stop(run_id, "user_requested") is True
+    tool.release.set()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert len(results) == 1
+    assert results[0].status == "stopped"
+    assert results[0].stop_reason == "user_requested"
+    assert results[0].tool_calls == 1
+    assert any(
+        event_type == "tool.failed"
+        and payload.get("error_code") == "TOOL_EXECUTION_FAILED"
+        for event_type, payload in events
+    )
+    terminal = [
+        event_type
+        for event_type, _ in events
+        if event_type in {"run.completed", "run.failed", "run.stopped"}
+    ]
+    assert terminal == ["run.stopped"]
 
 
 def test_runtime_failure_after_stop_is_not_hidden(tmp_path: Path, monkeypatch) -> None:

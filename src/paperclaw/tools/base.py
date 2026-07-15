@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from paperclaw.harness.contracts import StopToken
 
 
 @dataclass(frozen=True)
@@ -11,6 +14,7 @@ class ToolContext:
 
     workspace: Path
     output_limit: int = 20_000
+    stop_token: StopToken | None = None
 
 
 @dataclass

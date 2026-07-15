@@ -172,7 +172,9 @@ def _run_doctor(args: argparse.Namespace) -> int:
     from paperclaw.context.health import inspect_sqlite_database
 
     report = inspect_sqlite_database(args.database, full=args.full)
-    console_print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+    output = report.to_dict()
+    output["full"] = bool(args.full)
+    console_print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0 if report.ok else 1
 
 
