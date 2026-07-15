@@ -179,6 +179,49 @@ def _run_doctor(args: argparse.Namespace) -> int:
     return 0 if report.ok else 1
 
 
+def _run_trace_export(args: argparse.Namespace) -> int:
+    """Export one durable run trace without migrating or mutating SQLite."""
+
+    from paperclaw.trace import (
+        SQLiteTraceReader,
+        TraceReadError,
+        TraceRedactor,
+        export_trace_jsonl,
+    )
+
+    api_key = os.environ.get("PAPERCLAW_API_KEY", "")
+    reader = SQLiteTraceReader(
+        args.database,
+        redactor=TraceRedactor(secret_values=[api_key]),
+    )
+    try:
+        summary = export_trace_jsonl(
+            reader,
+            args.run_id,
+            args.output,
+            require_terminal=not args.allow_partial,
+        )
+    except (TraceReadError, OSError, ValueError) as exc:
+        console_print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:500],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1
+
+    output = summary.to_dict()
+    output["ok"] = True
+    output["partial_allowed"] = bool(args.allow_partial)
+    console_print(json.dumps(output, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _load_team_plan(plan_path: Path) -> tuple[str, list[AgentTask], TeamBudget]:
     """Load a JSON team plan: {goal, tasks: [...], budget: {...}}."""
     data = json.loads(plan_path.read_text(encoding="utf-8"))
@@ -271,6 +314,27 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run SQLite integrity_check instead of the faster quick_check",
     )
 
+    trace_parser = subparsers.add_parser(
+        "trace",
+        help="Read durable v0.07 traces without executing or mutating a Run",
+    )
+    trace_subparsers = trace_parser.add_subparsers(
+        dest="trace_command",
+        required=True,
+    )
+    trace_export_parser = trace_subparsers.add_parser(
+        "export",
+        help="Export one run from SQLite to deterministic redacted JSONL",
+    )
+    trace_export_parser.add_argument("--database", type=Path, required=True)
+    trace_export_parser.add_argument("--run-id", required=True)
+    trace_export_parser.add_argument("--output", type=Path, required=True)
+    trace_export_parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Allow export when the run has no terminal event",
+    )
+
     team_parser = subparsers.add_parser("team", help="Run a MultiAgent Coordinator team from a JSON plan")
     team_parser.add_argument("--plan", type=Path, required=True)
     team_parser.add_argument("--workspace", type=Path, default=Path.cwd())
@@ -288,7 +352,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     if argv is None:
         argv = sys.argv[1:]
-    if argv and argv[0] not in {"agent", "team", "tui", "doctor", "-h", "--help", "--version", "-v"}:
+    if argv and argv[0] not in {
+        "agent",
+        "team",
+        "tui",
+        "doctor",
+        "trace",
+        "-h",
+        "--help",
+        "--version",
+        "-v",
+    }:
         argv = ["agent", *argv]
 
     args = parser.parse_args(argv)
@@ -300,6 +374,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_tui(args)
     if args.command == "doctor":
         return _run_doctor(args)
+    if args.command == "trace":
+        return _run_trace_export(args)
     return _run_agent(args)
 
 
