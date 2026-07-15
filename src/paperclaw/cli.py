@@ -36,7 +36,6 @@ def console_print(text: str = "") -> None:
 
 
 def json_ready(value):
-    """Convert runtime state and dataclasses into JSON-safe output."""
     if hasattr(value, "to_dict"):
         return json_ready(value.to_dict())
     if is_dataclass(value):
@@ -112,10 +111,7 @@ def _run_agent(args: argparse.Namespace) -> int:
         enable_verification_gate=args.enable_verification_gate,
         legacy_event_handler=_build_print_event(args.verbose_events),
     )
-    engine = QueryEngine(
-        executor,
-        conversation_id=f"cli-{uuid4().hex[:12]}",
-    )
+    engine = QueryEngine(executor, conversation_id=f"cli-{uuid4().hex[:12]}")
     result = engine.submit(
         args.task,
         limits=RunLimits(
@@ -124,7 +120,6 @@ def _run_agent(args: argparse.Namespace) -> int:
             max_tool_calls=args.max_tool_calls,
         ),
     )
-
     state = executor.last_state
     if state is None:
         output = {"query_engine": json_ready(result)}
@@ -212,7 +207,6 @@ def _run_trace_export(args: argparse.Namespace) -> int:
         )
     except (TraceReadError, OSError, ValueError) as exc:
         return _print_error(exc)
-
     output = summary.to_dict()
     output["ok"] = True
     output["partial_allowed"] = bool(args.allow_partial)
@@ -221,11 +215,7 @@ def _run_trace_export(args: argparse.Namespace) -> int:
 
 
 def _run_trace_inspect(args: argparse.Namespace) -> int:
-    from paperclaw.trace import (
-        TraceReadError,
-        inspect_run_trace,
-        render_inspection_text,
-    )
+    from paperclaw.trace import TraceReadError, inspect_run_trace, render_inspection_text
 
     try:
         inspection = inspect_run_trace(
@@ -236,7 +226,6 @@ def _run_trace_inspect(args: argparse.Namespace) -> int:
         )
     except (TraceReadError, OSError, ValueError) as exc:
         return _print_error(exc)
-
     if args.format == "json":
         output = inspection.to_dict()
         output["ok"] = True
@@ -265,7 +254,6 @@ def _run_trace_replay(args: argparse.Namespace) -> int:
         )
     except (RecordedReplayError, TraceReadError, OSError, ValueError) as exc:
         return _print_error(exc)
-
     if args.format == "json":
         output = result.to_dict()
         output["ok"] = result.faithful
@@ -277,11 +265,7 @@ def _run_trace_replay(args: argparse.Namespace) -> int:
 
 
 def _run_trace_eval(args: argparse.Namespace) -> int:
-    from paperclaw.eval import (
-        EvalThresholds,
-        evaluate_trace,
-        render_trace_eval_text,
-    )
+    from paperclaw.eval import EvalThresholds, evaluate_trace, render_trace_eval_text
     from paperclaw.trace import TraceReadError
 
     try:
@@ -301,7 +285,6 @@ def _run_trace_eval(args: argparse.Namespace) -> int:
         )
     except (TraceReadError, OSError, ValueError) as exc:
         return _print_error(exc)
-
     if args.format == "json":
         output = report.to_dict()
         output["ok"] = report.overall_passed
@@ -312,12 +295,48 @@ def _run_trace_eval(args: argparse.Namespace) -> int:
     return 0 if report.overall_passed else 1
 
 
+def _run_trace_push(args: argparse.Namespace) -> int:
+    from paperclaw.exporters import (
+        ExternalExportError,
+        ExternalExportPolicy,
+        HttpTraceExporter,
+    )
+    from paperclaw.trace import TraceReadError
+
+    token = os.environ.get(args.auth_token_env, "") if args.auth_token_env else ""
+    try:
+        exporter = HttpTraceExporter(
+            args.endpoint,
+            policy=ExternalExportPolicy(
+                enabled=args.enable_external_export,
+                allowed_hosts=tuple(args.allow_host or ()),
+                timeout_seconds=args.timeout_seconds,
+                max_events=args.max_events,
+                max_payload_bytes=args.max_payload_bytes,
+            ),
+            bearer_token=token,
+        )
+        summary = exporter.export_run(
+            _trace_reader(args.database),
+            args.run_id,
+            require_terminal=not args.allow_partial,
+        )
+    except (ExternalExportError, TraceReadError, OSError, ValueError) as exc:
+        return _print_error(exc)
+    output = summary.to_dict()
+    output["ok"] = True
+    output["partial_allowed"] = bool(args.allow_partial)
+    console_print(json.dumps(output, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _load_team_plan(plan_path: Path) -> tuple[str, list[AgentTask], TeamBudget]:
     data = json.loads(plan_path.read_text(encoding="utf-8"))
-    goal = data["goal"]
-    tasks = [AgentTask(**task) for task in data["tasks"]]
-    budget = TeamBudget(**data.get("budget", {}))
-    return goal, tasks, budget
+    return (
+        data["goal"],
+        [AgentTask(**task) for task in data["tasks"]],
+        TeamBudget(**data.get("budget", {})),
+    )
 
 
 def _run_team(args: argparse.Namespace) -> int:
@@ -358,58 +377,37 @@ def _add_single_agent_runtime_arguments(parser: argparse.ArgumentParser) -> None
         "--enable-verification-gate",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Run the v0.02 Verify/Reflection Gate (default: True)",
     )
 
 
 def _add_trace_read_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--database", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument(
-        "--format",
-        choices=("text", "json"),
-        default="text",
-    )
-    parser.add_argument(
-        "--allow-partial",
-        action="store_true",
-        help="Allow reading when the run has no terminal event",
-    )
+    parser.add_argument("--format", choices=("text", "json"), default="text")
+    parser.add_argument("--allow-partial", action="store_true")
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the PaperClaw coding agent")
     subparsers = parser.add_subparsers(dest="command")
 
-    agent_parser = subparsers.add_parser("agent", help="Run a single AgentRuntime (default)")
+    agent_parser = subparsers.add_parser("agent")
     agent_parser.add_argument("task")
     _add_single_agent_runtime_arguments(agent_parser)
 
-    tui_parser = subparsers.add_parser("tui", help="Run the optional v0.06 Textual client")
-    tui_parser.add_argument(
-        "task",
-        nargs="?",
-        help="Optional task to submit on launch; also enables CLI fallback without a TTY",
-    )
+    tui_parser = subparsers.add_parser("tui")
+    tui_parser.add_argument("task", nargs="?")
     _add_single_agent_runtime_arguments(tui_parser)
     tui_parser.add_argument("--no-tui", action="store_true")
     tui_parser.add_argument("--database", type=Path)
 
-    doctor_parser = subparsers.add_parser(
-        "doctor",
-        help="Inspect an existing PaperClaw SQLite database without modifying it",
-    )
+    doctor_parser = subparsers.add_parser("doctor")
     doctor_parser.add_argument("--database", type=Path, required=True)
     doctor_parser.add_argument("--full", action="store_true")
 
-    trace_parser = subparsers.add_parser(
-        "trace",
-        help="Read durable v0.07 traces without executing or mutating a Run",
-    )
-    trace_subparsers = trace_parser.add_subparsers(
-        dest="trace_command",
-        required=True,
-    )
+    trace_parser = subparsers.add_parser("trace")
+    trace_subparsers = trace_parser.add_subparsers(dest="trace_command", required=True)
+
     trace_export_parser = trace_subparsers.add_parser("export")
     trace_export_parser.add_argument("--database", type=Path, required=True)
     trace_export_parser.add_argument("--run-id", required=True)
@@ -438,6 +436,25 @@ def _build_parser() -> argparse.ArgumentParser:
     trace_eval_parser.add_argument("--max-errors", type=int)
     trace_eval_parser.add_argument("--max-wall-duration-ms", type=int)
     trace_eval_parser.add_argument("--max-reflection-rounds", type=int)
+
+    trace_push_parser = trace_subparsers.add_parser("push")
+    trace_push_parser.add_argument("--database", type=Path, required=True)
+    trace_push_parser.add_argument("--run-id", required=True)
+    trace_push_parser.add_argument("--endpoint", required=True)
+    trace_push_parser.add_argument("--allow-host", action="append", required=True)
+    trace_push_parser.add_argument("--enable-external-export", action="store_true")
+    trace_push_parser.add_argument(
+        "--auth-token-env",
+        default="PAPERCLAW_EXPORT_TOKEN",
+    )
+    trace_push_parser.add_argument("--timeout-seconds", type=float, default=10)
+    trace_push_parser.add_argument("--max-events", type=int, default=10_000)
+    trace_push_parser.add_argument(
+        "--max-payload-bytes",
+        type=int,
+        default=5_000_000,
+    )
+    trace_push_parser.add_argument("--allow-partial", action="store_true")
 
     team_parser = subparsers.add_parser("team")
     team_parser.add_argument("--plan", type=Path, required=True)
@@ -478,13 +495,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "doctor":
         return _run_doctor(args)
     if args.command == "trace":
-        if args.trace_command == "inspect":
-            return _run_trace_inspect(args)
-        if args.trace_command == "replay":
-            return _run_trace_replay(args)
-        if args.trace_command == "eval":
-            return _run_trace_eval(args)
-        return _run_trace_export(args)
+        handlers = {
+            "export": _run_trace_export,
+            "inspect": _run_trace_inspect,
+            "replay": _run_trace_replay,
+            "eval": _run_trace_eval,
+            "push": _run_trace_push,
+        }
+        return handlers[args.trace_command](args)
     return _run_agent(args)
 
 
