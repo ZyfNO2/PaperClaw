@@ -57,7 +57,12 @@ class SafeSessionPicker:
     catalog never migrates or writes the database.
     """
 
-    def __init__(self, database: str | Path, *, message_excerpt_limit: int = 500) -> None:
+    def __init__(
+        self,
+        database: str | Path,
+        *,
+        message_excerpt_limit: int = 500,
+    ) -> None:
         if message_excerpt_limit < 1:
             raise ValueError("message_excerpt_limit must be positive")
         self._database = Path(database).expanduser().resolve()
@@ -67,16 +72,23 @@ class SafeSessionPicker:
     def database(self) -> Path:
         return self._database
 
-    def list_safe_sessions(self, *, limit: int = 20) -> tuple[SafeSessionSummary, ...]:
+    def list_safe_sessions(
+        self,
+        *,
+        limit: int = 20,
+    ) -> tuple[SafeSessionSummary, ...]:
         """Return newest safe conversations first."""
 
         if limit < 1 or limit > 200:
             raise ValueError("limit must be between 1 and 200")
-        with self._connect() as connection:
+        connection = self._connect()
+        try:
             rows = connection.execute(
                 _SAFE_SESSION_QUERY + " ORDER BY latest_run_ended_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
+        finally:
+            connection.close()
         return tuple(_summary_from_row(row) for row in rows)
 
     def preview_safe_session(
@@ -93,7 +105,8 @@ class SafeSessionPicker:
         if message_limit < 1 or message_limit > 50:
             raise ValueError("message_limit must be between 1 and 50")
 
-        with self._connect() as connection:
+        connection = self._connect()
+        try:
             row = connection.execute(
                 _SAFE_SESSION_QUERY + " AND c.conversation_id = ?",
                 (normalized,),
@@ -109,6 +122,8 @@ class SafeSessionPicker:
                 "ORDER BY sequence DESC LIMIT ?",
                 (normalized, message_limit),
             ).fetchall()
+        finally:
+            connection.close()
 
         messages = tuple(
             SessionMessagePreview(
@@ -128,6 +143,7 @@ class SafeSessionPicker:
             raise SessionPickerError(
                 f"database path does not exist or is not a file: {self._database}"
             )
+        connection: sqlite3.Connection | None = None
         try:
             uri_path = quote(self._database.as_posix(), safe="/:")
             connection = sqlite3.connect(f"file:{uri_path}?mode=ro", uri=True)
@@ -135,9 +151,16 @@ class SafeSessionPicker:
             connection.execute("PRAGMA query_only = ON")
             _validate_schema(connection)
             return connection
+        except SessionPickerError:
+            if connection is not None:
+                connection.close()
+            raise
         except sqlite3.DatabaseError as exc:
+            if connection is not None:
+                connection.close()
             raise SessionPickerError(
-                f"unable to read session database: {type(exc).__name__}: {str(exc)[:300]}"
+                f"unable to read session database: "
+                f"{type(exc).__name__}: {str(exc)[:300]}"
             ) from exc
 
 
@@ -187,13 +210,14 @@ def _validate_schema(connection: sqlite3.Connection) -> None:
 
 
 def _summary_from_row(row: sqlite3.Row) -> SafeSessionSummary:
+    stop_reason = row["stop_reason"]
     return SafeSessionSummary(
         conversation_id=str(row["conversation_id"]),
         conversation_created_at=str(row["conversation_created_at"]),
         latest_run_id=str(row["latest_run_id"]),
         latest_run_created_at=str(row["latest_run_created_at"]),
         latest_run_ended_at=str(row["latest_run_ended_at"]),
-        stop_reason=str(row["stop_reason"]) if row["stop_reason"] is not None else None,
+        stop_reason=str(stop_reason) if stop_reason is not None else None,
         message_count=int(row["message_count"]),
     )
 
