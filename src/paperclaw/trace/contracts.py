@@ -18,7 +18,6 @@ TERMINAL_EVENT_TYPES = frozenset(
         "run.failed",
         "run.stopped",
         "run.cancelled",
-        "flow.stopped",
     }
 )
 
