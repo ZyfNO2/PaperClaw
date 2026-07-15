@@ -162,6 +162,7 @@ def _run_tui(args: argparse.Namespace) -> int:
         enable_verification_gate=args.enable_verification_gate,
         initial_task=args.task,
         no_tui=args.no_tui,
+        database=args.database,
         fallback=fallback,
     )
 
@@ -247,6 +248,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-tui",
         action="store_true",
         help="Skip Textual and use the standard CLI (requires task)",
+    )
+    tui_parser.add_argument(
+        "--database",
+        type=Path,
+        help=(
+            "Persist TUI runs in this SQLite database and enable the safe "
+            "session picker commands"
+        ),
     )
 
     doctor_parser = subparsers.add_parser(
