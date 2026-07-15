@@ -3,6 +3,7 @@
 from .live import (
     LIVE_REPLAY_CONFIRMATION,
     MUTATING_TOOL_NAMES,
+    LiveReplayAgentRuntimeExecutor,
     LiveReplayError,
     LiveReplayPlan,
     LiveReplayPolicy,
@@ -22,6 +23,7 @@ from .recorded import (
 __all__ = [
     "LIVE_REPLAY_CONFIRMATION",
     "MUTATING_TOOL_NAMES",
+    "LiveReplayAgentRuntimeExecutor",
     "LiveReplayError",
     "LiveReplayPlan",
     "LiveReplayPolicy",
