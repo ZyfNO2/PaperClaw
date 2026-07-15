@@ -164,6 +164,14 @@ class BlockingCoordinator:
         return CoordinatorResult(stop_reason=TeamStopReason.CANCELLED)
 
 
+class ExplodingCoordinator:
+    def __init__(self, handler) -> None:
+        self.handler = handler
+
+    def run(self, goal, tasks):
+        raise RuntimeError("provider secret-token=must-not-reach-the-team-timeline")
+
+
 def test_headless_team_dashboard_projects_sanitized_state() -> None:
     async def scenario() -> None:
         app = TeamApp(
@@ -196,6 +204,29 @@ def test_headless_team_dashboard_projects_sanitized_state() -> None:
             assert "do not render" not in timeline
             assert "sensitive project goal" not in timeline
             assert "hidden" not in timeline
+
+    asyncio.run(scenario())
+
+
+def test_coordinator_exception_detail_is_suppressed() -> None:
+    async def scenario() -> None:
+        app = TeamApp(
+            coordinator_factory=lambda handler: ExplodingCoordinator(handler),
+            goal="goal",
+            tasks=_tasks(),
+        )
+        async with app.run_test(size=(100, 24)) as pilot:
+            for _ in range(80):
+                await pilot.pause()
+                timeline = "\n".join(app.query_one(TeamTimeline).entries)
+                if "Exception detail was suppressed" in timeline:
+                    break
+
+            assert app._run_in_flight is False
+            timeline = "\n".join(app.query_one(TeamTimeline).entries)
+            assert "RuntimeError" in timeline
+            assert "secret-token" not in timeline
+            assert "must-not-reach" not in timeline
 
     asyncio.run(scenario())
 
