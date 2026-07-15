@@ -3,7 +3,7 @@
 > 状态：**GO / ACCEPTED**。实现、自动化验收与真实终端验收均已完成。
 > 基线：`main@3804f72bbf0217c904c01dfabbcd046e3d930ca8`
 > 分支：`feat/v0.06.1-safe-session-picker`
-> Draft PR：`#3`
+> PR：`#3`（Ready for Review）
 
 ## 1. 用户故事
 
@@ -94,12 +94,12 @@ Run active 时，list / preview / open 都必须拒绝执行。
 - [x] TUI 架构门禁；
 - [x] GitHub Actions Windows 全量 pytest：388 passed；
 - [x] Ruff E9/F63/F7/F82 gate；
-- [ ] Windows Terminal 真实 list → preview → open → submit 验收；
-- [ ] Live Provider 确认新 Run 写入同一 conversation。
+- [x] Windows Terminal 真实 list → preview → open → submit 验收；
+- [x] Live Provider 确认新 Run 写入同一 conversation。
 
 ## 7. 自动化验收
 
-GitHub Actions run `29417208949`：
+GitHub Actions run `29434310476` / #85：
 
 - Windows Server 2025 / Python 3.12；
 - `388 passed`；
@@ -115,7 +115,7 @@ python -m pytest -q -m "not real_llm" --basetemp=tmp/pytest
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
 
-自动化测试只能证明 SQLite contract、Command API、headless TUI 控制流和 fresh-Run 持久化；不能代替真实终端交互与 Live Provider 验收。
+自动化测试证明 SQLite contract、Command API、headless TUI 控制流和 fresh-Run 持久化；真实终端交互与 Live Provider 已由下节验收结果补充验证。
 
 ## 8. 真实验收
 
@@ -128,4 +128,4 @@ python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 7. 查询 SQLite，确认旧 Run 仍 ended，新 Run 使用同一 `conversation_id`；
 8. 截图或保存脱敏日志。
 
-通过条件：无 active conversation 被列出；preview 可读；open 后 UI 恢复历史消息；新提交创建新 Run；旧 Run 没有被修改。
+验收结果：PASS。无 active conversation 被列出；preview 可读；open 后 UI 显示历史消息；新提交创建新 Run；旧 Run 未被修改；`--no-tui` fallback 未创建数据库。
