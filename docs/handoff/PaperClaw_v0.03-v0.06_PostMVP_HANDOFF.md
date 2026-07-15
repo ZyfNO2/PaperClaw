@@ -6,7 +6,7 @@
 
 26 个候选包或延期行已完成审计。两个可以在当前前置能力上独立落地的小切片已经实现：SQLite 只读 Doctor 与 sanitized Verification Inspector。
 
-PR #2 已合并到 `main`，但合并不等于 v0.06 acceptance GO。Draft PR #4 用于修复 Tool `execute()` 取消竞态覆盖缺口并校正文档证据状态。
+PR #2 已合并到 `main`，但合并不等于 v0.06 acceptance GO。Draft PR #4 已补齐 Tool `execute()` 取消竞态覆盖缺口并通过自动化 CI。
 
 ## 仓库状态
 
@@ -16,6 +16,10 @@ PR #2 已合并到 `main`，但合并不等于 v0.06 acceptance GO。Draft PR #4
 - Main integration commit：`3804f72bbf0217c904c01dfabbcd046e3d930ca8`
 - Repair branch：`fix/v0.06-acceptance-cancel-race`
 - Repair PR：Draft PR #4
+- Repair implementation/test HEAD：`8e27bdcf908c9fbc81a726cd1dfb9fa82c13eb82`
+- Repair CI：run `29417443436` / #71 — SUCCESS
+- Windows pytest：383 passed，0 failed，0 skipped
+- Ruff：PASS
 
 ## 已完成内容
 
@@ -39,7 +43,7 @@ PR #2 已合并到 `main`，但合并不等于 v0.06 acceptance GO。Draft PR #4
 
 ### Cancellation correction
 
-PR #2 已覆盖 Provider exception-after-stop 与非 adapter runtime failure 边界。Draft PR #4 进一步补齐此前缺失的 Tool `execute()` exception-after-stop 路径：
+Draft PR #4 已通过确定性测试证明：
 
 ```text
 tool.started
@@ -58,30 +62,26 @@ tool.started
 ### PR #2 source HEAD
 
 - SHA：`d5d43e3cd74e80d35190e16253446f37841a4b2e`；
-- GitHub Actions：run `29413807619` / #45；
+- GitHub Actions：run #45；
 - Windows pytest：382 call-phase tests passed；
-- Ruff high-signal checks：PASS。
+- Ruff：PASS。
 
 ### Draft PR #4
 
-必须完成：
-
-```powershell
-python -m pytest tests/unit/test_agent_runtime_executor.py -q
-python -m pytest -q --basetemp=tmp/pytest -m "not real_llm"
-python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
-```
-
-在 CI 结果确认前，不得把 Tool execute race 标为 PASS。
+- SHA：`8e27bdcf908c9fbc81a726cd1dfb9fa82c13eb82`；
+- GitHub Actions：run `29417443436` / #71；
+- Windows pytest：383 passed，0 failed，0 skipped；
+- Ruff：PASS；
+- artifact：`pytest-results-29417443436`。
 
 ## 真实验收状态
 
 | Gate | 状态 | 边界 |
 |---|---|---|
-| SQLite migrated-fixture Doctor | PASS smoke | 不等于真实/脱敏用户数据库 |
-| Live Provider create/run/verify | PASS historical | backend E2E；不是修复后 physical cancel |
-| Live Provider normal safe-boundary cancel | PASS historical | 不复现原 physical `runtime_failed` signature |
-| Windows Terminal wide launch/task/Inspector | PASS historical | 原始 evidence HEAD 记录为 `0ef5...` |
+| SQLite migrated-fixture Doctor | PASS, smoke | 不等于真实/脱敏用户数据库 |
+| Live Provider create/run/verify | PASS, historical | backend E2E；不是修复后 physical cancel |
+| Live Provider normal safe-boundary cancel | PASS, historical | 不复现原 physical `runtime_failed` signature |
+| Windows Terminal wide launch/task/Inspector | PASS, historical | 原始 evidence HEAD 记录为 `0ef5...` |
 | Windows Terminal narrow resize | PENDING MANUAL | 需小于 80 列截图 |
 | Post-fix physical TUI `/cancel` | PENDING MANUAL | 需修复后截图与唯一 terminal event |
 | Safe real/sanitized DB Doctor | PENDING MANUAL | 需 quick/full redacted JSON |
@@ -104,7 +104,7 @@ python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 - durable mailbox；
 - arbitrary crash recovery。
 
-这些方向仍需各自 fixture、runtime contract 与用户收益证据，不得因为 PR #2 已合并而自动启动。
+这些方向仍需各自 fixture、runtime contract 与用户收益证据，不得因为前序 PR 已合并而自动启动。
 
 ## 下一位开发者接手
 
@@ -116,4 +116,4 @@ python -m pytest -q --basetemp=tmp/pytest -m "not real_llm"
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
 
-完成 CI 后，继续执行窄屏、post-fix physical `/cancel` 与 safe database Doctor。只有所有要求的证据一致且脱敏后，才可将 v0.06 改为 GO。
+自动化 Gate 已通过。下一步只处理窄屏、post-fix physical `/cancel` 与 safe database Doctor。所有要求证据一致且脱敏后，才可将 v0.06 改为 GO。
