@@ -24,6 +24,7 @@ from paperclaw.tools.base import (
     ToolValidationError,
 )
 from paperclaw.tools.registry import ToolRegistry
+from paperclaw.trace.redaction import TraceRedactor
 
 from .contracts import EventEmitter, ExecutionReport, RunLimits, RunRequest, StopToken
 
@@ -273,6 +274,10 @@ class AgentRuntimeExecutor:
         self._enable_verification_gate = enable_verification_gate
         self._repository = repository
         self._legacy_event_handler = legacy_event_handler
+        api_key = getattr(model, "api_key", "")
+        self._event_redactor = TraceRedactor(
+            secret_values=[api_key] if isinstance(api_key, str) else (),
+        )
         self.last_state: dict[str, Any] | None = None
 
     def execute(
@@ -286,11 +291,12 @@ class AgentRuntimeExecutor:
         session = self._open_session(request)
 
         def runtime_emit(event_type: str, payload: dict) -> int:
-            sequence = emit(event_type, payload)
+            safe_payload = self._event_redactor.redact_payload(payload)
+            sequence = emit(event_type, safe_payload)
             if session is not None:
                 session.emit(
                     event_type,
-                    {**payload, "query_event_sequence": sequence},
+                    {**safe_payload, "query_event_sequence": sequence},
                 )
             return sequence
 
