@@ -53,6 +53,22 @@ _COMPONENT_PREFIXES = {
     "checkpoint": "context",
 }
 
+_COMPLETED_STOP_REASONS = frozenset({"done", "completed_verified"})
+_FAILED_STOP_REASONS = frozenset(
+    {
+        "runtime_failed",
+        "executor_failed",
+        "executor_contract_violation",
+        "invalid_terminal_state",
+    }
+)
+_BLOCKED_STOP_REASONS = frozenset(
+    {"recovery_required", "blocked_environment", "verification_failed"}
+)
+_BUDGET_STOP_REASONS = frozenset(
+    {"max_steps", "max_model_calls", "max_tool_calls"}
+)
+
 
 def _validate_request(run_id: str, since_sequence: int) -> str:
     normalized = run_id.strip()
@@ -106,6 +122,40 @@ def _derive_status(event_type: str, payload: dict[str, Any]) -> str | None:
     return None
 
 
+def _canonicalize_event(
+    source_event_type: str,
+    payload: dict[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    """Map legacy persistence events to the stable TraceEvent vocabulary.
+
+    v0.04 SessionService stores ``flow.stopped`` after marking a Run ended.
+    Trace consumers should not need to understand that implementation detail,
+    so the projection derives one canonical Run terminal event while retaining
+    ``source_event_type`` in the payload for auditability.
+    """
+
+    if source_event_type != "flow.stopped":
+        return source_event_type, payload
+
+    projected = dict(payload)
+    projected.setdefault("source_event_type", source_event_type)
+    reason = _optional_text(projected.get("stop_reason")) or "unknown"
+
+    if reason in _COMPLETED_STOP_REASONS:
+        projected.setdefault("status", "completed")
+        return "run.completed", projected
+    if reason in _FAILED_STOP_REASONS or reason.endswith("_failed"):
+        projected.setdefault("status", "failed")
+        return "run.failed", projected
+    if reason in _BLOCKED_STOP_REASONS:
+        projected.setdefault("status", "blocked")
+    elif reason in _BUDGET_STOP_REASONS:
+        projected.setdefault("status", "budget_exhausted")
+    else:
+        projected.setdefault("status", "stopped")
+    return "run.stopped", projected
+
+
 def project_session_event(
     event: SessionEvent,
     *,
@@ -115,15 +165,16 @@ def project_session_event(
 
     sanitizer = redactor or TraceRedactor()
     payload = sanitizer.redact_payload(event.payload)
+    event_type, payload = _canonicalize_event(event.event_type, payload)
     trace = TraceEvent(
         event_id=event.event_id,
         sequence=event.sequence,
         occurred_at=event.created_at,
         conversation_id=event.conversation_id,
         run_id=event.run_id,
-        event_type=event.event_type,
-        component=_derive_component(event.event_type, payload),
-        status=_derive_status(event.event_type, payload),
+        event_type=event_type,
+        component=_derive_component(event_type, payload),
+        status=_derive_status(event_type, payload),
         span_id=_optional_text(payload.get("span_id")),
         parent_span_id=_optional_text(payload.get("parent_span_id")),
         duration_ms=_duration_ms(payload),
@@ -182,7 +233,7 @@ class RepositoryTraceReader:
 class SQLiteTraceReader:
     """Read a trace from an existing SQLite database without migration or writes.
 
-    The connection uses ``mode=ro`` and ``PRAGMA query_only``.  This mirrors the
+    The connection uses ``mode=ro`` and ``PRAGMA query_only``. This mirrors the
     v0.06.1 Safe Session Picker boundary and is suitable for CLI export and
     future inspector plugins.
     """
