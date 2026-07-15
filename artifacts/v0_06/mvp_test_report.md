@@ -4,17 +4,17 @@
 
 `WAITING REAL TERMINAL ACCEPTANCE`
 
-PR #2 is merged, but the v0.06 acceptance gate is not GO. Draft PR #4 repairs the missing Tool `execute()` cancellation-race coverage and synchronizes acceptance evidence.
+PR #2 is merged. Draft PR #4 closes the missing Tool `execute()` cancellation-race coverage and has passed automated CI. The remaining gates are physical narrow resize, post-fix physical TUI `/cancel`, and safe real/sanitized database Doctor evidence.
 
 ## Automated evidence
 
 | Layer | Code provenance | Command / environment | Result |
 |---|---|---|---|
-| Original final source-head regression | `d5d43e3cd74e80d35190e16253446f37841a4b2e` | GitHub Actions Windows run `29413807619` / #45 | 382 call-phase tests passed |
+| Original final source-head regression | `d5d43e3cd74e80d35190e16253446f37841a4b2e` | GitHub Actions Windows run #45 | 382 call-phase tests passed |
 | Original source-head static lint | `d5d43e3...` | Ubuntu Ruff E9/F63/F7/F82 | PASS |
-| Repair focused test | Draft PR #4 | `python -m pytest tests/unit/test_agent_runtime_executor.py -q` | PENDING CI |
-| Repair full regression | Draft PR #4 | Windows GitHub Actions | PENDING CI |
-| Repair static lint | Draft PR #4 | Ruff high-signal checks | PENDING CI |
+| Repair focused + full regression | `8e27bdcf908c9fbc81a726cd1dfb9fa82c13eb82` | GitHub Actions Windows run `29417443436` / #71 | 383 passed, 0 failed, 0 skipped |
+| Repair static lint | `8e27bdcf...` | Ruff high-signal checks | PASS |
+| Repair artifact | `8e27bdcf...` | `pytest-results-29417443436` | available |
 
 ## Focused coverage
 
@@ -30,12 +30,12 @@ PR #2 is merged, but the v0.06 acceptance gate is not GO. Draft PR #4 repairs th
 - no-TTY, missing-Textual and explicit `--no-tui` fallback;
 - architecture import boundary;
 - Provider exception-after-stop translation;
-- unrelated runtime failure after stop remains `runtime_failed`;
-- Tool `execute()` exception-after-stop translation in Draft PR #4.
+- Tool `execute()` exception-after-stop translation;
+- unrelated runtime failure after stop remains `runtime_failed`.
 
 ## Repair regression contract
 
-The new deterministic Tool fixture must prove:
+The deterministic Tool fixture passed as part of run #71 and proves:
 
 ```text
 tool.started
@@ -48,7 +48,7 @@ tool.started
 → exactly one terminal event: run.stopped
 ```
 
-This test closes the missing adapter path. It does not authorize translating arbitrary AgentRuntime, Session, Repository or persistence failures into cancellation.
+This closes the missing adapter path. It does not authorize translating arbitrary AgentRuntime, Session, Repository or persistence failures into cancellation.
 
 ## Evidence classification
 
@@ -71,10 +71,9 @@ The normal backend cancel test does not reproduce the original physical TUI `run
 
 ## Remaining gates
 
-1. Draft PR #4 CI passes.
-2. Physical Windows Terminal width below 80 columns passes.
-3. Post-fix physical TUI `/cancel` reaches one truthful terminal state.
-4. Doctor quick/full passes against a safe real or sanitized database copy.
-5. Handoff, SOP, acceptance report and this report identify the same final repair commit and CI run.
+1. Physical Windows Terminal width below 80 columns passes.
+2. Post-fix physical TUI `/cancel` reaches one truthful terminal state.
+3. Doctor quick/full passes against a safe real or sanitized database copy.
+4. Final evidence review confirms no secret and consistent status.
 
 Do not mark v0.06 GO before all required gates are reviewed.
