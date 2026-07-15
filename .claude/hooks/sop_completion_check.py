@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""Stop hook: 检查当前正在执行的 SOP 是否全量完成.
+"""PaperClaw Stop hook：检查当前 SOP checkbox 与交接物完整性。
 
-行为:
-1. 识别"当前 SOP"——最近 7 天内 mtime 最新的 Plan/PaperAgent_Re*_SOP.md
-2. 若不在 SOP 上下文 (最近 commit 无 SOP 编号 / 无 SOP 文件改动), 静默 exit 0
-3. 扫该 SOP 文档里所有 `- [ ]` / `- [x]` checkbox, 统计未完成项
-4. 查对应 artifacts/reN_M/<workpack>/ 交接包产物齐备性
-5. 把结果打到 stderr, 非阻断 (exit 0)
-6. 不联网. 只读 git log + 磁盘文件.
+行为：
+1. 在 ``Plan/`` 下递归识别 ``PaperClaw_vX.Y*SOP`` 风格的正式或草案 SOP；
+2. 若近期 commit 和工作树都不处于 SOP 上下文，静默退出；
+3. 统计当前 SOP 的 ``- [ ]`` / ``- [x]``；
+4. 检查对应 ``artifacts/vX_YY/`` 交接物；
+5. 只输出证据摘要，始终非阻断，不联网，也不修改项目文件。
 
-设计动机: 用户要求"在 SOP 结束时强制检查一遍是否全量完成", 避免自欺欺人.
-与现有 post_phase_check.py (Phase 4 条强约束) 并列, 互不干扰.
+Hook 只是完成度提醒，不能替代测试、Trace、真实模型或人工演示。
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -57,29 +56,36 @@ def _git(*args: str, timeout: int = 5) -> str:
 
 # ----------------- SOP 识别 -----------------
 
-SOP_FILE_RE = re.compile(r"(?:PaperAgent_Re|PaperClaw_v)(\d+)\.(\d+).*SOP\.md$", re.IGNORECASE)
-SOP_VERSION_IN_COMMIT_RE = re.compile(r"(?:Re|v)\s?(\d+)\.(\d+)", re.IGNORECASE)
+SOP_FILE_RE = re.compile(
+    r"^PaperClaw_v(\d+)\.(\d+).*SOP(?:草案)?\.md$",
+    re.IGNORECASE,
+)
+SOP_VERSION_IN_COMMIT_RE = re.compile(r"\bv\s?(\d+)\.(\d+)\b", re.IGNORECASE)
 CHECKBOX_RE = re.compile(r"^\s*- \[( |x|X)\]\s*(.*)$")
+INACTIVE_SOP_MARKERS = ("历史设计稿", "已停止执行", "归档")
+
+
+def _is_inactive_sop(path: Path) -> bool:
+    """Return True when a retained SOP file is explicitly archival."""
+    try:
+        head = "\n".join(path.read_text(encoding="utf-8").splitlines()[:12])
+    except (OSError, UnicodeError):
+        return False
+    return any(marker in head for marker in INACTIVE_SOP_MARKERS)
 
 
 def _find_sop_files() -> list[Path]:
-    """所有 Plan/ 下的 PaperAgent_Re*_SOP.md (含 Arch/ Legcy/).
-
-    Note: 不用 pathlib.glob — Windows 上 glob 对部分中文文件名匹配失败.
-    改用 iterdir() + 正则过滤.
-    """
+    """递归返回 Plan/ 下的 PaperClaw 正式或草案 SOP。"""
     out: list[Path] = []
-    name_re = re.compile(r"^(?:PaperAgent_Re|PaperClaw_v)\d+\.\d+.*SOP\.md$", re.IGNORECASE)
-    for sub in ("", "Arch", "Legcy/reports"):
-        base = PLAN_DIR / sub if sub else PLAN_DIR
-        if not base.exists():
-            continue
-        try:
-            for p in base.iterdir():
-                if p.is_file() and name_re.match(p.name):
-                    out.append(p)
-        except (PermissionError, OSError):
-            continue
+    if not PLAN_DIR.exists():
+        return out
+    # os.walk 在 Windows 中文路径上比 pathlib glob 更稳定。
+    for root, _, names in os.walk(PLAN_DIR):
+        for name in names:
+            if SOP_FILE_RE.match(name):
+                path = Path(root) / name
+                if not _is_inactive_sop(path):
+                    out.append(path)
     return out
 
 
@@ -103,7 +109,7 @@ def _current_sop_by_mtime() -> tuple[Path | None, str | None]:
 
 
 def _current_sop_from_commit() -> str | None:
-    """从最近 10 个 commit message 里抽 ReN.M 版本号."""
+    """从最近 10 个 commit message 里提取 PaperClaw vX.Y。"""
     log = _git("log", "-10", "--format=%s %b")
     for line in log.splitlines():
         m = SOP_VERSION_IN_COMMIT_RE.search(line)
@@ -116,10 +122,11 @@ def _in_sop_context(current_tag: str | None, commit_tag: str | None) -> bool:
     """是否处于 SOP 上下文: commit 或最近改动文件命中任一即激活."""
     if commit_tag and current_tag and commit_tag == current_tag:
         return True
-    # 最近 3 个 commit 触及 SOP 文件 → 视为 SOP 上下文
+    # 最近 3 个 commit 触及正式或草案 SOP → 视为 SOP 上下文。
     touched = _git("log", "-3", "--name-only", "--format=", "--", "Plan/")
-    if touched and "SOP.md" in touched:
-        return True
+    for line in touched.splitlines():
+        if SOP_FILE_RE.match(Path(line).name):
+            return True
     # 当前 SOP 文件 24h 内被改动 → 视为上下文
     sop_path, _ = _current_sop_by_mtime()
     if sop_path:
@@ -160,14 +167,12 @@ def _parse_checkboxes(sop_path: Path) -> dict:
 
 # ----------------- 交接包产物检查 -----------------
 
-# Per-version handoff manifests. The list evolves with each SOP; the default
-# set is kept for older ReN.M packages that were created before versioning.
+# Per-version handoff manifests. Unknown future versions use the small generic
+# MVP set instead of inheriting an old domain-specific package.
 DEFAULT_HANDOFF_FILES = [
     "implementation_summary.md",
-    "verification_contract.md",
     "test_report.md",
-    "verify_reflection_trace.json",
-    "failure_cases.md",
+    "known_limitations.md",
     "file_manifest.txt",
 ]
 
@@ -189,12 +194,26 @@ VERSION_HANDOFF_FILES: dict[str, list[str]] = {
         "reviewer_findings.json",
         "file_manifest.txt",
     ],
+    "v0.04": [
+        "test_report.md",
+        "mvp_demo_trace.json",
+        "known_limitations.md",
+        "implementation_summary.md",
+        "file_manifest.txt",
+    ],
     "v0.05": [
         "query_engine_contract.md",
         "mvp_test_report.md",
         "mvp_demo_trace.json",
         "known_limitations.md",
         "file_manifest.txt",
+    ],
+    "v0.06": [
+        "implementation_summary.md",
+        "mvp_test_report.md",
+        "mvp_demo_trace.json",
+        "tui_boundary.md",
+        "known_limitations.md",
     ],
 }
 
@@ -204,11 +223,9 @@ def _handoff_files_for(version_tag: str) -> list[str]:
 
 
 def _find_handoff_dirs(version_tag: str) -> list[Path]:
-    """根据 ReN.M → artifacts/reN_M/ 下查找交接包子目录.
+    """根据 vX.Y → artifacts/vX_YY/ 查找交接包目录。
 
-    兼容两种布局:
-    a) artifacts/reN_M/<workpack>/  — 每个工作包一个子目录
-    b) artifacts/reN_M/             — 根目录直接放 decision.md 等
+    兼容根目录直接存放交接物，以及每个 work package 一个子目录。
     """
     m = re.match(r"v(\d+)\.(\d+)", version_tag, re.IGNORECASE)
     if not m:
@@ -279,7 +296,7 @@ def main() -> int:
         _save_cache({"last_run": datetime.now().isoformat(), "in_context": False})
         return 0
 
-    # PaperClaw 的 SOP 推进按当前工作树中最近修改的 SOP 为准，避免旧 commit tag 把检查错指到上一版。
+    # 当前工作树最近修改的 SOP 优先，避免旧 commit tag 指向上一版本。
     target_tag = current_tag or commit_tag
     if not target_tag or not sop_path:
         _emit("  [SOP completion] in SOP context but no SOP file found; skip")

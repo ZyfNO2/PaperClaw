@@ -89,6 +89,12 @@ class _BudgetedModel:
                     "error_message": str(exc)[:500],
                 },
             )
+            # The provider call crossed a cooperative-stop boundary while it
+            # was already in flight. Cancellation owns this adapter-level
+            # outcome, while the preceding model.failed event still preserves
+            # the original sanitized failure for diagnostics.
+            if self._stop_token.is_cancelled:
+                raise RunStopped(self._stop_token.reason or "cancelled") from exc
             raise
         self._emit("model.completed", {"call_index": call_index})
         return turn
@@ -158,6 +164,12 @@ class _BudgetedTool:
                     "error_message": str(exc)[:500],
                 },
             )
+            # Match the provider boundary above without changing unrelated
+            # runtime, session, or persistence exceptions into cancellations.
+            if self._stop_token.is_cancelled:
+                raise ToolControlFlow(
+                    self._stop_token.reason or "cancelled"
+                ) from exc
             raise
 
     def execute(
@@ -289,10 +301,10 @@ class AgentRuntimeExecutor:
             )
         except Exception:
             self.last_state = runtime.last_state
-            # The model wrapper has already counted the attempted provider call
-            # and emitted a sanitized failure event. Preserve those truthful
-            # counters in the terminal report instead of re-raising and letting
-            # QueryEngine replace them with zeroes.
+            # Adapter wrappers above own cancellation races. Everything that
+            # reaches this catch-all remains a genuine runtime failure even if
+            # a stop request happened concurrently, so session/persistence
+            # faults are never hidden as successful cooperative cancellation.
             report = ExecutionReport(
                 status="failed",
                 output=(runtime.last_state or {}).get("result"),

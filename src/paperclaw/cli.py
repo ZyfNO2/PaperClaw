@@ -146,6 +146,36 @@ def _run_agent(args: argparse.Namespace) -> int:
     return 0 if result.status == "completed" else 1
 
 
+def _run_tui(args: argparse.Namespace) -> int:
+    """Launch the optional Textual client without changing the CLI fallback."""
+
+    from paperclaw.tui.runner import run_tui
+
+    fallback = (lambda: _run_agent(args)) if args.task else None
+    return run_tui(
+        workspace=args.workspace,
+        limits=RunLimits(
+            max_steps=args.max_steps,
+            max_model_calls=args.max_model_calls,
+            max_tool_calls=args.max_tool_calls,
+        ),
+        enable_verification_gate=args.enable_verification_gate,
+        initial_task=args.task,
+        no_tui=args.no_tui,
+        fallback=fallback,
+    )
+
+
+def _run_doctor(args: argparse.Namespace) -> int:
+    """Run non-mutating SQLite diagnostics and print one structured report."""
+
+    from paperclaw.context.health import inspect_sqlite_database
+
+    report = inspect_sqlite_database(args.database, full=args.full)
+    console_print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+    return 0 if report.ok else 1
+
+
 def _load_team_plan(plan_path: Path) -> tuple[str, list[AgentTask], TeamBudget]:
     """Load a JSON team plan: {goal, tasks: [...], budget: {...}}."""
     data = json.loads(plan_path.read_text(encoding="utf-8"))
@@ -183,6 +213,20 @@ def _run_team(args: argparse.Namespace) -> int:
     return 0 if result.stop_reason.value in {"completed", "all_tasks_completed"} else 1
 
 
+def _add_single_agent_runtime_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--workspace", type=Path, default=Path.cwd())
+    parser.add_argument("--max-steps", type=int, default=12)
+    parser.add_argument("--max-model-calls", type=int, default=10)
+    parser.add_argument("--max-tool-calls", type=int, default=20)
+    parser.add_argument("--verbose-events", action="store_true")
+    parser.add_argument(
+        "--enable-verification-gate",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run the v0.02 Verify/Reflection Gate (default: True)",
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser so tests can inspect defaults."""
     parser = argparse.ArgumentParser(description="Run the PaperClaw coding agent")
@@ -190,16 +234,30 @@ def _build_parser() -> argparse.ArgumentParser:
 
     agent_parser = subparsers.add_parser("agent", help="Run a single AgentRuntime (default)")
     agent_parser.add_argument("task")
-    agent_parser.add_argument("--workspace", type=Path, default=Path.cwd())
-    agent_parser.add_argument("--max-steps", type=int, default=12)
-    agent_parser.add_argument("--max-model-calls", type=int, default=10)
-    agent_parser.add_argument("--max-tool-calls", type=int, default=20)
-    agent_parser.add_argument("--verbose-events", action="store_true")
-    agent_parser.add_argument(
-        "--enable-verification-gate",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Run the v0.02 Verify/Reflection Gate (default: True)",
+    _add_single_agent_runtime_arguments(agent_parser)
+
+    tui_parser = subparsers.add_parser("tui", help="Run the optional v0.06 Textual client")
+    tui_parser.add_argument(
+        "task",
+        nargs="?",
+        help="Optional task to submit on launch; also enables CLI fallback without a TTY",
+    )
+    _add_single_agent_runtime_arguments(tui_parser)
+    tui_parser.add_argument(
+        "--no-tui",
+        action="store_true",
+        help="Skip Textual and use the standard CLI (requires task)",
+    )
+
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Inspect an existing PaperClaw SQLite database without modifying it",
+    )
+    doctor_parser.add_argument("--database", type=Path, required=True)
+    doctor_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Run SQLite integrity_check instead of the faster quick_check",
     )
 
     team_parser = subparsers.add_parser("team", help="Run a MultiAgent Coordinator team from a JSON plan")
@@ -219,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     if argv is None:
         argv = sys.argv[1:]
-    if argv and argv[0] not in {"agent", "team", "-h", "--help", "--version", "-v"}:
+    if argv and argv[0] not in {"agent", "team", "tui", "doctor", "-h", "--help", "--version", "-v"}:
         argv = ["agent", *argv]
 
     args = parser.parse_args(argv)
@@ -227,6 +285,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "team":
         return _run_team(args)
+    if args.command == "tui":
+        return _run_tui(args)
+    if args.command == "doctor":
+        return _run_doctor(args)
     return _run_agent(args)
 
 

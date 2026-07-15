@@ -1,9 +1,11 @@
 # PaperClaw v0.05：最小 Harness 与 QueryEngine MVP SOP 草案
 
-> 状态：**MVP 草案，等待 v0.04 收口后冻结**
+> 状态：**历史设计稿 / 已停止执行**
 > 更新：2026-07-14
 > 目标：给现有 PocketFlow Agent Loop 加一个薄的会话级入口，使一次用户提交具有统一 Run、预算、事件、权限入口和结构化结果。
 > 原则：v0.05 只做 façade 与接线，不重写已工作的 Model、Tool、Context、Session 和 Flow。
+
+> 正式完成文件：[`PaperClaw_v0.05_HarnessQueryEngine_MVP_SOP.md`](../PaperClaw_v0.05_HarnessQueryEngine_MVP_SOP.md)。本文件仅保留拆分过程和设计背景，不得作为当前执行 SOP 或完成度 Hook 目标。
 
 ## 目录
 

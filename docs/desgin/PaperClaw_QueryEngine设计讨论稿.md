@@ -746,10 +746,13 @@ v0.05 不要求 async streaming、后台 Shell、完整 PermissionDecision、wal
 
 ### v0.06：Claw 交互层
 
-- `waiting_permission`；
-- TUI 事件订阅；
-- Tool、Context、Task 和 Trace 面板；
-- Permission Dialog。
+- Textual optional TUI；
+- Chat、Prompt、RunStatus 和关键 Tool Timeline；
+- Worker thread 包装同步 QueryEngine；
+- `/new`、cooperative `/cancel`、`/quit`；
+- CLI fallback。
+
+Permission Dialog、Shell streaming、Context / Trace / MultiAgent 面板和 Session Picker 均属于 `Plan/drafts/PaperClaw_v0.06.1_Claw交互增强候选池.md`，不进入 v0.06 MVP Gate。
 
 ### v0.07：Trace、Replay 与 Eval
 

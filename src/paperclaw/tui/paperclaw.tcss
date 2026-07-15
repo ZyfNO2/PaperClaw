@@ -1,0 +1,49 @@
+Screen {
+    layout: vertical;
+}
+
+#run-status {
+    height: 1;
+    padding: 0 1;
+}
+
+#main {
+    height: 1fr;
+    layout: horizontal;
+}
+
+#main.narrow {
+    layout: vertical;
+}
+
+#chat-pane {
+    width: 2fr;
+    border: round $primary;
+}
+
+#timeline-pane {
+    width: 1fr;
+    border: round $secondary;
+}
+
+#main.narrow > #chat-pane,
+#main.narrow > #timeline-pane {
+    width: 1fr;
+    height: 1fr;
+}
+
+#chat-log,
+#tool-timeline {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#verification-inspector {
+    height: 5;
+    padding: 0 1;
+    border-bottom: solid $secondary;
+}
+
+#prompt-input {
+    dock: bottom;
+}
