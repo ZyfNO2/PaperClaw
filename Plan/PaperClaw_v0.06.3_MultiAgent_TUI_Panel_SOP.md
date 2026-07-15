@@ -1,6 +1,6 @@
 # PaperClaw v0.06.3 MultiAgent TUI Panel SOP
 
-> 状态：实现中；Draft PR #16；堆叠于 v0.06.2 Team View Adapter / PR #15
+> 状态：自动化实现与 Windows CI 完成；Draft PR #16；等待物理终端真实模型验收
 > 日期：2026-07-16
 
 ## 1. 目标
