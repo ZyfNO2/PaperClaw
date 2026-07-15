@@ -7,18 +7,32 @@ is read-only; execution always creates a new Run through a supplied RunExecutor.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 import hashlib
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from paperclaw.harness import QueryEngine, RunExecutor, RunLimits, RunResult
+from paperclaw.context.repository import Repository
+from paperclaw.context.session import SessionService
+from paperclaw.harness import (
+    AgentRuntimeExecutor,
+    QueryEngine,
+    RunExecutor,
+    RunLimits,
+    RunRequest,
+    RunResult,
+)
+from paperclaw.models.base import ChatModel
+from paperclaw.tools.registry import ToolRegistry
 from paperclaw.trace import TraceReader
 
 from .recorded import replay_recorded_trace
 
 LIVE_REPLAY_CONFIRMATION = "LIVE_REPLAY_EXECUTES_EXTERNAL_ACTIONS"
 MUTATING_TOOL_NAMES = frozenset({"file_write", "file_edit", "bash"})
+LegacyEventHandler = Callable[[str, dict], None]
 
 
 class LiveReplayError(RuntimeError):
@@ -80,6 +94,7 @@ class LiveReplayPlan:
             "source_run_id": self.source_run_id,
             "source_terminal_event": self.source_terminal_event,
             "prompt_sha256": self.prompt_sha256,
+            "prompt_chars": self.prompt_chars,
             "allowed_tools": list(self.allowed_tools),
         }
 
@@ -94,6 +109,91 @@ class LiveReplayResult:
             "plan": self.plan.to_dict(),
             "run_result": asdict(self.run_result),
         }
+
+
+class LiveReplayAgentRuntimeExecutor(AgentRuntimeExecutor):
+    """AgentRuntimeExecutor that persists bounded source-Run provenance.
+
+    The class changes only the metadata attached to the newly created Run. It
+    never writes to the source Repository and never persists the replay task.
+    """
+
+    def __init__(
+        self,
+        model: ChatModel,
+        workspace: Path | str,
+        *,
+        plan: LiveReplayPlan,
+        registry: ToolRegistry,
+        repository: Repository,
+        enable_verification_gate: bool = True,
+        legacy_event_handler: LegacyEventHandler | None = None,
+    ) -> None:
+        super().__init__(
+            model,
+            workspace,
+            registry=registry,
+            enable_verification_gate=enable_verification_gate,
+            repository=repository,
+            legacy_event_handler=legacy_event_handler,
+        )
+        self._live_replay_metadata = self._event_redactor.redact_payload(
+            plan.durable_metadata()
+        )
+
+    def _open_session(self, request: RunRequest) -> SessionService:
+        repository = self._repository
+        if repository is None:
+            raise LiveReplayError("live replay requires a target Repository")
+        repository.create_conversation(
+            request.conversation_id,
+            metadata={
+                "source": "live_replay",
+                "source_run_id": self._live_replay_metadata["source_run_id"],
+            },
+        )
+        run_metadata = {
+            **self._live_replay_metadata,
+            "max_steps": request.limits.max_steps,
+            "max_model_calls": request.limits.max_model_calls,
+            "max_tool_calls": request.limits.max_tool_calls,
+        }
+        repository.start_run(
+            run_id=request.run_id,
+            conversation_id=request.conversation_id,
+            agent_id="query_engine",
+            role="agent",
+            metadata=run_metadata,
+        )
+        session = SessionService(
+            repository,
+            conversation_id=request.conversation_id,
+            run_id=request.run_id,
+            agent_id="query_engine",
+        )
+        session.emit(
+            "run.started",
+            {
+                **self._live_replay_metadata,
+                "query_event_sequence": 1,
+                "conversation_id": request.conversation_id,
+                "limits": {
+                    "max_steps": request.limits.max_steps,
+                    "max_model_calls": request.limits.max_model_calls,
+                    "max_tool_calls": request.limits.max_tool_calls,
+                },
+            },
+        )
+        session.append_message(
+            "user",
+            request.text,
+            metadata={
+                "live_replay": True,
+                "source_run_id": self._live_replay_metadata["source_run_id"],
+                "prompt_sha256": self._live_replay_metadata["prompt_sha256"],
+            },
+        )
+        return session
 
 
 def prepare_live_replay(
