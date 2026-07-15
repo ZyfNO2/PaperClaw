@@ -9,12 +9,14 @@ All Tests A–E (physical terminal interaction, Live Provider submit after reope
 ## Repository and branch
 
 - Repository: `ZyfNO2/PaperClaw`
-- Base: `main@3804f72bbf0217c904c01dfabbcd046e3d930ca8`
+- Development base: `main@3804f72bbf0217c904c01dfabbcd046e3d930ca8`
+- Final merge target after v0.06 repair: `main@89e6997488def97bdf7f4d2d1f1476d7ae493656`
 - Branch: `feat/v0.06.1-safe-session-picker`
-- Draft PR: `#3`
+- PR: `#3`（Ready for Review）
 - Validated implementation commit: `d912847a267be65a5a40da258d0e95c51446757c`
 - Automated acceptance documentation commit: `e9c2c83c75cf4b593a9334c8d56a6218123bea0c`
-- Final documentation HEAD: the commit containing this Handoff; resolve with `git rev-parse HEAD` or the Draft PR head.
+- Acceptance closeout commit: `b98de5c4afa6f2c3521b6d5daa2aa192fc2c98b6`
+- Final documentation HEAD: use the current PR head shown by GitHub.
 
 ## Completed
 
@@ -42,6 +44,7 @@ All Tests A–E (physical terminal interaction, Live Provider submit after reope
 
 ### Tests
 
+- `tests/integration/test_safe_session_picker_acceptance.py`
 - `tests/unit/test_session_picker.py`
 - `tests/unit/test_tui_session_picker.py`
 - `tests/unit/test_tui_runner.py`
@@ -69,13 +72,11 @@ All Tests A–E (physical terminal interaction, Live Provider submit after reope
 
 ## Tests and CI
 
-### Green run
+### Green runs
 
-- GitHub Actions run: `29417208949`
-- Validated SHA: `d912847a267be65a5a40da258d0e95c51446757c`
-- Windows full pytest excluding `real_llm`: **388 passed, 0 failed, 0 skipped**
-- Ruff high-signal gate: **PASS**
-- Report-log session exitstatus: `0`
+- Original implementation acceptance run: `29417208949` — Windows pytest **388 passed, 0 failed, 0 skipped**; Ruff PASS.
+- Acceptance closeout run: `29434310476` / #85 on `b98de5c4...` — pytest and Ruff jobs PASS.
+- Final merge decision must use the latest PR checks after `main@89e6997488de...` became the base.
 
 ### Failure retained for traceability
 
@@ -144,8 +145,8 @@ Result: PASS. Standard CLI fallback executed; `Test-Path fallback-should-not-exi
 - Windows Terminal: `1.24.11321.0`
 - Python: `3.12.8`
 - Textual: `7.5.0`
-- Provider: local `.env` configuration
+- Provider: local `.env` configuration; no secret values recorded.
 
 ## Pass/fail
 
-PASS. Tests A–E succeeded. The branch and PR may proceed to Ready-for-Review and merge.
+PASS. Tests A–E succeeded. Merge only when the latest PR merge-ref CI against the updated `main` is green.
