@@ -55,33 +55,30 @@ def run_tui(
 
     from .app import PaperClawApp
 
-    repository = None
+    session_runtime = None
     try:
-        session_commands = None
         if database is not None:
-            from paperclaw.context.repository import SQLiteRepository
-            from paperclaw.context.session_picker import SafeSessionPicker
+            from paperclaw.session_commands import open_persistent_session_runtime
 
-            from .commands import SessionCommandAPI
-
-            repository = SQLiteRepository(database, migrate=True)
-            session_commands = SessionCommandAPI(SafeSessionPicker(database))
+            session_runtime = open_persistent_session_runtime(database)
 
         app = PaperClawApp(
             engine_factory=_build_engine_factory(
                 workspace=workspace,
                 enable_verification_gate=enable_verification_gate,
-                repository=repository,
+                session_runtime=session_runtime,
             ),
             limits=limits,
             initial_task=initial_task,
-            session_commands=session_commands,
+            session_commands=(
+                session_runtime.commands if session_runtime is not None else None
+            ),
         )
         result = app.run()
         return int(result or 0)
     finally:
-        if repository is not None:
-            repository.close()
+        if session_runtime is not None:
+            session_runtime.close()
 
 
 def _unavailable_reason(*, no_tui: bool, stdin: TextIO, stdout: TextIO) -> str | None:
@@ -105,7 +102,7 @@ def _build_engine_factory(
     *,
     workspace: Path,
     enable_verification_gate: bool,
-    repository=None,
+    session_runtime=None,
 ):
     """Build one conversation-scoped engine for `/new` or safe reopen."""
 
@@ -120,13 +117,21 @@ def _build_engine_factory(
         from paperclaw.harness import AgentRuntimeExecutor, QueryEngine
         from paperclaw.models.adapters import OpenAICompatibleModel
 
-        executor = AgentRuntimeExecutor(
-            OpenAICompatibleModel.from_env(),
-            resolved_workspace,
-            enable_verification_gate=enable_verification_gate,
-            repository=repository,
-            legacy_event_handler=bridge.handle_legacy_event,
-        )
+        model = OpenAICompatibleModel.from_env()
+        if session_runtime is None:
+            executor = AgentRuntimeExecutor(
+                model,
+                resolved_workspace,
+                enable_verification_gate=enable_verification_gate,
+                legacy_event_handler=bridge.handle_legacy_event,
+            )
+        else:
+            executor = session_runtime.create_executor(
+                model,
+                resolved_workspace,
+                enable_verification_gate=enable_verification_gate,
+                legacy_event_handler=bridge.handle_legacy_event,
+            )
         return QueryEngine(
             executor,
             conversation_id=conversation_id or f"tui-{uuid4().hex[:12]}",
