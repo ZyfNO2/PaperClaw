@@ -172,7 +172,7 @@ def main() -> int:
             limits=RunLimits(
                 max_steps=3,
                 max_model_calls=2,
-                max_tool_calls=0,
+                max_tool_calls=1,
             ),
         )
 
