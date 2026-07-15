@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Callable
 
 from paperclaw.agent.flow import AgentRuntime, default_registry
@@ -48,6 +49,25 @@ class _Usage:
     tool_calls: int = 0
 
 
+def _safe_model_metadata(model: ChatModel) -> dict[str, str]:
+    """Return non-secret model identity without inspecting request content."""
+
+    provider = getattr(model, "provider", None)
+    model_name = getattr(model, "model", None)
+    return {
+        "provider": (
+            provider.strip()
+            if isinstance(provider, str) and provider.strip()
+            else "unknown"
+        ),
+        "model": (
+            model_name.strip()
+            if isinstance(model_name, str) and model_name.strip()
+            else type(model).__name__
+        ),
+    }
+
+
 class _BudgetedModel:
     def __init__(
         self,
@@ -60,6 +80,7 @@ class _BudgetedModel:
         self._usage = usage
         self._emit = emit
         self._stop_token = stop_token
+        self._metadata = _safe_model_metadata(model)
 
     def complete(self, prompt: str) -> ModelTurn:
         if self._stop_token.is_cancelled:
@@ -68,6 +89,7 @@ class _BudgetedModel:
             self._emit(
                 "model.failed",
                 {
+                    **self._metadata,
                     "error_code": "MODEL_BUDGET_EXHAUSTED",
                     "limit": self._usage.limits.max_model_calls,
                 },
@@ -76,14 +98,21 @@ class _BudgetedModel:
 
         self._usage.model_calls += 1
         call_index = self._usage.model_calls
-        self._emit("model.started", {"call_index": call_index})
+        started_at = perf_counter()
+        self._emit(
+            "model.started",
+            {**self._metadata, "call_index": call_index},
+        )
         try:
             turn = self._model.complete(prompt)
         except Exception as exc:
+            duration_ms = max(0, round((perf_counter() - started_at) * 1000))
             self._emit(
                 "model.failed",
                 {
+                    **self._metadata,
                     "call_index": call_index,
+                    "duration_ms": duration_ms,
                     "error_code": "MODEL_CALL_FAILED",
                     "error_type": type(exc).__name__,
                     "error_message": str(exc)[:500],
@@ -96,7 +125,15 @@ class _BudgetedModel:
             if self._stop_token.is_cancelled:
                 raise RunStopped(self._stop_token.reason or "cancelled") from exc
             raise
-        self._emit("model.completed", {"call_index": call_index})
+        duration_ms = max(0, round((perf_counter() - started_at) * 1000))
+        self._emit(
+            "model.completed",
+            {
+                **self._metadata,
+                "call_index": call_index,
+                "duration_ms": duration_ms,
+            },
+        )
         return turn
 
 
