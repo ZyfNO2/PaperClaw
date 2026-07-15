@@ -12,9 +12,9 @@ PR #2 is merged. Draft PR #4 closes the missing Tool `execute()` cancellation-ra
 |---|---|---|---|
 | Original final source-head regression | `d5d43e3cd74e80d35190e16253446f37841a4b2e` | GitHub Actions Windows run #45 | 382 call-phase tests passed |
 | Original source-head static lint | `d5d43e3...` | Ubuntu Ruff E9/F63/F7/F82 | PASS |
-| Repair focused + full regression | `8e27bdcf908c9fbc81a726cd1dfb9fa82c13eb82` | GitHub Actions Windows run `29417443436` / #71 | 383 passed, 0 failed, 0 skipped |
-| Repair static lint | `8e27bdcf...` | Ruff high-signal checks | PASS |
-| Repair artifact | `8e27bdcf...` | `pytest-results-29417443436` | available |
+| Repair focused + full regression | `9b339c78aaef65b16681204bc6c1b8ead457d8f9` | GitHub Actions Windows run `29429703200` / #83 | 388 passed, 0 failed, 0 skipped |
+| Repair static lint | `9b339c78...` | Ruff high-signal checks | PASS |
+| Repair artifact | `9b339c78...` | `pytest-results-29429703200` | available |
 
 ## Focused coverage
 
@@ -31,11 +31,13 @@ PR #2 is merged. Draft PR #4 closes the missing Tool `execute()` cancellation-ra
 - architecture import boundary;
 - Provider exception-after-stop translation;
 - Tool `execute()` exception-after-stop translation;
+- BashTool cooperative stop-token polling with best-effort process-tree termination;
+- CLI Doctor quick/full JSON output and database immutability;
 - unrelated runtime failure after stop remains `runtime_failed`.
 
 ## Repair regression contract
 
-The deterministic Tool fixture passed as part of run #71 and proves:
+The deterministic Tool fixture passed as part of run #83 and proves:
 
 ```text
 tool.started

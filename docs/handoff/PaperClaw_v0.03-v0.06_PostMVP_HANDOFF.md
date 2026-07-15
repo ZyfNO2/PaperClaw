@@ -16,9 +16,9 @@ PR #2 已合并到 `main`，但合并不等于 v0.06 acceptance GO。Draft PR #4
 - Main integration commit：`3804f72bbf0217c904c01dfabbcd046e3d930ca8`
 - Repair branch：`fix/v0.06-acceptance-cancel-race`
 - Repair PR：Draft PR #4
-- Repair implementation/test HEAD：`8e27bdcf908c9fbc81a726cd1dfb9fa82c13eb82`
-- Repair CI：run `29417443436` / #71 — SUCCESS
-- Windows pytest：383 passed，0 failed，0 skipped
+- Repair implementation/test HEAD：`9b339c78aaef65b16681204bc6c1b8ead457d8f9`
+- Repair CI：run `29429703200` / #83 — SUCCESS
+- Windows pytest：388 passed，0 failed，0 skipped
 - Ruff：PASS
 
 ## 已完成内容
@@ -55,7 +55,7 @@ tool.started
 → exactly one run.stopped
 ```
 
-该修复不改变以下规则：AgentRuntime、Session、Repository、SQLite 或 persistence fault 仍保持 `runtime_failed`。
+该修复不改变以下规则：AgentRuntime、Session、Repository、SQLite 或 persistence fault 仍保持 `runtime_failed`。`BashTool` 现在会轮询 `ToolContext.stop_token` 并在取消时 best-effort 终止 PowerShell 进程树，但这不改变 provider call 与一般 Tool 的 cooperative 语义。
 
 ## 自动化证据
 
@@ -68,11 +68,11 @@ tool.started
 
 ### Draft PR #4
 
-- SHA：`8e27bdcf908c9fbc81a726cd1dfb9fa82c13eb82`；
-- GitHub Actions：run `29417443436` / #71；
-- Windows pytest：383 passed，0 failed，0 skipped；
+- SHA：`9b339c78aaef65b16681204bc6c1b8ead457d8f9`；
+- GitHub Actions：run `29429703200` / #83；
+- Windows pytest：388 passed，0 failed，0 skipped；
 - Ruff：PASS；
-- artifact：`pytest-results-29417443436`。
+- artifact：`pytest-results-29429703200`。
 
 ## 真实验收状态
 

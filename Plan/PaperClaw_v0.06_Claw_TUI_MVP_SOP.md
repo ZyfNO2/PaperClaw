@@ -6,8 +6,8 @@
 > Main integration：`3804f72bbf0217c904c01dfabbcd046e3d930ca8`
 > Repair branch：`fix/v0.06-acceptance-cancel-race`
 > Repair PR：Draft PR #4
-> Repair implementation/test HEAD：`8e27bdcf908c9fbc81a726cd1dfb9fa82c13eb82`
-> Repair CI：run `29417443436` / #71 — SUCCESS
+> Repair implementation/test HEAD：`9b339c78aaef65b16681204bc6c1b8ead457d8f9`
+> Repair CI：run `29429703200` / #83 — SUCCESS
 > 前置：v0.05 QueryEngine MVP
 
 ## 1. 当前结论
@@ -17,8 +17,9 @@ v0.06 已作为同步 `QueryEngine` 的可选 Textual 薄客户端实现。PR #2
 ```text
 Implementation: DONE
 Original source-head Windows CI: PASS
-Repair PR Windows CI: PASS — 383 passed
+Repair PR Windows CI: PASS — 388 passed
 Physical wide terminal/task/Inspector: PASS with historical evidence
+BashTool stop-token contract: documented
 Physical narrow resize: PENDING
 Physical post-fix TUI cancel: PENDING
 Safe real/sanitized DB Doctor: PENDING
@@ -45,6 +46,7 @@ Overall: WAITING REAL TERMINAL ACCEPTANCE
 - [x] hidden reasoning 不进入 TUI；
 - [x] TUI 架构边界静态测试；
 - [x] Provider、Tool validate 和 Tool execute adapter 取消竞态边界；
+- [x] BashTool 携带 stop_token，执行期轮询并在取消时 best-effort 终止 PowerShell 进程树；
 - [x] 非 adapter runtime/session/persistence fault 保持 `runtime_failed`。
 
 ### 明确不在 v0.06 MVP
@@ -56,7 +58,8 @@ Overall: WAITING REAL TERMINAL ACCEPTANCE
 - Context、Trace、Cost 独立面板；
 - MultiAgent DAG / Worker 面板；
 - Web API / Web UI；
-- 强制终止同步 provider call 或进程树。
+- 强制中断同步 provider call；
+- 对任意 Tool 的强制进程树终止（BashTool 除外，其已实现 best-effort 轮询终止）。
 
 ## 3. 架构边界
 
@@ -80,9 +83,10 @@ TUIEventBridge → EventReducer → widgets
 1. `Textual` 保持 optional dependency；
 2. TUI 不执行 Tool、不访问 SQLite、不拼 Prompt；
 3. raw verification `checks` / `observed` 在 Bridge 边界删除；
-4. `/cancel` 只调用 `QueryEngine.request_stop()`，不承诺强制中断；
+4. `/cancel` 只调用 `QueryEngine.request_stop()`，不承诺强制中断同步 provider call 或任意 Tool；
 5. 只有已在执行的 adapter call 可在 stop 后异常时转为 cooperative stop；
-6. unrelated AgentRuntime/Session/Repository/persistence fault 不得被 stop token 隐藏。
+6. `BashTool` 例外：它通过 `ToolContext.stop_token` 轮询，取消时 best-effort 终止 PowerShell 进程树，但仍属 best-effort，不保证所有子进程都被清理；
+7. unrelated AgentRuntime/Session/Repository/persistence fault 不得被 stop token 隐藏。
 
 ## 4. 取消竞态契约
 
@@ -120,19 +124,19 @@ TUIEventBridge → EventReducer → widgets
 | M06-10 | architecture boundary | PASS | AST import-boundary test |
 | M06-11A | wide terminal | PASS, historical physical | `windows_terminal_wide.png` |
 | M06-11B | narrow terminal below 80 cols | PENDING MANUAL | physical screenshot required |
-| M06-12 | CLI regression | PASS | repair run #71, 383 passed |
+| M06-12 | CLI regression | PASS | repair run #83, 388 passed |
 | M06-13 | safe real/sanitized DB Doctor | PENDING MANUAL | quick/full redacted JSON |
 
 ## 6. 测试证据
 
 ### Repair PR #4
 
-- implementation/test HEAD：`8e27bdcf908c9fbc81a726cd1dfb9fa82c13eb82`；
-- GitHub Actions：run `29417443436` / #71；
-- Windows pytest：383 passed，0 failed，0 skipped；
+- implementation/test HEAD：`9b339c78aaef65b16681204bc6c1b8ead457d8f9`；
+- GitHub Actions：run `29429703200` / #83；
+- Windows pytest：388 passed，0 failed，0 skipped；
 - Ruff high-signal gate：PASS；
-- artifact：`pytest-results-29417443436`；
-- 新增 Tool execute race fixture 已进入全量回归。
+- artifact：`pytest-results-29429703200`；
+- 新增 Tool execute race、TUI headless cancel、BashTool stop-token、CLI Doctor fixture 已进入全量回归。
 
 ### Historical evidence
 

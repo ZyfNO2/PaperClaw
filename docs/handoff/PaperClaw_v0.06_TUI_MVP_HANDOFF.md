@@ -19,11 +19,11 @@ PR #2 has been merged into `main`, but merge state is not acceptance GO. The imp
 - Main integration commit: `3804f72bbf0217c904c01dfabbcd046e3d930ca8`
 - Repair branch: `fix/v0.06-acceptance-cancel-race`
 - Repair PR: Draft PR #4
-- Repair implementation/test HEAD: `8e27bdcf908c9fbc81a726cd1dfb9fa82c13eb82`
-- Repair CI: run `29417443436` / #71 — SUCCESS
-- Windows pytest: 383 passed, 0 failed, 0 skipped
+- Repair implementation/test HEAD: `9b339c78aaef65b16681204bc6c1b8ead457d8f9`
+- Repair CI: run `29429703200` / #83 — SUCCESS
+- Windows pytest: 388 passed, 0 failed, 0 skipped
 - Ruff high-signal checks: PASS
-- Artifact: `pytest-results-29417443436`
+- Artifact: `pytest-results-29429703200`
 
 The historical source branch `feat/v0.06-tui-mvp` is not the current acceptance authority. Use `main` plus Draft PR #4.
 
@@ -42,13 +42,15 @@ The historical source branch `feat/v0.06-tui-mvp` is not the current acceptance 
 
 ## Cancellation ownership
 
-Cancellation remains cooperative. It does not forcibly interrupt a synchronous provider call, shell process or process tree.
+`/cancel` remains cooperative at the QueryEngine/adapter level. It does not forcibly interrupt a synchronous provider call or an arbitrary Tool.
 
 Only adapter calls already in flight may translate a post-stop exception into cooperative control flow:
 
 - provider `complete()`;
 - Tool `validate()` for non-validation runtime exceptions;
 - Tool `execute()`.
+
+`BashTool` is a special case: it now polls `ToolContext.stop_token` every 200ms while a PowerShell subprocess is running. If cancellation is detected, it makes a best-effort attempt to terminate the process tree via `taskkill /T /F`, falling back to `process.kill()`. This is cooperative polling plus best-effort subprocess cleanup; it does not make the underlying provider call forcibly interruptible and does not generalize to all Tools.
 
 The original sanitized failure event is emitted before translation. Unrelated AgentRuntime, Session, Repository and persistence exceptions remain `runtime_failed`, even when a stop token was accepted concurrently.
 
@@ -57,10 +59,10 @@ The original sanitized failure event is emitted before translation. Unrelated Ag
 | Gate | Status | Code provenance | Evidence / boundary |
 |---|---|---|---|
 | Original PR #2 source-head Windows CI | PASS | `d5d43e3...` | run #45; 382 call-phase tests passed; Ruff passed |
-| Repair PR Windows CI | PASS | `8e27bdcf...` | run #71; 383 passed; Ruff passed |
+| Repair PR Windows CI | PASS | `9b339c78...` | run #83; 388 passed; Ruff passed |
 | Provider exception-after-stop race | PASS | PR #2 source | deterministic adapter test |
-| Tool `execute()` exception-after-stop race | PASS | `8e27bdcf...` | deterministic blocking Tool fixture in run #71 |
-| Unrelated runtime failure after stop | PASS | `8e27bdcf...` | remains `runtime_failed` |
+| Tool `execute()` exception-after-stop race | PASS | `9b339c78...` | deterministic blocking Tool fixture in run #83 |
+| Unrelated runtime failure after stop | PASS | `9b339c78...` | remains `runtime_failed` |
 | Windows Terminal wide launch | PASS, historical physical | original evidence reports `0ef5b0b...` | `windows_terminal_wide.png` |
 | Physical live create/run/verify task | PASS, historical | original acceptance record | does not prove post-repair cancel |
 | Verification Inspector readability | PASS, historical | original acceptance record | aggregate visible; raw observed output absent |

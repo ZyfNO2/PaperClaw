@@ -4,20 +4,20 @@
 > 原始物理证据记录 HEAD：`0ef5b0b337cd2166598cca9996b02bed584cc7c5`
 > PR #2 source HEAD：`d5d43e3cd74e80d35190e16253446f37841a4b2e`
 > Main integration：`3804f72bbf0217c904c01dfabbcd046e3d930ca8`
-> Repair implementation/test HEAD：`8e27bdcf908c9fbc81a726cd1dfb9fa82c13eb82`
-> Repair CI：run `29417443436` / #71 — 383 passed，Ruff PASS
+> Repair implementation/test HEAD：`9b339c78aaef65b16681204bc6c1b8ead457d8f9`
+> Repair CI：run `29429703200` / #83 — 388 passed，Ruff PASS
 > Repair branch：`fix/v0.06-acceptance-cancel-race`
 > Repair PR：Draft PR #4
 
 ## 结论
 
-PR #2 已合并，Draft PR #4 自动化修复验证已通过，但本记录仍判定 v0.06 为：
+PR #2 已合并，Draft PR #4 自动化修复验证已通过（388 tests / run #83），文档与 HEAD 已同步，BashTool 取消契约已修正。但本记录仍判定 v0.06 为：
 
 ```text
 WAITING REAL TERMINAL ACCEPTANCE
 ```
 
-合并与 CI 均不等于真实验收 GO。原始宽屏证据、backend E2E 和 fixture Doctor smoke 可以保留，但必须按被测代码来源区分。
+合并与 CI 均不等于真实验收 GO。原始宽屏证据、backend E2E 和 fixture Doctor smoke 可以保留，但必须按被测代码来源区分。剩余三项物理/数据 Gate 关闭前不得标记 GO。
 
 ## Evidence matrix
 
@@ -28,8 +28,8 @@ WAITING REAL TERMINAL ACCEPTANCE
 | Live Provider create/run/verify | PASS, historical backend | QueryEngine E2E；不是修复后物理 TUI cancel |
 | Live Provider normal safe-boundary cancel | PASS, historical backend | 不复现原物理 `runtime_failed` signature |
 | Provider exception-after-stop deterministic race | PASS | PR #2 source 单测 |
-| Tool `execute()` exception-after-stop deterministic race | PASS | `8e27bdcf...`，run #71 |
-| Unrelated runtime fault after stop | PASS | `8e27bdcf...`，仍为 `runtime_failed` |
+| Tool `execute()` exception-after-stop deterministic race | PASS | `9b339c78...`，run #83 |
+| Unrelated runtime fault after stop | PASS | `9b339c78...`，仍为 `runtime_failed` |
 | Windows Terminal wide full-screen | PASS, historical physical | `windows_terminal_wide.png`；原始记录 HEAD `0ef5...` |
 | Physical live task + Inspector readability | PASS, historical physical | 宽屏截图；不证明 post-fix physical cancel |
 | Windows Terminal narrow resize | PENDING MANUAL | 需小于 80 列实机截图 |
@@ -107,7 +107,7 @@ terminal_event=run.stopped
 
 ## Cancellation correction
 
-Draft PR #4 已通过 run #71，新增确定性 Tool `execute()` race：
+Draft PR #4 已通过 run #83，新增确定性 Tool `execute()` race 与 TUI/Bash/Doctor 自动化覆盖：
 
 ```text
 tool.started
@@ -119,7 +119,17 @@ tool.started
 → exactly one run.stopped
 ```
 
-全量 Windows 回归结果：383 passed，0 failed，0 skipped；Ruff PASS。非 adapter AgentRuntime、Session、Repository 或 persistence fault 仍保持 `runtime_failed`。
+全量 Windows 回归结果：388 passed，0 failed，0 skipped；Ruff PASS。非 adapter AgentRuntime、Session、Repository 或 persistence fault 仍保持 `runtime_failed`。
+
+## BashTool 取消契约修正
+
+`BashTool.execute()` 现在携带 `ToolContext.stop_token`，在长时间 PowerShell 调用中每 200ms 检查取消状态；一旦检测到 stop，会 best-effort 调用 `taskkill /T /F` 终止进程树，失败才 fallback 到 `process.kill()`。因此：
+
+- Provider call：仍不能强制中断；
+- 一般 Tool：仅 cooperative adapter translation；
+- BashTool：已改为 cooperative polling + best-effort 进程树终止。
+
+这与 Handoff 原文“cancellation does not forcibly interrupt a synchronous provider call, shell process or process tree”存在语义差异，已同步修正相关文档。
 
 ## 剩余人工 Gate
 
