@@ -70,8 +70,10 @@ def test_sqlite_trace_export_round_trip(tmp_path: Path) -> None:
     assert [event.event_type for event in loaded] == [
         "model.started",
         "model.completed",
-        "flow.stopped",
+        "run.completed",
     ]
     assert [event.sequence for event in loaded] == [1, 2, 3]
+    assert loaded[-1].status == "completed"
+    assert loaded[-1].payload["source_event_type"] == "flow.stopped"
     assert secret not in output.read_text(encoding="utf-8")
     assert loaded[0].payload["authorization"] == "<REDACTED>"
