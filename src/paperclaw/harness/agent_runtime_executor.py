@@ -177,8 +177,13 @@ class _BudgetedTool:
         arguments: dict[str, Any],
         context: ToolContext,
     ) -> ToolResult:
+        tool_context = ToolContext(
+            workspace=context.workspace,
+            output_limit=context.output_limit,
+            stop_token=self._stop_token,
+        )
         try:
-            result = self._tool.execute(arguments, context)
+            result = self._tool.execute(arguments, tool_context)
         except Exception as exc:
             self._emit(
                 "tool.failed",
