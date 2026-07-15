@@ -88,6 +88,7 @@ class OpenAICompatibleModel:
     def complete(self, prompt: str) -> ModelTurn:
         last_error: ProviderError | None = None
         for attempt in range(1, self.retry_policy.max_attempts + 1):
+            headers: dict[str, str] = {}
             try:
                 data, headers = self._request_once(prompt)
                 normalized = normalize_provider_response(data, headers=headers)
@@ -106,9 +107,7 @@ class OpenAICompatibleModel:
                     metadata=metadata,
                 )
             except ProviderError as exc:
-                request_id = exc.request_id
-                if request_id is None and "headers" in locals():
-                    request_id = extract_request_id(headers)
+                request_id = exc.request_id or extract_request_id(headers)
                 last_error = ProviderError(
                     str(exc),
                     code=exc.code,
