@@ -36,6 +36,26 @@ class _Reader:
         yield from self.get_run_trace(run_id, **kwargs)
 
 
+class _SensitiveReader(_Reader):
+    def get_run_trace(self, run_id: str, **_kwargs):
+        event = super().get_run_trace(run_id)[0]
+        return (
+            TraceEvent(
+                **{
+                    **event.to_dict(),
+                    "payload": {
+                        "prompt": "private paper prompt",
+                        "reasoning": "hidden reasoning chain",
+                        "tool_output": "private tool output",
+                        "file_content": "private file body",
+                        "stdout": "private stdout",
+                        "stderr": "private stderr",
+                    },
+                }
+            ),
+        )
+
+
 class _Response:
     status = 202
 
@@ -101,6 +121,35 @@ def test_http_exporter_posts_bounded_redacted_envelope() -> None:
     assert summary.status_code == 202
     assert summary.request_id == "collector-request"
     assert summary.endpoint_host == "collector.example"
+
+
+def test_http_exporter_summarizes_sensitive_full_text() -> None:
+    captured = {}
+
+    def urlopen(request, *, timeout):
+        captured["payload"] = request.data.decode("utf-8")
+        return _Response()
+
+    exporter = HttpTraceExporter(
+        "https://collector.example/v1/traces",
+        policy=ExternalExportPolicy(
+            enabled=True, allowed_hosts=("collector.example",)
+        ),
+        urlopen=urlopen,
+    )
+    exporter.export_run(_SensitiveReader(), "run-export")
+    payload = captured["payload"]
+    for sensitive in (
+        "private paper",
+        "hidden reasoning",
+        "private tool",
+        "private file",
+        "private stdout",
+        "private stderr",
+    ):
+        assert sensitive not in payload
+    event_payload = json.loads(payload)["events"][0]["payload"]
+    assert all(value["redacted"] is True for value in event_payload.values())
 
 
 def test_http_exporter_is_disabled_by_default() -> None:

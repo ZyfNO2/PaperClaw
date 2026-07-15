@@ -37,6 +37,12 @@ def test_sqlite_trace_export_round_trip(tmp_path: Path) -> None:
                 "provider": "mistral",
                 "model": "mistral-test",
                 "authorization": f"Bearer {secret}",
+                "prompt": "private paper prompt",
+                "reasoning": "hidden reasoning chain",
+                "tool_output": "private tool output",
+                "file_content": "private file body",
+                "stdout": "private stdout",
+                "stderr": "private stderr",
             },
         )
         session.emit(
@@ -77,3 +83,22 @@ def test_sqlite_trace_export_round_trip(tmp_path: Path) -> None:
     assert loaded[-1].payload["source_event_type"] == "flow.stopped"
     assert secret not in output.read_text(encoding="utf-8")
     assert loaded[0].payload["authorization"] == "<REDACTED>"
+    serialized = output.read_text(encoding="utf-8")
+    for sensitive in (
+        "private paper",
+        "hidden reasoning",
+        "private tool",
+        "private file",
+        "private stdout",
+        "private stderr",
+    ):
+        assert sensitive not in serialized
+    for key in (
+        "prompt",
+        "reasoning",
+        "tool_output",
+        "file_content",
+        "stdout",
+        "stderr",
+    ):
+        assert loaded[0].payload[key]["redacted"] is True

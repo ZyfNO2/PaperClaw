@@ -4,10 +4,15 @@
 
 - Offline implementation: **GO**
 - Windows CI: **PASS**
-- Mistral live acceptance: **BLOCKED_BY_EXECUTION_ENVIRONMENT**
-- PR stack: `#5` through `#11` (acceptance in progress)
+- OpenCode live Provider acceptance: **PASS** (`deepseek-v4-flash`)
+- Real-model Live Replay: **PASS** (no-tool, `file_write`, and PowerShell backend)
+- HTTPS loopback collector: **PASS**
+- PR stack: `#5` through `#11`, with final hardening in `#13`
 
-The live attempt failed during DNS name resolution before any HTTP response. This does not prove the key is valid or invalid.
+The supplied OpenCode-compatible configuration completed a real model call and
+persisted/exported a four-event durable Trace. The API key was absent from both
+SQLite and JSONL. Mistral-specific behavior remains outside this acceptance
+because the user selected the already configured OpenCode provider instead.
 
 ## Delivered
 

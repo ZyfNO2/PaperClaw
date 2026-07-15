@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from .contracts import TraceEvent, validate_trace
 from .reader import TraceReader
+from .redaction import TraceRedactor
 
 
 @dataclass(frozen=True)
@@ -55,9 +56,10 @@ def export_trace_jsonl(
         raise IsADirectoryError(f"trace output is a directory: {destination}")
 
     events = reader.get_run_trace(run_id, require_terminal=require_terminal)
+    redactor = TraceRedactor()
     lines = tuple(
         json.dumps(
-            event.to_dict(),
+            redactor.redact_payload(event.to_dict()),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),

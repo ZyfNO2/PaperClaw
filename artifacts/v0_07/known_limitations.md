@@ -1,8 +1,12 @@
 # PaperClaw v0.07 Trace Foundation — Known Limitations
 
-## 1. Live Mistral acceptance is not complete
+## 1. Mistral-specific acceptance is not complete
 
-The current execution environment cannot resolve the configured Mistral hostname. The key has not been validated and no live completion has passed. Use `scripts/run_v0_07_mistral_trace_smoke.py` in a network-enabled environment.
+Live Provider acceptance passed through the supplied OpenCode-compatible
+endpoint with `deepseek-v4-flash`. This proves the production adapter and Trace
+path, but not Mistral-specific response variants or rate-limit behavior. The
+smoke runner now accepts `PAPERCLAW_PROVIDER` so the same contract can be
+replayed against Mistral later without changing code.
 
 ## 2. Trace is a read-side projection, not a byte-for-byte archive
 
@@ -12,12 +16,12 @@ TraceEvent payloads are intentionally bounded and redacted. They are not suitabl
 
 `ModelTurn.reasoning` may be used transiently by existing runtime behavior, but v0.07 does not persist hidden provider reasoning in TraceEvent payloads.
 
-## 4. Provider reliability is implemented but not live-validated
+## 4. Provider reliability has partial live validation
 
 v0.07.1 normalizes request IDs, token usage, finish reasons, retry attempts and
-bounded Retry-After behavior. The offline HTTP/error matrix is covered, but a
-real Mistral 429, thinking-only response and retry sequence have not been
-observed because live provider connectivity remains blocked.
+bounded Retry-After behavior. A real OpenCode completion passed. Synthetic HTTP
+coverage exercises the error/retry matrix, but a naturally occurring 429,
+thinking-only response and retry sequence has not been observed.
 
 ## 5. Legacy terminal mapping is heuristic and versioned
 

@@ -33,9 +33,9 @@ class RetryPolicy:
         if (
             isinstance(self.max_attempts, bool)
             or not isinstance(self.max_attempts, int)
-            or self.max_attempts < 1
+            or not 1 <= self.max_attempts <= 10
         ):
-            raise ValueError("max_attempts must be a positive integer")
+            raise ValueError("max_attempts must be an integer in [1, 10]")
         for name, value in (
             ("base_delay_seconds", self.base_delay_seconds),
             ("max_delay_seconds", self.max_delay_seconds),

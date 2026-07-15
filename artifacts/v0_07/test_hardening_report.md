@@ -16,10 +16,25 @@ modules before merging them individually into `main`.
 - Inspector 10,000-event aggregation with bounded rendering;
 - Inspector suppression of prompt/reasoning/tool-output/header fields;
 - Live Replay source-database hash stability and target identity isolation.
+- projection, JSONL and HTTP exporter suppression of Prompt, reasoning, file
+  content, tool output, stdout and stderr full text;
+- a hard upper bound of 10 Provider attempts.
+
+## Local and live results
+
+- full local pytest: `465 passed, 5 skipped` before the final security patch;
+- post-patch focused security/reliability suite: `53 passed`;
+- CI-equivalent high-signal Ruff: PASS;
+- real OpenCode `deepseek-v4-flash` durable Trace smoke: PASS;
+- real-model Live Replay without tools: PASS;
+- real-model Live Replay with one isolated `file_write`: PASS;
+- real-model Live Replay with one safe PowerShell `Get-Location`: PASS;
+- missing mutating-tool authorization: correctly denied before target DB creation;
+- real HTTPS loopback collector POST: PASS (202, request ID, token absent).
 
 ## Acceptance boundary
 
-Automated local and GitHub CI results may establish `offline_validated` only.
-They do not establish live Mistral, real collector, real tool mutation, physical
-TUI or production-network acceptance. Those items are listed in
-`known_limitations.md` and must be completed separately.
+These results establish offline validation plus the listed OpenCode, loopback
+HTTPS, and isolated Live Replay gates. They do not establish Mistral-specific
+429/thinking-only behavior, a third-party production collector, or physical TUI
+user-experience acceptance. Those remain explicitly separate.

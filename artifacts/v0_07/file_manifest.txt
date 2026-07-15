@@ -34,4 +34,6 @@ artifacts/v0_07/test_report.md
 artifacts/v0_07/test_hardening_report.md
 artifacts/v0_07/known_limitations.md
 artifacts/v0_07/file_manifest.txt
+artifacts/v0_07/live_smoke/summary.json
+artifacts/v0_07/live_smoke/trace.jsonl
 docs/handoff/PaperClaw_v0.07_Trace_Foundation_MVP_HANDOFF.md

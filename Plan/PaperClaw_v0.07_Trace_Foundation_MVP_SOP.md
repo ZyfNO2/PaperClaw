@@ -1,7 +1,7 @@
 # PaperClaw v0.07：Durable Trace Foundation MVP SOP
 
 > 版本：v0.07
-> 状态：**MVP OFFLINE GO / MISTRAL LIVE BLOCKED / Draft PR #5**
+> 状态：**MVP OFFLINE GO / OPENCODE LIVE PASS / STACK ACCEPTANCE IN PR #13**
 > 基线：`main@725e8a81425efa987f59a6f66ce0021fe7978261`
 > 分支：`feat/v0.07-trace-foundation-mvp`
 > 原则：先冻结极小 Trace 合同，再让 Inspector、Replay、Eval 与外部 exporter 作为独立消费者演进。
@@ -177,7 +177,7 @@ CLI 必须：
 | T07-08 | provider metadata | PASS（离线显式 metadata fixture） |
 | T07-09 | secret boundary | PASS |
 | T07-10 | full regression | PASS：405 passed / Ruff PASS |
-| T07-11 | Mistral smoke | BLOCKED：DNS name resolution，未到 HTTP 层 |
+| T07-11 | live Provider smoke | PASS：OpenCode `deepseek-v4-flash`，4-event Trace、单 terminal、secret absence 与 round-trip 全通过 |
 
 ## 9. 后续插件路线
 
@@ -235,4 +235,4 @@ socket.gaierror
 [Errno -3] Temporary failure in name resolution
 ```
 
-因此最终状态是：**核心 MVP 离线验收通过；真实 Provider 验收被当前执行环境 DNS 阻塞；key 有效性未验证。**
+后续联合验收已使用用户选定的 OpenCode 配置完成真实 Provider 调用。因此当前状态是：**核心 MVP 离线验收通过；OpenCode live Provider 验收通过；Mistral-specific 行为仍未验证。**

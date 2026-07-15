@@ -48,6 +48,8 @@ def test_provider_http_error_matrix(
         {"max_attempts": 0},
         {"max_attempts": -1},
         {"max_attempts": True},
+        {"max_attempts": 11},
+        {"max_attempts": 100},
         {"max_attempts": 1.5},
         {"max_attempts": "2"},
         {"base_delay_seconds": -1},
