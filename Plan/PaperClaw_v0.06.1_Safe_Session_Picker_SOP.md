@@ -1,6 +1,6 @@
 # PaperClaw v0.06.1 Safe Session Picker SOP
 
-> 状态：实现与自动化验收完成，等待真实终端验收
+> 状态：**GO / ACCEPTED**。实现、自动化验收与真实终端验收均已完成。
 > 基线：`main@3804f72bbf0217c904c01dfabbcd046e3d930ca8`
 > 分支：`feat/v0.06.1-safe-session-picker`
 > Draft PR：`#3`

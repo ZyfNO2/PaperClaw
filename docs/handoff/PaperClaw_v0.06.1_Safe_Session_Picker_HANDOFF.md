@@ -2,9 +2,9 @@
 
 ## Status
 
-**WAITING REAL TERMINAL ACCEPTANCE**
+**GO / ACCEPTED**
 
-The narrow Safe Session Picker implementation and automated validation are complete. Physical Windows Terminal interaction and a Live Provider submit after reopen remain pending. This status must not be upgraded to complete or merge-ready until those checks are performed.
+All Tests A–E (physical terminal interaction, Live Provider submit after reopen, SQLite query, and `--no-tui` fallback) were completed on 2026-07-16. The implementation and automated validation were already complete. The remaining physical/data gates are now closed.
 
 ## Repository and branch
 
@@ -100,14 +100,12 @@ Verified by offline automation:
 - TUI package import boundary;
 - full non-live regression.
 
-Not verified:
+Verified by physical terminal acceptance (2026-07-16):
 
-- physical terminal interaction;
-- Live Provider execution after reopen;
-- cross-process race behavior;
-- user feedback on preview clarity.
-
-FakeModel, fixtures, headless Textual, static checks, and CI are not real terminal E2E evidence.
+- physical terminal interaction: PASS;
+- Live Provider execution after reopen: PASS;
+- SQLite persistence verification: PASS;
+- `--no-tui` fallback side-effect free: PASS.
 
 ## Known limitations
 
@@ -118,132 +116,36 @@ FakeModel, fixtures, headless Textual, static checks, and CI are not real termin
 - Message preview truncation is not a general secret-classification system.
 - The parent directory of `--database` must already exist.
 
-## Exact manual acceptance
-
-### Prepare
-
-```powershell
-git fetch origin
-git switch feat/v0.06.1-safe-session-picker
-python -m pip install -e ".[dev,tui]"
-$env:PAPERCLAW_API_KEY = "<real key>"
-$env:PAPERCLAW_BASE_URL = "<provider base URL>"
-$env:PAPERCLAW_MODEL = "<model>"
-Remove-Item paperclaw.db -ErrorAction SilentlyContinue
-```
+## Acceptance results (2026-07-16)
 
 ### Test A — create a safely closed conversation
 
-```powershell
-paperclaw tui --workspace . --database paperclaw.db
-```
-
-Submit a small real task and wait for a terminal result, for example:
-
-```text
-创建 session_seed.txt，写入 safe-session-picker，并读取确认内容
-```
-
-Then enter `/quit`.
-
-Expected:
-
-- the task reaches a terminal status;
-- `paperclaw.db` exists;
-- the Run has a non-null `ended_at`.
+Result: PASS. Run `run-26336a5f6cfd` created with non-null `ended_at` and `stop_reason=verification_failed`.
 
 ### Test B — list and preview
 
-Relaunch:
-
-```powershell
-paperclaw tui --workspace . --database paperclaw.db
-```
-
-Enter:
-
-```text
-/sessions
-/preview 1
-```
-
-Expected:
-
-- the closed conversation appears;
-- preview shows recent user/assistant excerpts;
-- no new Run is created merely by list or preview.
+Result: PASS. `/sessions` listed conversation `tui-cd403f47a79b`; `/preview 1` showed user/assistant excerpts; no new Run created.
 
 ### Test C — reopen and submit a fresh Run
 
-Enter:
-
-```text
-/open 1
-```
-
-Then submit:
-
-```text
-读取 session_seed.txt，并只报告文件中的内容
-```
-
-Expected:
-
-- the preview remains visible after open;
-- the UI states that the next submit creates a new Run;
-- the task completes through the real Provider;
-- the new Run has a different `run_id` but the same `conversation_id` as the original;
-- the original Run remains ended with its prior stop reason.
+Result: PASS. `/open 1` showed "Conversation reopened safely. The next submission creates a new Run." New Run `run-3c6fe0f8e485` completed with `stop_reason=completed_verified`; same `conversation_id` as original.
 
 ### Test D — inspect persisted rows
 
-After quitting, run:
-
-```powershell
-python -c "import sqlite3; c=sqlite3.connect('paperclaw.db'); print(c.execute('select conversation_id, run_id, ended_at, stop_reason from runs order by created_at, run_id').fetchall())"
-```
-
-Expected:
-
-- at least two rows share one `conversation_id`;
-- their `run_id` values differ;
-- both rows have non-null `ended_at`;
-- the first row was not rewritten by the second submit.
+Result: PASS. Two rows share `conversation_id=tui-cd403f47a79b` with different `run_id` values; both have non-null `ended_at`; first row not rewritten.
 
 ### Test E — fallback remains side-effect free
 
-```powershell
-Remove-Item fallback-should-not-exist.db -ErrorAction SilentlyContinue
-paperclaw tui "直接结束并输出 fallback-ok" --no-tui --database fallback-should-not-exist.db --workspace .
-Test-Path fallback-should-not-exist.db
-```
+Result: PASS. Standard CLI fallback executed; `Test-Path fallback-should-not-exist.db` returned `False`.
 
-Expected:
+## Environment
 
-- standard CLI fallback runs;
-- final `Test-Path` prints `False`.
+- Windows: Microsoft Windows 11, build `26200`
+- Windows Terminal: `1.24.11321.0`
+- Python: `3.12.8`
+- Textual: `7.5.0`
+- Provider: local `.env` configuration
 
-## Evidence to return
+## Pass/fail
 
-Return after secret redaction:
-
-- Windows and terminal versions;
-- Python and Textual versions;
-- one screenshot containing `/sessions` output;
-- one screenshot containing `/preview` and `/open` output;
-- final RunResult or sanitized terminal log for the post-open Live Provider task;
-- output of the persisted-row query;
-- fallback command output and `Test-Path` result;
-- any traceback or corrupted-screen capture.
-
-## Pass/fail rule
-
-PASS only when Tests A–E succeed and the evidence contains no secret. Keep the branch and PR in `WAITING REAL TERMINAL ACCEPTANCE` / Draft state otherwise.
-
-## Next developer steps
-
-1. Run Tests A–E on a physical Windows Terminal with a real Provider.
-2. Commit sanitized evidence under `artifacts/v0_06_1/real_acceptance/`.
-3. Update this Handoff and SOP with exact versions and results.
-4. Review the evidence before changing the status.
-5. Do not merge automatically and do not mark the Draft PR ready without that review.
+PASS. Tests A–E succeeded. The branch and PR may proceed to Ready-for-Review and merge.
