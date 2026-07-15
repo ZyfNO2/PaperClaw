@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 
 import pytest
 
@@ -141,3 +142,39 @@ def test_live_replay_creates_new_run_with_bounded_provenance(
     assert events[0].payload["prompt_sha256"] == plan.prompt_sha256
     assert events[0].payload["allowed_tools"] == []
     assert task not in str(events[0].payload)
+
+
+def test_live_replay_does_not_modify_source_database(tmp_path: Path) -> None:
+    source_path = tmp_path / "source.db"
+    source_repository = SQLiteRepository(source_path, migrate=True)
+    source_repository.close()
+    before = hashlib.sha256(source_path.read_bytes()).hexdigest()
+
+    plan = prepare_live_replay(
+        _Reader(),
+        "source-run",
+        "new isolated task",
+        policy=_policy(),
+    )
+    target_path = tmp_path / "target.db"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target_repository = SQLiteRepository(target_path, migrate=True)
+    try:
+        executor = LiveReplayAgentRuntimeExecutor(
+            FakeModel([done(result="ok")]),
+            workspace,
+            plan=plan,
+            registry=ToolRegistry([]),
+            repository=target_repository,
+            enable_verification_gate=False,
+        )
+        result = execute_live_replay(plan, executor)
+    finally:
+        target_repository.close()
+
+    after = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    assert after == before
+    assert target_path.exists()
+    assert result.run_result.run_id != plan.source_run_id
+    assert plan.conversation_id != "source-conversation"

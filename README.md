@@ -200,6 +200,17 @@ $env:PAPERCLAW_PROVIDER = "mistral"
 python scripts/run_v0_07_mistral_trace_smoke.py
 ```
 
+### v0.07.1-v0.07.6 可选消费层
+
+在 Trace Foundation 之上已实现独立、边界清晰的消费能力：Provider
+Reliability、只读 Inspector、无副作用 Recorded Replay、确定性 Eval、默认
+关闭的 HTTPS Exporter，以及显式双授权、写入独立目标数据库的 Live Replay。
+这些模块不引入通用 PluginManager，也不改变 `session_events` 作为唯一事实源。
+
+当前自动化验收覆盖 Provider 错误矩阵、破损 Trace、Eval 阈值、Exporter
+安全限制、大 Trace 展示边界及 Live Replay 源库不变性。真实 Mistral、真实
+collector 和真实工具执行仍需单独 Live 验收。
+
 ## 安装与测试
 
 安装核心与开发依赖：

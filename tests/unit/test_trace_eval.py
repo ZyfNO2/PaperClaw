@@ -95,3 +95,27 @@ def test_eval_scores_trace_and_applies_explicit_thresholds() -> None:
     assert metrics["provider_retries"].value == 1
     assert metrics["verification"].value == "not_recorded"
     assert metrics["total_tokens"].value == 15
+
+
+def test_eval_threshold_boundaries_are_inclusive() -> None:
+    events = (
+        _event(1, "run.started", component="harness", status="started"),
+        _event(2, "model.started", component="model", payload={"call_index": 1}),
+        _event(
+            3,
+            "model.completed",
+            component="model",
+            status="completed",
+            payload={"call_index": 1, "retry_count": 2},
+        ),
+        _event(4, "run.completed", component="harness", status="completed"),
+    )
+    at_limit = evaluate_trace(
+        _Reader(events), "run-eval", thresholds=EvalThresholds(max_retries=2)
+    )
+    below_limit = evaluate_trace(
+        _Reader(events), "run-eval", thresholds=EvalThresholds(max_retries=1)
+    )
+    assert at_limit.overall_passed is True
+    assert below_limit.overall_passed is False
+    assert below_limit.failed_checks == ("provider_retries",)

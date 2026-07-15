@@ -12,11 +12,12 @@ TraceEvent payloads are intentionally bounded and redacted. They are not suitabl
 
 `ModelTurn.reasoning` may be used transiently by existing runtime behavior, but v0.07 does not persist hidden provider reasoning in TraceEvent payloads.
 
-## 4. Provider usage fields are not normalized
+## 4. Provider reliability is implemented but not live-validated
 
-v0.07 records explicit provider/model identity and model-call duration. It does not yet normalize request IDs, token usage, finish reasons, retry attempts, rate-limit headers or cost.
-
-Those belong to the planned Provider Reliability plugin.
+v0.07.1 normalizes request IDs, token usage, finish reasons, retry attempts and
+bounded Retry-After behavior. The offline HTTP/error matrix is covered, but a
+real Mistral 429, thinking-only response and retry sequence have not been
+observed because live provider connectivity remains blocked.
 
 ## 5. Legacy terminal mapping is heuristic and versioned
 
@@ -34,14 +35,27 @@ A future lifecycle-recorder refactor should centralize QueryEngine event persist
 
 `span_id` and `parent_span_id` are optional contract fields. The MVP does not allocate spans, propagate trace context across agents/processes or integrate OpenTelemetry.
 
-## 8. Export is per Run
+## 8. Query and export remain per Run
 
-There is no cross-Run query language, aggregation, pagination API or retention policy. Eval and Inspector plugins should first consume the per-Run reader rather than expanding the core prematurely.
+There is no cross-Run query language, aggregation, pagination API or retention
+policy. Inspector and Eval consume one Run at a time.
 
-## 9. Replay and Eval are not implemented
+## 9. Replay and Eval scope is intentionally bounded
 
-Loading JSONL only validates data. It never executes a model, tool, patch, shell command or checkpoint. Recorded Replay, live re-execution and Eval remain separate later work.
+Recorded Replay validates recorded control-flow facts without side effects.
+Eval provides deterministic trace metrics and explicit thresholds, not an LLM
+judge. Guarded Live Replay creates a new Run from a new task and is disabled
+unless its confirmation and tool permissions are supplied. Real provider/tool
+execution, cancellation during replay and sandbox mutation still require live
+acceptance.
 
-## 10. Generic plugin management is intentionally absent
+## 10. External export has no real collector acceptance yet
+
+The HTTPS exporter is default-off, exact-host allowlisted, redirect-refusing
+and bounded by event/payload limits. Offline mocked success and failure paths
+are covered. A real collector, DNS rebinding behavior and production TLS/auth
+integration have not been validated.
+
+## 11. Generic plugin management is intentionally absent
 
 There is no plugin discovery, installation, permission, sandbox or version negotiation system. A formal Plugin SDK should be considered only after at least two independent real plugins demonstrate a shared contract need.

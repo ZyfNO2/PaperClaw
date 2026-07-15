@@ -30,7 +30,11 @@ class RetryPolicy:
     respect_retry_after: bool = True
 
     def __post_init__(self) -> None:
-        if isinstance(self.max_attempts, bool) or self.max_attempts < 1:
+        if (
+            isinstance(self.max_attempts, bool)
+            or not isinstance(self.max_attempts, int)
+            or self.max_attempts < 1
+        ):
             raise ValueError("max_attempts must be a positive integer")
         for name, value in (
             ("base_delay_seconds", self.base_delay_seconds),

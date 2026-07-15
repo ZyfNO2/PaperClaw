@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from email.message import Message
 import json
+from io import BytesIO
+import urllib.error
 
 import pytest
 
@@ -112,3 +114,82 @@ def test_http_exporter_is_disabled_by_default() -> None:
 
     with pytest.raises(ExternalExportError, match="disabled"):
         exporter.export_run(_Reader(), "run-export")
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://collector.example/traces",
+        "https://user:pass@collector.example/traces",
+        "https://collector.example/traces?secret=value",
+        "https://collector.example/traces#fragment",
+        "https://127.0.0.1/traces",
+        "https://10.0.0.1/traces",
+        "https://192.168.1.1/traces",
+    ],
+)
+def test_http_exporter_rejects_unsafe_endpoints(endpoint: str) -> None:
+    host = endpoint.split("//", 1)[-1].split("/", 1)[0].split("@")[-1]
+    with pytest.raises(ValueError):
+        HttpTraceExporter(
+            endpoint,
+            policy=ExternalExportPolicy(enabled=True, allowed_hosts=(host,)),
+        )
+
+
+@pytest.mark.parametrize("status", [400, 401, 429, 500])
+def test_http_exporter_sanitizes_collector_http_errors(status: int) -> None:
+    def urlopen(*_args, **_kwargs):
+        raise urllib.error.HTTPError(
+            "https://collector.example/traces",
+            status,
+            "secret response body",
+            Message(),
+            BytesIO(b"collector-secret"),
+        )
+
+    exporter = HttpTraceExporter(
+        "https://collector.example/traces",
+        policy=ExternalExportPolicy(
+            enabled=True, allowed_hosts=("collector.example",)
+        ),
+        bearer_token="export-secret",
+        urlopen=urlopen,
+    )
+    with pytest.raises(ExternalExportError, match=f"HTTP {status}") as caught:
+        exporter.export_run(_Reader(), "run-export")
+    assert "secret" not in str(caught.value)
+
+
+def test_http_exporter_enforces_event_and_payload_limits() -> None:
+    for policy, match in (
+        (
+            ExternalExportPolicy(
+                enabled=True,
+                allowed_hosts=("collector.example",),
+                max_events=1,
+            ),
+            "events",
+        ),
+        (
+            ExternalExportPolicy(
+                enabled=True,
+                allowed_hosts=("collector.example",),
+                max_payload_bytes=10,
+            ),
+            "payload",
+        ),
+    ):
+        reader = _Reader()
+        if match == "events":
+            original = reader.get_run_trace
+            reader.get_run_trace = lambda run_id, **kwargs: original(  # type: ignore[method-assign]
+                run_id, **kwargs
+            ) * 2
+        exporter = HttpTraceExporter(
+            "https://collector.example/traces",
+            policy=policy,
+            urlopen=lambda *_args, **_kwargs: pytest.fail("network must not run"),
+        )
+        with pytest.raises(ExternalExportError, match=match):
+            exporter.export_run(reader, "run-export")

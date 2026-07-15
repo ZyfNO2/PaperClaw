@@ -16,7 +16,6 @@ class _Reader:
     ) -> tuple[TraceEvent, ...]:
         assert run_id == "run-inspect"
         assert since_sequence == 0
-        assert require_terminal is True
         return self.events
 
     def iter_run_trace(self, *args, **kwargs):
@@ -117,3 +116,50 @@ def test_inspector_aggregates_full_trace_but_bounds_timeline() -> None:
     assert "retries: 1" in rendered
     assert "Tokens: input=10 output=4 total=14" in rendered
     assert "request_id=req-1" in rendered
+
+
+def test_inspector_handles_large_trace_without_truncating_aggregates() -> None:
+    events = tuple(
+        _event(
+            sequence,
+            "model.started" if sequence % 2 == 0 else "model.completed",
+            component="model",
+            duration_ms=1 if sequence % 2 else None,
+        )
+        for sequence in range(1, 10_001)
+    )
+    inspection = inspect_run_trace(
+        _Reader(events),
+        "run-inspect",
+        require_terminal=False,
+        max_events=25,
+    )
+    assert inspection.event_count == 10_000
+    assert len(inspection.timeline) == 25
+    assert inspection.model_calls == 5_000
+    assert inspection.model_duration_ms == 5_000
+
+
+def test_inspector_does_not_render_unapproved_payload_fields() -> None:
+    event = _event(
+        1,
+        "model.failed",
+        component="model",
+        status="failed",
+        payload={
+            "prompt": "private paper text",
+            "reasoning": "hidden chain",
+            "tool_output": "private file",
+            "authorization": "Bearer secret",
+            "provider_error_code": "RATE_LIMITED",
+        },
+    )
+    inspection = inspect_run_trace(
+        _Reader((event,)),
+        "run-inspect",
+        require_terminal=False,
+    )
+    rendered = render_inspection_text(inspection)
+    assert "RATE_LIMITED" in rendered
+    for secret in ("private paper", "hidden chain", "private file", "Bearer"):
+        assert secret not in rendered
