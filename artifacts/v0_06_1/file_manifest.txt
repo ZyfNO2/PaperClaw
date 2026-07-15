@@ -1,0 +1,30 @@
+PaperClaw v0.06.1 Safe Session Picker file manifest
+
+IMPLEMENTATION
+M  src/paperclaw/cli.py
+A  src/paperclaw/context/session_picker.py
+A  src/paperclaw/session_commands.py
+M  src/paperclaw/tui/app.py
+M  src/paperclaw/tui/runner.py
+
+TESTS
+A  tests/unit/test_session_picker.py
+M  tests/unit/test_tui_runner.py
+A  tests/unit/test_tui_session_picker.py
+
+PLANS AND USER DOCUMENTATION
+M  Plan/PaperClaw_v0.03-v0.06_PostMVP_Option_Audit.md
+A  Plan/PaperClaw_v0.06.1_Safe_Session_Picker_SOP.md
+M  README.md
+
+ARTIFACTS AND HANDOFF
+A  artifacts/v0_06_1/session_picker_contract.md
+A  artifacts/v0_06_1/known_limitations.md
+A  artifacts/v0_06_1/test_report.md
+A  artifacts/v0_06_1/file_manifest.txt
+A  docs/handoff/PaperClaw_v0.06.1_Safe_Session_Picker_HANDOFF.md
+
+DELETED DURING REFACTOR
+D  src/paperclaw/tui/commands.py
+   The command boundary was moved outside the TUI package to preserve the
+   existing no-Context/Repository/SQLite import contract.
