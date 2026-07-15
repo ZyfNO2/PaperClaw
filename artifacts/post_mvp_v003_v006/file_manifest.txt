@@ -1,6 +1,7 @@
 Plan/PaperClaw_v0.03-v0.06_PostMVP_Option_Audit.md
 artifacts/post_mvp_v003_v006/test_report.md
 artifacts/post_mvp_v003_v006/file_manifest.txt
+artifacts/v0_06/real_acceptance/acceptance_report.md
 docs/handoff/PaperClaw_v0.03-v0.06_PostMVP_HANDOFF.md
 src/paperclaw/context/health.py
 src/paperclaw/cli.py

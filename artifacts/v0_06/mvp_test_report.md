@@ -41,3 +41,12 @@ The full suite also covers QueryEngine terminal uniqueness, budget enforcement, 
 3. Complete one live create/run/verify task.
 4. Start a second task and issue `/cancel` during active work.
 5. Capture sanitized environment, screenshots, terminal output and final RunResult.
+
+## 2026-07-15 local acceptance supplement
+
+- SQLite Doctor quick/integrity checks: PASS, schema version 3.
+- Live Provider QueryEngine create/run/verify: `1 passed in 31.12s`.
+- Environment: Windows 11 build 26200, Windows Terminal 1.24.11321.0, Python 3.13.5, Textual 7.5.0.
+- Evidence: `artifacts/v0_06/real_acceptance/acceptance_report.md`.
+
+This closes the live backend and Doctor evidence gap. It does not close the physical Windows Terminal, live TUI `/cancel`, resize or Inspector readability gates.

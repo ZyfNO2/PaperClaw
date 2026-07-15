@@ -25,5 +25,6 @@ artifacts/v0_06/mvp_demo_trace.json
 artifacts/v0_06/tui_boundary.md
 artifacts/v0_06/known_limitations.md
 artifacts/v0_06/file_manifest.txt
+artifacts/v0_06/real_acceptance/acceptance_report.md
 docs/handoff/PaperClaw_v0.06_TUI_MVP_HANDOFF.md
 README.md

@@ -196,6 +196,14 @@ VERSION_HANDOFF_FILES: dict[str, list[str]] = {
         "known_limitations.md",
         "file_manifest.txt",
     ],
+    "v0.06": [
+        "implementation_summary.md",
+        "mvp_test_report.md",
+        "mvp_demo_trace.json",
+        "tui_boundary.md",
+        "known_limitations.md",
+        "file_manifest.txt",
+    ],
 }
 
 

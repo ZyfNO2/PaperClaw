@@ -2,9 +2,9 @@
 
 ## Status
 
-**WAITING REAL TEST**
+**WAITING REAL TERMINAL ACCEPTANCE**
 
-Implementation, focused offline validation and full automated CI are complete. Real Windows Terminal and live-provider interactive acceptance remain pending.
+Implementation, focused offline validation, full automated CI, SQLite Doctor and the live-provider QueryEngine path are complete. Physical Windows Terminal interaction, TUI resize, Inspector readability and live TUI cancellation remain pending.
 
 ## Repository and branch
 
@@ -59,6 +59,16 @@ Implementation, focused offline validation and full automated CI are complete. R
 - Windows full pytest: `376 passed`, `0 failed`, `0 skipped`.
 - Ruff E9/F63/F7/F82: PASS.
 - Real interactive E2E: not run.
+
+### Local acceptance supplement (2026-07-15)
+
+- Windows 11 build `26200`; Windows Terminal `1.24.11321.0`;
+- Python `3.13.5`; Textual `7.5.0`;
+- SQLite Doctor quick/integrity checks: PASS, schema version 3;
+- live-provider QueryEngine create/run/verify: `1 passed in 31.12s`;
+- sanitized evidence: `artifacts/v0_06/real_acceptance/acceptance_report.md`.
+
+The live-provider result is backend E2E evidence, not proof that the same task was entered and rendered inside a physical TUI.
 
 ## Known limitations
 
@@ -154,7 +164,7 @@ PASS only when Test A–D succeed and artifacts contain no secret. Otherwise kee
 
 ## Next developer steps
 
-1. Run the manual acceptance above.
+1. Run the remaining physical-terminal parts of the manual acceptance above (launch/resize, Inspector readability, TUI task and `/cancel`).
 2. Add sanitized evidence under `artifacts/v0_06/real_terminal/`.
 3. Update the SOP Gate M06-11 and real-task requirements.
 4. Change overall status to GO only after evidence review.

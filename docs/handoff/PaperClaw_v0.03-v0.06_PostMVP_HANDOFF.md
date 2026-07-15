@@ -2,7 +2,7 @@
 
 ## 状态
 
-**PARTIAL COMPLETE / WAITING REAL TEST**
+**PARTIAL COMPLETE / WAITING REAL TERMINAL ACCEPTANCE**
 
 26 个候选包或延期行已完成审计。两个可以在当前前置能力上独立落地的小切片已实现并通过自动化 CI；其余项目保持条件性或 backlog，没有伪造 Runtime 前置能力。
 
@@ -67,20 +67,21 @@
 - Ruff high-signal checks：PASS；
 - artifact：`pytest-results-29363818831`。
 
-## 未执行的真实测试
+## 真实验收补充（2026-07-15）
 
-### A. 真实数据库副本
+### A. SQLite Doctor — PASS
 
-准备一个非唯一生产副本或脱敏副本，然后执行：
+在 v0.04 migrated database 样本上执行 `quick_check` 与 `integrity_check`，两者均返回 `ok=true`、`messages=["ok"]`、schema version 3。检查使用只读连接，没有 migration、repair 或数据修改。
 
-```powershell
-paperclaw doctor --database path\to\copy.db
-paperclaw doctor --database path\to\copy.db --full
-```
+### B. Live Provider backend — PASS
 
-预期：JSON 中 `ok=true`、messages 仅含 `ok`、schema version 合理。失败时不要对原库运行自动修复；保留输出和数据库备份状态供人工判断。
+`test_real_llm_create_run_verify` 使用本地 Provider 配置通过：`1 passed in 31.12s`。已确认真实 model/tool 调用、文件创建、completed RunResult 和唯一 `run.completed` 终态。
 
-### B. Windows Terminal + Live Provider
+完整脱敏证据见 `artifacts/v0_06/real_acceptance/acceptance_report.md`。
+
+## 仍未执行的真实 UI 测试
+
+### Windows Terminal + Live Provider
 
 ```powershell
 python -m pip install -e ".[dev,tui]"
@@ -95,7 +96,7 @@ paperclaw tui --workspace .
 - 窄终端 resize 不 crash；
 - `/cancel` 仍只承诺 safe-boundary cooperative stop。
 
-请返回脱敏后的截图、终端日志、RunResult 和 `paperclaw doctor` JSON。
+请返回脱敏后的截图、终端日志和 TUI RunResult。Doctor JSON 与 backend live-provider 证据已经留档，无需重复执行。
 
 ## 已知限制
 

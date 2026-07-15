@@ -1,7 +1,7 @@
 # PaperClaw v0.06：Claw TUI MVP SOP
 
 > 版本：v0.06
-> 状态：**实现与离线 CI 已完成；等待真实 Windows Terminal / Live Provider 交互验收**
+> 状态：**实现、离线 CI 与 Live Provider 后端 E2E 已完成；等待真实 Windows Terminal 交互验收**
 > 更新：2026-07-15
 > 分支：`feat/v0.06-tui-mvp`
 > Draft PR：`#2`
@@ -18,8 +18,9 @@ Implementation: DONE
 Focused offline tests: PASS
 Full Windows CI: PASS
 Real Windows Terminal smoke: PENDING
-Live provider interactive task/cancel: PENDING
-Overall: WAITING REAL TEST
+Live provider QueryEngine E2E: PASS
+Live provider interactive TUI task/cancel: PENDING
+Overall: WAITING REAL TERMINAL ACCEPTANCE
 ```
 
 ## 2. MVP 用户故事
@@ -146,11 +147,13 @@ TUIEventBridge → EventReducer → widgets
 - GitHub Actions CI run：`29361795132`；
 - Windows pytest：`376 passed`，`0 failed`，`0 skipped`；
 - Ruff：PASS；
-- 真实终端与 Live Provider：未执行，不得描述为真实 E2E。
+- 2026-07-15 Live Provider QueryEngine create/run/verify：`1 passed in 31.12s`；
+- SQLite Doctor quick/integrity checks：PASS，schema version 3；
+- 真实 Windows Terminal、TUI resize、Inspector 可读性和 TUI 内 `/cancel`：未执行，不得描述为真实 UI E2E。
 
 ## 8. GO / NO-GO
 
-当前不是最终 GO，而是 `WAITING REAL TEST`。
+当前不是最终 GO，而是 `WAITING REAL TERMINAL ACCEPTANCE`。Live Provider 后端已通过，但不能替代物理 TUI 交互证据。
 
 转为 GO 的条件：
 
