@@ -50,9 +50,9 @@ from paperclaw.trace import (
 
 TASK = (
     "Do not call any tool. Finish directly with a done response whose result "
-    "contains exactly: PaperClaw v0.07 Mistral trace smoke OK."
+    "contains exactly: PaperClaw v0.07 Provider trace smoke OK."
 )
-EXPECTED_TEXT = "PaperClaw v0.07 Mistral trace smoke OK."
+EXPECTED_TEXT = "PaperClaw v0.07 Provider trace smoke OK."
 WORK_DIR = REPO_ROOT / "tmp" / "v0_07_mistral_trace_smoke"
 ARTIFACT_DIR = REPO_ROOT / "artifacts" / "v0_07" / "live_smoke"
 DATABASE = WORK_DIR / "paperclaw.db"
@@ -168,7 +168,7 @@ def main() -> int:
                 repository=repository,
                 enable_verification_gate=False,
             ),
-            conversation_id="v0-07-mistral-trace-smoke",
+            conversation_id=f"v0-07-{env['PAPERCLAW_PROVIDER']}-trace-smoke",
         ).submit(
             TASK,
             limits=RunLimits(
@@ -238,7 +238,7 @@ def main() -> int:
 
     summary = {
         "schema_version": 1,
-        "scenario": "v0.07-mistral-durable-trace-smoke",
+        "scenario": "v0.07-provider-durable-trace-smoke",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "provider": env["PAPERCLAW_PROVIDER"],
         "provider_host": host,

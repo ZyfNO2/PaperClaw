@@ -75,7 +75,10 @@ The command is read-only, does not migrate or create the database, requires a te
 
 ### Live runner
 
-`scripts/run_v0_07_mistral_trace_smoke.py` performs a real Mistral call when configured, persists the Run, exports/reloads JSONL and checks provider metadata, terminal integrity and key absence from SQLite/JSONL/summary.
+`scripts/run_v0_07_mistral_trace_smoke.py` retains its historical filename but
+now accepts `PAPERCLAW_PROVIDER`. It performs a real OpenAI-compatible call,
+persists the Run, exports/reloads JSONL and checks provider metadata, terminal
+integrity and key absence from SQLite/JSONL/summary.
 
 ## Follow-on slices implemented on the v0.07 contract
 
@@ -87,4 +90,7 @@ The command is read-only, does not migrate or create the database, requires a te
 - v0.07.6 explicitly authorized Live Replay into a separate target Run.
 
 These remain separate modules and do not introduce a generic PluginManager.
-Live Mistral, a real collector and real replay tool execution remain pending.
+OpenCode live Provider, HTTPS loopback collector, and real-model Live Replay
+without tools, with `file_write`, and with the PowerShell backend have passed.
+Mistral-specific response/rate-limit behavior and a third-party production
+collector remain pending.

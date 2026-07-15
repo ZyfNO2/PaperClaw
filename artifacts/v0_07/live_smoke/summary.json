@@ -11,7 +11,7 @@
     "terminal_is_completed": true,
     "trace_starts_with_run_started": true
   },
-  "database_sha256": "e199523e54a754264e500136ba223b7c9f735c0fd76daec1535070b6b1c8abf1",
+  "database_sha256": "ac2ce1ad8fd85035a872b7166a8485f476a91e0bb14b7d2d526d7d836324f56d",
   "event_count": 4,
   "event_types": [
     "run.started",
@@ -26,15 +26,15 @@
   "result": {
     "last_event_sequence": 4,
     "model_calls": 1,
-    "output": "PaperClaw v0.07 Mistral trace smoke OK",
-    "run_id": "run-32448884bb20",
+    "output": "PaperClaw v0.07 Provider trace smoke OK.",
+    "run_id": "run-9913f2a81842",
     "status": "completed",
     "stop_reason": "done",
     "tool_calls": 0
   },
-  "scenario": "v0.07-mistral-durable-trace-smoke",
+  "scenario": "v0.07-provider-durable-trace-smoke",
   "schema_version": 1,
   "timeout_seconds": 120.0,
-  "timestamp_utc": "2026-07-15T21:09:07.449343+00:00",
-  "trace_sha256": "1a34c878d38cb50a017b4dc0fa0149e558a0667be3a1b721f35cf9195c29c37c"
+  "timestamp_utc": "2026-07-15T21:16:49.207607+00:00",
+  "trace_sha256": "8542c992cbe3e546f69136262a9b429e8b0b495eba794d893fd8d8e3402cf80c"
 }
