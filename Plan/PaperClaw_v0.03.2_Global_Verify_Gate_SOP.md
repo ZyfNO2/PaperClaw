@@ -1,8 +1,10 @@
 # PaperClaw v0.03.2 Global Verify Gate SOP
 
-> 状态：实现完成，等待 Draft PR CI
+> 状态：实现完成；实现 HEAD Windows CI 与 Ruff 已通过；等待最终文档 HEAD CI
 > 基线：`main@725e8a81425efa987f59a6f66ce0021fe7978261`
 > 分支：`feat/v0.03.2-global-verify-gate`
+> Draft PR：`#14`
+> 实现验证：run `29450607810` / 403 passed / Ruff PASS
 > 冲突策略：不修改 `cli.py`、`tui/`、`trace/`、Provider、Replay、Eval 或 v0.07.x 文件。
 
 ## 1. 用户故事
@@ -54,8 +56,9 @@ failed/incomplete → effective BLOCKED
 - [x] claim 引用未知 task 时 fail closed；
 - [x] 团队未完成时跳过全局校验且不覆盖原 stop reason；
 - [x] 事件只包含计数、状态和 effective stop reason；
-- [ ] GitHub Actions Windows 全量 pytest；
-- [ ] Ruff high-signal gate。
+- [x] GitHub Actions Windows 全量 pytest：403 passed，0 failed，0 skipped；
+- [x] Ruff high-signal gate：PASS；
+- [ ] Handoff/SOP 最终文档 HEAD CI。
 
 ## 5. 接线方式
 
