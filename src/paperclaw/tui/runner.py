@@ -56,27 +56,27 @@ def run_tui(
     from .app import PaperClawApp
 
     repository = None
-    session_commands = None
-    if database is not None:
-        from paperclaw.context.repository import SQLiteRepository
-        from paperclaw.context.session_picker import SafeSessionPicker
-
-        from .commands import SessionCommandAPI
-
-        repository = SQLiteRepository(database, migrate=True)
-        session_commands = SessionCommandAPI(SafeSessionPicker(database))
-
-    app = PaperClawApp(
-        engine_factory=_build_engine_factory(
-            workspace=workspace,
-            enable_verification_gate=enable_verification_gate,
-            repository=repository,
-        ),
-        limits=limits,
-        initial_task=initial_task,
-        session_commands=session_commands,
-    )
     try:
+        session_commands = None
+        if database is not None:
+            from paperclaw.context.repository import SQLiteRepository
+            from paperclaw.context.session_picker import SafeSessionPicker
+
+            from .commands import SessionCommandAPI
+
+            repository = SQLiteRepository(database, migrate=True)
+            session_commands = SessionCommandAPI(SafeSessionPicker(database))
+
+        app = PaperClawApp(
+            engine_factory=_build_engine_factory(
+                workspace=workspace,
+                enable_verification_gate=enable_verification_gate,
+                repository=repository,
+            ),
+            limits=limits,
+            initial_task=initial_task,
+            session_commands=session_commands,
+        )
         result = app.run()
         return int(result or 0)
     finally:
