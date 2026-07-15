@@ -178,12 +178,13 @@ def test_headless_team_dashboard_projects_sanitized_state() -> None:
             assert app.query_one(TeamTimeline)
             assert app.query_one("#team-main").has_class("narrow")
 
-            for _ in range(40):
+            for _ in range(80):
                 await pilot.pause()
-                if not app._run_in_flight:
+                if app.snapshot.terminal and not app._run_in_flight:
                     break
 
             snapshot = app.snapshot
+            assert snapshot.terminal is True
             assert snapshot.status == "blocked"
             assert snapshot.completed_count == 1
             assert snapshot.failed_count == 1
