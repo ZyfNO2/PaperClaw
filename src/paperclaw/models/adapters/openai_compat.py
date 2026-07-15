@@ -155,9 +155,12 @@ class OpenAICompatibleModel:
         )
         try:
             with self._urlopen(request, timeout=self.timeout) as response:
+                response_headers = getattr(response, "headers", None)
                 headers = {
                     str(key): str(value)
-                    for key, value in response.headers.items()
+                    for key, value in (
+                        response_headers.items() if response_headers else []
+                    )
                 }
                 try:
                     data = json.load(response)
