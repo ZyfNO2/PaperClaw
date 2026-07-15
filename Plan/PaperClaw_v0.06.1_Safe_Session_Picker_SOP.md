@@ -1,6 +1,6 @@
 # PaperClaw v0.06.1 Safe Session Picker SOP
 
-> 状态：实现完成，等待 CI 与真实终端验收
+> 状态：实现与自动化验收完成，等待真实终端验收
 > 基线：`main@3804f72bbf0217c904c01dfabbcd046e3d930ca8`
 > 分支：`feat/v0.06.1-safe-session-picker`
 > Draft PR：`#3`
@@ -51,7 +51,7 @@ TUI 启动时由现有 `SQLiteRepository` 负责显式 `--database` 的 migratio
 
 ## 4. Command API
 
-`SessionCommandAPI` 暴露：
+`paperclaw.session_commands.SessionCommandAPI` 暴露：
 
 - `list(limit=20)`；
 - `preview(conversation_id, message_limit=8)`；
@@ -59,13 +59,17 @@ TUI 启动时由现有 `SQLiteRepository` 负责显式 `--database` 的 migratio
 
 `reopen` 必须重新验证 safe-closed 条件，并只返回经过验证的 `conversation_id` 与 preview。
 
+持久化装配由同一应用层模块中的 `PersistentSessionRuntime` 承担。TUI 目录不得直接导入 `paperclaw.context`、Repository 或 `sqlite3`。
+
 ## 5. TUI contract
 
 启动：
 
 ```powershell
-paperclaw tui --workspace . --database .paperclaw/paperclaw.db
+paperclaw tui --workspace . --database paperclaw.db
 ```
+
+`--database` 的父目录必须已经存在。
 
 命令：
 
@@ -87,19 +91,28 @@ Run active 时，list / preview / open 都必须拒绝执行。
 - [x] 旧 Run 不变、新提交创建 fresh Run 的离线测试；
 - [x] active Run 排除与 reopen revalidation 测试；
 - [x] headless Textual 命令流测试；
-- [ ] GitHub Actions 全量 pytest 通过；
-- [ ] Ruff gate 通过；
+- [x] TUI 架构门禁；
+- [x] GitHub Actions Windows 全量 pytest：388 passed；
+- [x] Ruff E9/F63/F7/F82 gate；
 - [ ] Windows Terminal 真实 list → preview → open → submit 验收；
 - [ ] Live Provider 确认新 Run 写入同一 conversation。
 
 ## 7. 自动化验收
 
-建议命令：
+GitHub Actions run `29417208949`：
+
+- Windows Server 2025 / Python 3.12；
+- `388 passed`；
+- `0 failed`；
+- `0 skipped`；
+- Ruff high-signal checks：PASS。
+
+建议复验命令：
 
 ```powershell
-python -m pytest -q tests/unit/test_session_picker.py tests/unit/test_tui_session_picker.py --basetemp=tmp/pytest-picker
-python -m pytest -q --basetemp=tmp/pytest
-ruff check .
+python -m pytest -q tests/unit/test_session_picker.py tests/unit/test_tui_session_picker.py tests/unit/test_tui_runner.py tests/unit/test_tui_architecture.py --basetemp=tmp/pytest-picker
+python -m pytest -q -m "not real_llm" --basetemp=tmp/pytest
+python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
 
 自动化测试只能证明 SQLite contract、Command API、headless TUI 控制流和 fresh-Run 持久化；不能代替真实终端交互与 Live Provider 验收。
