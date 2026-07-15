@@ -11,6 +11,7 @@ from paperclaw.harness import (
     ExecutionReport,
     QueryEngine,
     RunLimits,
+    RunRequest,
 )
 from paperclaw.tools.base import ToolContext, ToolResult
 from paperclaw.tools.registry import ToolRegistry
@@ -141,7 +142,7 @@ def test_max_steps_maps_to_budget_exhausted(tmp_path: Path) -> None:
 
 
 def test_inflight_error_after_stop_maps_to_stopped(tmp_path: Path) -> None:
-    """A provider failure racing with an accepted stop keeps stop semantics."""
+    """A provider-boundary failure racing with an accepted stop is stopped."""
 
     class FailingInflightModel:
         def __init__(self) -> None:
@@ -181,6 +182,39 @@ def test_inflight_error_after_stop_maps_to_stopped(tmp_path: Path) -> None:
     assert results[0].status == "stopped"
     assert results[0].stop_reason == "user_requested"
     assert results[0].model_calls == 1
+    assert any(event == "model.failed" for event, _ in events)
+
+
+def test_runtime_failure_after_stop_is_not_hidden(tmp_path: Path, monkeypatch) -> None:
+    """Catch-all runtime failures stay failed even when a token is cancelled."""
+
+    class CancelledToken:
+        is_cancelled = True
+        reason = "user_requested"
+
+    def fail_runtime(*args, **kwargs):
+        raise RuntimeError("runtime boundary failed")
+
+    monkeypatch.setattr("paperclaw.harness.agent_runtime_executor.AgentRuntime.run", fail_runtime)
+    executor = AgentRuntimeExecutor(
+        FakeModel([done(result="not reached")]),
+        tmp_path,
+        enable_verification_gate=False,
+    )
+
+    report = executor.execute(
+        RunRequest(
+            run_id="run-broken",
+            conversation_id="conv-broken",
+            text="fail",
+            limits=RunLimits(),
+        ),
+        emit=lambda event, payload: 1,
+        stop_token=CancelledToken(),
+    )
+
+    assert report.status == "failed"
+    assert report.stop_reason == "runtime_failed"
 
 
 def test_optional_session_binding_persists_messages_and_events(

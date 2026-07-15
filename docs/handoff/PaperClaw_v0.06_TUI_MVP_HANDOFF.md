@@ -66,7 +66,7 @@ Implementation, focused offline validation, full automated CI, SQLite Doctor and
 - Python `3.13.5`; Textual `7.5.0`;
 - SQLite Doctor quick/integrity checks: PASS, schema version 3;
 - live-provider QueryEngine create/run/verify: `1 passed in 31.12s`;
-- live-provider cooperative cancel regression: `1 passed in 19.04s`, ending as `stopped / user_requested` with one `run.stopped` event;
+- live-provider cooperative cancel: `1 passed in 19.04s`, ending as `stopped / user_requested` with one `run.stopped` event;
 - sanitized evidence: `artifacts/v0_06/real_acceptance/acceptance_report.md`.
 - physical wide-terminal screenshot: `artifacts/v0_06/real_acceptance/windows_terminal_wide.png`.
 

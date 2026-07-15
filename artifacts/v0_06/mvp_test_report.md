@@ -46,8 +46,8 @@ The full suite also covers QueryEngine terminal uniqueness, budget enforcement, 
 
 - SQLite Doctor quick/integrity checks: PASS, schema version 3.
 - Live Provider QueryEngine create/run/verify: `1 passed in 31.12s`.
-- Live Provider cooperative cancel regression: `1 passed in 19.04s`; terminal status `stopped`, reason `user_requested`, unique event `run.stopped`.
+- Live Provider cooperative cancel: `1 passed in 19.04s`; terminal status `stopped`, reason `user_requested`, unique event `run.stopped`.
 - Environment: Windows 11 build 26200, Windows Terminal 1.24.11321.0, Python 3.13.5, Textual 7.5.0.
 - Evidence: `artifacts/v0_06/real_acceptance/acceptance_report.md`.
 
-This closes the live backend cancellation regression that previously surfaced as `runtime_failed`. It does not replace the remaining physical-terminal resize and screenshot evidence or the real/sanitized user-database Doctor gate.
+This proves the normal live backend safe-boundary cancellation path. A deterministic adapter-boundary unit test covers the in-flight exception race; the original physical TUI `runtime_failed` signature still requires a post-fix screenshot. These results do not replace the remaining narrow resize evidence or the real/sanitized user-database Doctor gate.

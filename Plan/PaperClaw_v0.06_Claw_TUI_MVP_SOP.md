@@ -148,7 +148,7 @@ TUIEventBridge → EventReducer → widgets
 - Windows pytest：`376 passed`，`0 failed`，`0 skipped`；
 - Ruff：PASS；
 - 2026-07-15 Live Provider QueryEngine create/run/verify：`1 passed in 31.12s`；
-- 2026-07-15 Live Provider cooperative cancel regression：`1 passed in 19.04s`，终态 `stopped / user_requested`，唯一终态事件 `run.stopped`；
+- 2026-07-15 Live Provider cooperative cancel：`1 passed in 19.04s`，终态 `stopped / user_requested`，唯一终态事件 `run.stopped`；异常竞态由确定性 adapter 单测覆盖；
 - SQLite Doctor quick/integrity checks：PASS，schema version 3；
 - 真实 Windows Terminal 宽屏启动、Live Provider 任务与 Inspector 可读性：PASS，证据见 `real_acceptance/windows_terminal_wide.png`；
 - 真实窄屏 resize 与修复后物理 TUI `/cancel`：仍待补充截图，不得描述为全量真实 UI E2E。
