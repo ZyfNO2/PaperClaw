@@ -121,8 +121,8 @@ TUIEventBridge → EventReducer → widgets
 - [x] Ruff high-signal gate；
 - [x] artifacts 与 Handoff；
 - [ ] 真实 Windows Terminal full-screen / resize smoke；
-- [ ] 真实 Provider 任务从输入到结构化终态；
-- [ ] 真实运行期间 `/cancel` safe-boundary 行为观察。
+- [ ] 通过物理 TUI 输入真实 Provider 任务并渲染结构化终态；
+- [ ] 在物理 TUI 真实运行期间观察 `/cancel` safe-boundary 行为。
 
 ## 6. Gate 矩阵
 
@@ -159,6 +159,6 @@ TUIEventBridge → EventReducer → widgets
 
 - [ ] Windows Terminal 中 `paperclaw tui` 正常启动；
 - [ ] 100+ 列双栏与小于 80 列单列均不 crash；
-- [ ] Live Provider 完成一条 create/run/verify 任务；
-- [ ] 运行期间 `/cancel` 显示 stop request，最终在安全边界得到 terminal result；
+- [ ] 通过物理 TUI 完成一条 Live Provider create/run/verify 任务；
+- [ ] 在物理 TUI 运行期间 `/cancel` 显示 stop request，最终在安全边界得到 terminal result；
 - [ ] 将真实日志、截图与环境信息补入 `artifacts/v0_06/`，且完成脱敏。

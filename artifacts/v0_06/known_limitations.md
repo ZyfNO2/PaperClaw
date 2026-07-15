@@ -12,7 +12,7 @@
 
 - No Permission Dialog or allow-once/session decisions.
 - No Session Picker, reconnect or crash reconciliation.
-- No Context, Trace, Cost or dedicated Verification inspector.
+- No Context, Trace or Cost inspector. The original v0.06 MVP had no dedicated Verification inspector; the current branch's v0.06.1 slice adds one sanitized aggregate-only Verification Inspector.
 - No MultiAgent task/DAG view.
 - No Web UI/API or daemon.
 - No clipboard redaction or full accessibility matrix.

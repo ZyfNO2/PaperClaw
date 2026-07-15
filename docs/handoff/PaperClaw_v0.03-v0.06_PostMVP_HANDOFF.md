@@ -69,9 +69,9 @@
 
 ## 真实验收补充（2026-07-15）
 
-### A. SQLite Doctor — PASS
+### A. SQLite Doctor migrated-fixture smoke — PASS
 
-在 v0.04 migrated database 样本上执行 `quick_check` 与 `integrity_check`，两者均返回 `ok=true`、`messages=["ok"]`、schema version 3。检查使用只读连接，没有 migration、repair 或数据修改。
+在 pytest 生成的 v0.04 migrated database 样本上执行 `quick_check` 与 `integrity_check`，两者均返回 `ok=true`、`messages=["ok"]`、schema version 3。检查使用只读连接，没有 migration、repair 或数据修改。该 smoke 不等于真实或脱敏用户数据库副本验收。
 
 ### B. Live Provider backend — PASS
 
@@ -79,7 +79,18 @@
 
 完整脱敏证据见 `artifacts/v0_06/real_acceptance/acceptance_report.md`。
 
-## 仍未执行的真实 UI 测试
+## 仍未执行的真实验收
+
+### 真实或脱敏数据库副本
+
+准备一个非唯一生产副本或脱敏副本，然后执行：
+
+```powershell
+paperclaw doctor --database path\to\copy.db
+paperclaw doctor --database path\to\copy.db --full
+```
+
+预期 JSON 中 `ok=true`、messages 仅含 `ok`、schema version 合理。失败时不要对原库运行自动修复；保留脱敏输出和数据库备份状态供人工判断。
 
 ### Windows Terminal + Live Provider
 
@@ -96,7 +107,7 @@ paperclaw tui --workspace .
 - 窄终端 resize 不 crash；
 - `/cancel` 仍只承诺 safe-boundary cooperative stop。
 
-请返回脱敏后的截图、终端日志和 TUI RunResult。Doctor JSON 与 backend live-provider 证据已经留档，无需重复执行。
+请返回脱敏后的截图、终端日志、TUI RunResult 和真实/脱敏数据库副本的 Doctor JSON。Backend live-provider 证据已经留档，无需重复执行。
 
 ## 已知限制
 

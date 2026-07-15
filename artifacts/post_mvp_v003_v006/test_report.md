@@ -38,12 +38,13 @@ GitHub Actions run `29363818831` / run #42：
 
 2026-07-15 本机补充验收：
 
-- SQLite Doctor 对 migrated database 样本的 quick/integrity checks：PASS，schema version 3；
+- SQLite Doctor 对 pytest migrated fixture 的 quick/integrity smoke：PASS，schema version 3；
 - Live Provider QueryEngine create/run/verify：`1 passed in 31.12s`；
 - 脱敏证据：`artifacts/v0_06/real_acceptance/acceptance_report.md`。
 
 以下仍未被真实 UI 结果证明：
 
+- 真实或脱敏用户数据库副本的 Doctor 结果；
 - Windows Terminal 中 Inspector 的实际可读性；
 - v0.06 原有真实 task/cancel/resize 验收。
 

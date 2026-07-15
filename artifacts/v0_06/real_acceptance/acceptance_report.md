@@ -8,8 +8,8 @@
 
 | 验收项 | 结果 | 边界 |
 |---|---|---|
-| SQLite Doctor `quick_check` | PASS | 只读检查 v0.04 迁移后数据库样本 |
-| SQLite Doctor `integrity_check` | PASS | 只读完整性检查，不代表业务语义正确 |
+| SQLite Doctor fixture `quick_check` | PASS (smoke) | 只读检查 pytest 生成的 v0.04 迁移后样本 |
+| SQLite Doctor fixture `integrity_check` | PASS (smoke) | 不代表真实/脱敏用户数据库或业务语义正确 |
 | Live Provider create/run/verify | PASS | 通过 QueryEngine E2E；不是物理 TUI 输入 |
 | Windows Terminal full-screen / resize | PENDING MANUAL | 自动化规范禁止代替用户操控终端应用 |
 | TUI 内 live `/cancel` | PENDING MANUAL | 必须在真实交互窗口观察 safe-boundary 行为 |
@@ -23,7 +23,7 @@
 - Textual：`7.5.0`；
 - Provider 配置：本地 `.env` 三个必需项均存在；未记录 key、base URL 或 model 值。
 
-## SQLite Doctor
+## SQLite Doctor fixture smoke
 
 目标是仓库测试运行生成的 v0.04 migrated database 样本副本：
 
@@ -53,7 +53,7 @@ tmp/pytest_run2/test_v0_04_mvp_demo0/demo.db
 }
 ```
 
-Doctor 使用只读连接，没有修复、迁移或修改目标数据库。
+Doctor 使用只读连接，没有修复、迁移或修改目标数据库。该结果只关闭 migrated-fixture smoke，不关闭“真实或脱敏数据库副本”验收。
 
 ## Live Provider
 
@@ -83,4 +83,9 @@ test call: 31.06s
 
 ## 剩余人工 Gate
 
-仍需用户在 Windows Terminal 完成：宽/窄 resize、Inspector 截图、TUI 内 live task，以及运行期间 `/cancel`。完成后将脱敏截图和最终 RunResult 放入本目录，并据此更新 SOP checkbox；在此之前 v0.06 保持 `WAITING REAL TERMINAL ACCEPTANCE`。
+仍需完成两类人工 Gate：
+
+1. 在 Windows Terminal 完成宽/窄 resize、Inspector 截图、TUI 内 live task，以及运行期间 `/cancel`；
+2. 对一个非唯一生产副本或脱敏数据库副本运行 Doctor quick/full checks。
+
+完成后将脱敏截图、最终 RunResult 和 Doctor JSON 放入本目录，并据此更新 SOP checkbox；在此之前 v0.06 保持 `WAITING REAL TERMINAL ACCEPTANCE`。

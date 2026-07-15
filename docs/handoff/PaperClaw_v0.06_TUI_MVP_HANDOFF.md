@@ -160,7 +160,7 @@ Return or commit, after secret redaction:
 
 ## Pass/fail decision
 
-PASS only when Test A–D succeed and artifacts contain no secret. Otherwise keep status `WAITING REAL TEST` or change to `REQUEST CHANGES` with the exact failure trace.
+PASS only when Test A–D succeed and artifacts contain no secret. Otherwise keep status `WAITING REAL TERMINAL ACCEPTANCE` or change to `REQUEST CHANGES` with the exact failure trace.
 
 ## Next developer steps
 
