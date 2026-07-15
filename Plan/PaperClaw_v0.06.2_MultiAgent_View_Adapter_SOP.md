@@ -1,8 +1,10 @@
 # PaperClaw v0.06.2 MultiAgent View Adapter SOP
 
-> 状态：实现完成，等待 Draft PR CI
+> 状态：实现完成；实现 HEAD Windows CI 与 Ruff 已通过；等待最终文档 HEAD CI
 > 基线：`main@725e8a81425efa987f59a6f66ce0021fe7978261`
 > 分支：`feat/v0.06.2-multiagent-view-adapter`
+> Draft PR：`#15`
+> 实现验证：run `29450712508` / 403 passed / Ruff PASS
 > 冲突策略：不修改 `cli.py`、`tui/`、`trace/` 或任何 v0.07.x 文件。
 
 ## 1. 用户故事
@@ -67,8 +69,9 @@ Coordinator EventEnvelope v1
 - [x] changed-file 名称不进入 snapshot，仅保留数量；
 - [x] LiveTeamView 可作为 Coordinator event handler；
 - [x] 缺失 terminal event 时可由 CoordinatorResult 防御性收口；
-- [ ] GitHub Actions Windows 全量 pytest；
-- [ ] Ruff high-signal gate。
+- [x] GitHub Actions Windows 全量 pytest：403 passed，0 failed，0 skipped；
+- [x] Ruff high-signal gate：PASS；
+- [ ] Handoff/SOP 最终文档 HEAD CI。
 
 ## 6. 接线方式
 
