@@ -190,6 +190,14 @@ class _BudgetedTool:
                     "error_message": str(exc)[:500],
                 },
             )
+            # As with provider calls, an exception from a tool that was already
+            # executing when a cooperative stop was accepted belongs to the
+            # adapter cancellation boundary. Preserve the diagnostic event,
+            # then translate only this in-flight tool outcome into control flow.
+            if self._stop_token.is_cancelled:
+                raise ToolControlFlow(
+                    self._stop_token.reason or "cancelled"
+                ) from exc
             raise
 
         self._emit(
