@@ -9,7 +9,7 @@ from paperclaw.context.repository import SQLiteRepository
 from paperclaw.context.session import SessionService
 from paperclaw.context.session_picker import SafeSessionPicker, SessionPickerError
 from paperclaw.harness import AgentRuntimeExecutor, QueryEngine
-from paperclaw.tui.commands import SessionCommandAPI
+from paperclaw.session_commands import SessionCommandAPI
 from tests.helpers import FakeModel, done
 
 
@@ -105,9 +105,9 @@ def test_reopened_conversation_creates_fresh_run_and_preserves_ended_run(
     assert result.status == "completed"
     assert result.run_id != original.run_id
     with sqlite3.connect(database) as connection:
-        runs = connection.execute(
+        run_rows = connection.execute(
             "SELECT run_id, ended_at, stop_reason FROM runs "
-            "WHERE conversation_id = ? ORDER BY created_at, run_id",
+            "WHERE conversation_id = ?",
             ("conversation-1",),
         ).fetchall()
         message_count = connection.execute(
@@ -115,12 +115,14 @@ def test_reopened_conversation_creates_fresh_run_and_preserves_ended_run(
             ("conversation-1",),
         ).fetchone()
 
-    assert len(runs) == 2
-    assert runs[0][0] == original.run_id
-    assert runs[0][1] is not None
-    assert runs[0][2] == "done"
-    assert runs[1][0] == result.run_id
-    assert runs[1][1] is not None
+    runs = {
+        str(run_id): {"ended_at": ended_at, "stop_reason": stop_reason}
+        for run_id, ended_at, stop_reason in run_rows
+    }
+    assert set(runs) == {original.run_id, result.run_id}
+    assert runs[original.run_id]["ended_at"] is not None
+    assert runs[original.run_id]["stop_reason"] == "done"
+    assert runs[result.run_id]["ended_at"] is not None
     assert message_count is not None
     assert int(message_count[0]) == 4
 
