@@ -38,11 +38,11 @@ class TeamFinishedMessage(Message):
     def __init__(
         self,
         result: CoordinatorResult | None,
-        error: str | None = None,
+        error_type: str | None = None,
     ) -> None:
         super().__init__()
         self.result = result
-        self.error = error
+        self.error_type = error_type
 
 
 class TeamApp(App[int]):
@@ -120,11 +120,11 @@ class TeamApp(App[int]):
         def run_team() -> None:
             try:
                 result = coordinator.run(self._goal, list(self._tasks))
-            except Exception as exc:  # UI boundary: sanitize and keep app alive
+            except Exception as exc:  # UI boundary: keep arbitrary exception text private
                 self.post_message(
                     TeamFinishedMessage(
                         None,
-                        error=f"{type(exc).__name__}: {str(exc)[:500]}",
+                        error_type=type(exc).__name__,
                     )
                 )
             else:
@@ -159,8 +159,11 @@ class TeamApp(App[int]):
         with self._run_lock:
             self._run_in_flight = False
         timeline = self.query_one(TeamTimeline)
-        if message.error:
-            timeline.add_system(f"Team failed before a terminal result: {message.error}")
+        if message.error_type:
+            timeline.add_system(
+                "Team failed before a terminal result: "
+                f"{message.error_type}. Exception detail was suppressed."
+            )
             self._render_snapshot(self._reducer.snapshot)
             return
         if message.result is None:
