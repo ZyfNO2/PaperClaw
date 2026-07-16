@@ -93,17 +93,16 @@ def test_real_stdio_session_registers_and_invokes_fake_server(tmp_path: Path) ->
     )
     try:
         assert registration.ok
-        assert registration.registered_tools == (
-            "mcp.fixture.echo",
-            "mcp.fixture.add",
-        )
+        assert len(registration.registered_tools) == 2
+        echo_name, add_name = registration.registered_tools
+        assert "." not in echo_name and "." not in add_name
         echo = safe_execute(
-            registry.get("mcp.fixture.echo"),
+            registry.get(echo_name),
             {"text": "hello"},
             ToolContext(tmp_path),
         )
         add = safe_execute(
-            registry.get("mcp.fixture.add"),
+            registry.get(add_name),
             {"a": 2, "b": 5},
             ToolContext(tmp_path),
         )
@@ -133,23 +132,25 @@ def test_mcp_calls_use_run_budget_and_existing_trace_fact_source(tmp_path: Path)
         session_factory=lambda current: session,
     )
     assert registration.ok
+    tool_name = registration.registered_tools[0]
 
     repository = SQLiteRepository(tmp_path / "trace.db", migrate=True)
     events: list[tuple[str, dict]] = []
     try:
-        engine = QueryEngine(
-            AgentRuntimeExecutor(
-                FakeModel(
-                    [
-                        action("mcp.trace.echo", {"text": "first"}),
-                        action("mcp.trace.echo", {"text": "second"}),
-                    ]
-                ),
-                tmp_path,
-                registry=registry,
-                repository=repository,
-                enable_verification_gate=False,
+        executor = AgentRuntimeExecutor(
+            FakeModel(
+                [
+                    action(tool_name, {"text": "first"}),
+                    action(tool_name, {"text": "second"}),
+                ]
             ),
+            tmp_path,
+            registry=registry,
+            repository=repository,
+            enable_verification_gate=False,
+        )
+        engine = QueryEngine(
+            executor,
             conversation_id="conv-mcp-budget",
             event_handler=lambda event_type, payload: events.append(
                 (event_type, payload)
@@ -167,18 +168,22 @@ def test_mcp_calls_use_run_budget_and_existing_trace_fact_source(tmp_path: Path)
             sort_keys=True,
         )
 
-        assert result.status == "budget_exhausted"
+        assert result.status == "budget_exhausted", (
+            result,
+            events,
+            executor.last_state,
+        )
         assert result.stop_reason == "max_tool_calls"
         assert result.tool_calls == 1
         assert session.calls == 1
         assert any(
             event.event_type == "tool.started"
-            and event.payload.get("tool") == "mcp.trace.echo"
+            and event.payload.get("tool") == tool_name
             for event in durable
         )
         assert any(
             event.event_type == "tool.completed"
-            and event.payload.get("tool") == "mcp.trace.echo"
+            and event.payload.get("tool") == tool_name
             for event in durable
         )
         assert secret not in durable_json
