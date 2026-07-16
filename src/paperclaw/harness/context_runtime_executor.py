@@ -1,9 +1,4 @@
-"""Opt-in AgentRuntime adapter for v0.08 Context Orchestration.
-
-The existing ``AgentRuntimeExecutor`` remains unchanged. This module composes it
-with a model-boundary adapter so QueryEngine stays a thin façade and every
-Provider call receives one deterministic ``PromptAssembly``.
-"""
+"""Opt-in AgentRuntime adapter for v0.08 Context Orchestration."""
 
 from __future__ import annotations
 
@@ -22,6 +17,10 @@ from paperclaw.context.orchestration import (
 )
 from paperclaw.context.repository import Repository
 from paperclaw.context.session import SessionService
+from paperclaw.context.source_registry import (
+    ContextSourceRegistry,
+    ContextSourceRegistrySnapshot,
+)
 from paperclaw.models.base import ChatModel, ModelTurn
 from paperclaw.tools.registry import ToolRegistry
 
@@ -47,12 +46,15 @@ _CURRENT_CONTEXT: ContextVar[_BoundAssemblyContext | None] = ContextVar(
 
 
 class _ContextAwareModel:
-    """ChatModel wrapper that assembles Context immediately before Provider I/O."""
-
-    def __init__(self, model: ChatModel, orchestrator: ContextOrchestrator) -> None:
+    def __init__(
+        self,
+        model: ChatModel,
+        orchestrator: ContextOrchestrator,
+        source_snapshot: ContextSourceRegistrySnapshot | None = None,
+    ) -> None:
         self._model = model
         self._orchestrator = orchestrator
-        # Preserve explicit provider identity used by AgentRuntimeExecutor Trace.
+        self._source_snapshot = source_snapshot
         for name in ("provider", "model", "api_key"):
             value = getattr(model, name, None)
             if value is not None:
@@ -69,16 +71,12 @@ class _ContextAwareModel:
     def complete(self, prompt: str) -> ModelTurn:
         context = _CURRENT_CONTEXT.get()
         if context is None:
-            # Defensive parity fallback for direct test usage outside an executor.
             return self._model.complete(prompt)
-
         context.call_index += 1
         step_id = f"model-{context.call_index}"
         at_sequence = 0
         if context.repository is not None:
-            at_sequence = context.repository.last_committed_sequence(
-                context.request.run_id
-            )
+            at_sequence = context.repository.last_committed_sequence(context.request.run_id)
         request = ContextRequest(
             run_id=context.request.run_id,
             conversation_id=context.request.conversation_id,
@@ -87,6 +85,7 @@ class _ContextAwareModel:
             workspace=context.workspace,
             at_sequence=at_sequence,
         )
+        source_trace = self._source_trace_payload()
         try:
             assembly = self._orchestrator.assemble(request)
         except ContextAssemblyBudgetExhausted as exc:
@@ -100,17 +99,28 @@ class _ContextAwareModel:
                     "required_tokens": exc.required_tokens,
                     "available_tokens": exc.available_tokens,
                     "policy_version": self._orchestrator.policy.policy_version,
+                    **source_trace,
                 },
             )
             raise
-
         context.assemblies.append(assembly)
-        payload = {
-            "step_id": step_id,
-            **assembly.trace.to_event_payload(),
-        }
-        self._emit(context, "context.assembly.completed", payload)
+        self._emit(
+            context,
+            "context.assembly.completed",
+            {"step_id": step_id, **assembly.trace.to_event_payload(), **source_trace},
+        )
         return self._model.complete(assembly.prompt)
+
+    def _source_trace_payload(self) -> dict[str, Any]:
+        if self._source_snapshot is None:
+            return {
+                "context_source_registry_fingerprint": None,
+                "context_source_count": 0,
+            }
+        return {
+            "context_source_registry_fingerprint": self._source_snapshot.fingerprint,
+            "context_source_count": len(self._source_snapshot.descriptors),
+        }
 
     @staticmethod
     def _emit(
@@ -127,19 +137,10 @@ class _ContextAwareModel:
             run_id=context.request.run_id,
             agent_id="context_orchestrator",
         )
-        session.emit(
-            event_type,
-            {**payload, "query_event_sequence": query_sequence},
-        )
+        session.emit(event_type, {**payload, "query_event_sequence": query_sequence})
 
 
 class ContextOrchestratedAgentRuntimeExecutor:
-    """RunExecutor that opts the existing single-Agent Runtime into v0.08.
-
-    This is composition, not a QueryEngine fork. The old
-    ``AgentRuntimeExecutor`` remains available and behavior-compatible.
-    """
-
     def __init__(
         self,
         model: ChatModel,
@@ -151,14 +152,32 @@ class ContextOrchestratedAgentRuntimeExecutor:
         legacy_event_handler: Any | None = None,
         context_policy: ContextPolicy | None = None,
         orchestrator: ContextOrchestrator | None = None,
+        context_source_registry: ContextSourceRegistry | None = None,
     ) -> None:
+        if orchestrator is not None and context_source_registry is not None:
+            raise ValueError(
+                "orchestrator and context_source_registry are mutually exclusive"
+            )
         self._workspace = Path(workspace).resolve(strict=True)
         self._repository = repository
-        self._orchestrator = orchestrator or ContextOrchestrator(
-            repository,
-            policy=context_policy,
+        self.context_source_registry = context_source_registry
+        self.context_source_snapshot: ContextSourceRegistrySnapshot | None = None
+        if orchestrator is not None:
+            self._orchestrator = orchestrator
+        elif context_source_registry is not None:
+            self.context_source_snapshot = context_source_registry.freeze()
+            self._orchestrator = ContextOrchestrator(
+                repository,
+                policy=context_policy,
+                sources=(context_source_registry,),
+            )
+        else:
+            self._orchestrator = ContextOrchestrator(repository, policy=context_policy)
+        self._model = _ContextAwareModel(
+            model,
+            self._orchestrator,
+            self.context_source_snapshot,
         )
-        self._model = _ContextAwareModel(model, self._orchestrator)
         self._delegate = AgentRuntimeExecutor(
             self._model,
             self._workspace,
@@ -191,10 +210,6 @@ class ContextOrchestratedAgentRuntimeExecutor:
             )
         self.last_state = self._delegate.last_state
         self.last_assemblies = tuple(bound.assemblies)
-
-        # AgentRuntimeExecutor deliberately classifies unknown model-boundary
-        # exceptions as failed. Reclassify only our explicit fail-closed budget
-        # error; all other persistence/runtime failures remain genuine failures.
         if bound.budget_error is not None and report.status == "failed":
             return ExecutionReport(
                 status="budget_exhausted",
