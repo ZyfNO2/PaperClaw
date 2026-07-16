@@ -7,10 +7,11 @@
 - Draft PR: `#24`;
 - prerequisite: RAG Index Foundation PR #20 merged;
 - implementation: complete;
-- repository CI: pending due GitHub connector upstream 502;
+- repository CI: PASS;
+- status: `OFFLINE_GO`;
 - merge: not requested and not performed.
 
-This Handoff does not declare Repository GO until the final branch HEAD passes full Windows pytest and Ruff.
+This Handoff declares the BM25 and incremental-index slice complete. It does not declare ContextSource, Citation, answer generation, Dense Retrieval, or online retrieval complete.
 
 ## 2. Delivered
 
@@ -59,23 +60,34 @@ tests/unit/test_bm25_query_scope.py
 tests/fixtures/retrieval_bm25_fixture.json
 ```
 
-## 5. Verification state
+## 5. Verification evidence
 
-Completed:
+Validated implementation/docs HEAD before this Handoff closeout:
 
-- deterministic code review against Phase A contracts;
-- independent SQLite FTS5 scoped-query smoke;
-- repository tests and metric assertions committed.
+```text
+3442a60615a92ea360c0ef1544a06d19b6dba1a0
+```
 
-Pending:
+Repository CI:
 
-- final GitHub Actions run ID;
-- full pytest test-case count;
-- failures/skips;
-- Ruff conclusion;
-- pytest artifact digest.
+```text
+GitHub Actions run: 29541314820
+Windows pytest: 572 passed, 0 failed, 0 skipped
+pytest exit status: 0
+Ruff E9/F63/F7/F82: PASS
+artifact: pytest-results-29541314820
+artifact digest: sha256:f757df67df136d1e269118f53aafcad832b28b5e3e9ad0ff0060660555915ce7
+```
 
-The connector returned upstream 502 for both current and historical Actions queries, so no CI result has been inferred or fabricated.
+`pytest_reportlog.jsonl` was parsed using call-phase records only. Setup and teardown records were not counted as tests.
+
+The deterministic retrieval fixture passed:
+
+```text
+Recall@3 = 1.0
+MRR      = 1.0
+nDCG@3   = 1.0
+```
 
 ## 6. Known limitations
 
@@ -83,6 +95,6 @@ See `artifacts/v0_09_1_bm25/known_limitations.md`. Important boundaries include 
 
 ## 7. Next dependency boundary
 
-PR 6 may consume `RankedResult` through a Retrieval `ContextCandidateSource`, but must not make this module construct Prompt sections. Citation and abstention contracts belong to PR 6.
+PR #27 consumes `RankedResult` through a Retrieval `ContextCandidateSource`. It remains a separate stacked Draft and must not make this module construct Prompt sections. Citation and abstention contracts belong to that PR.
 
-PR 5 and PR 6 need a shared ContextSource registration contract before either modifies executor dependency injection. That contract should be frozen separately so MCP and RAG adapters register sources without owning Prompt assembly.
+PR #25 freezes the shared ContextSource registration contract used by both MCP selection and RAG ContextSource branches.
