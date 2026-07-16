@@ -10,6 +10,7 @@ from paperclaw.retrieval import (
     BrokenIndexError,
     ChunkConfig,
     IncrementalIndexer,
+    IndexManifest,
     RetrievalJudgment,
     RetrievalRequest,
     SQLiteBM25Retriever,
@@ -43,6 +44,28 @@ def _index(
         display_name=name or uri.rsplit("/", 1)[-1],
         media_type="text/markdown",
         content=text.encode("utf-8"),
+    )
+
+
+def _insert_manifest(connection: sqlite3.Connection, manifest: IndexManifest) -> None:
+    connection.execute(
+        "INSERT INTO index_manifests(manifest_id, schema_version, index_version, created_at, "
+        "chunk_config_hash, parser_versions_json, document_count, version_count, chunk_count, "
+        "state, corpus_hash, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            manifest.manifest_id,
+            manifest.schema_version,
+            manifest.index_version,
+            manifest.created_at,
+            manifest.chunk_config_hash,
+            json.dumps(list(manifest.parser_versions)),
+            manifest.document_count,
+            manifest.version_count,
+            manifest.chunk_count,
+            manifest.state,
+            manifest.corpus_hash,
+            manifest.content_hash,
+        ),
     )
 
 
@@ -179,27 +202,20 @@ def test_latest_broken_manifest_blocks_query_until_rebuild(tmp_path: Path) -> No
         ready = indexer.registry.latest_manifest()
         assert ready is not None
 
-    connection = sqlite3.connect(db)
-    content_hash = "f" * 64
-    connection.execute(
-        "INSERT INTO index_manifests(manifest_id, schema_version, index_version, created_at, "
-        "chunk_config_hash, parser_versions_json, document_count, version_count, chunk_count, "
-        "state, corpus_hash, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            "manifest_broken_test",
-            ready.schema_version,
-            ready.index_version,
-            "2099-01-01T00:00:00+00:00",
-            ready.chunk_config_hash,
-            json.dumps(list(ready.parser_versions)),
-            ready.document_count,
-            ready.version_count,
-            ready.chunk_count,
-            "broken",
-            ready.corpus_hash,
-            content_hash,
-        ),
+    broken = IndexManifest.create(
+        schema_version=ready.schema_version,
+        index_version=ready.index_version,
+        chunk_config_hash=ready.chunk_config_hash,
+        parser_versions=ready.parser_versions,
+        document_count=ready.document_count,
+        version_count=ready.version_count,
+        chunk_count=ready.chunk_count,
+        state="broken",
+        corpus_hash=ready.corpus_hash,
+        created_at="2099-01-01T00:00:00+00:00",
     )
+    connection = sqlite3.connect(db)
+    _insert_manifest(connection, broken)
     connection.commit()
     connection.close()
 
@@ -214,6 +230,33 @@ def test_latest_broken_manifest_blocks_query_until_rebuild(tmp_path: Path) -> No
 
     with SQLiteBM25Retriever(db) as retriever:
         assert retriever.query(RetrievalRequest(query="brokenmanifest")).candidates
+
+
+def test_tampered_ready_manifest_is_rejected_and_rebuilt(tmp_path: Path) -> None:
+    db = tmp_path / "rag.db"
+    with IncrementalIndexer(db, chunk_config=CONFIG) as indexer:
+        _index(indexer, "file:///docs/tampered.md", "# Tampered\n\ntamperedmanifest evidence")
+        ready = indexer.registry.latest_manifest()
+        assert ready is not None
+
+    connection = sqlite3.connect(db)
+    connection.execute(
+        "UPDATE index_manifests SET content_hash = ? WHERE manifest_id = ?",
+        ("f" * 64, ready.manifest_id),
+    )
+    connection.commit()
+    connection.close()
+
+    with SQLiteBM25Retriever(db) as retriever:
+        with pytest.raises(BrokenIndexError, match="invalid"):
+            retriever.query(RetrievalRequest(query="tamperedmanifest"))
+
+    with SQLiteIndexMaintainer(db, chunk_config=CONFIG) as maintainer:
+        report = maintainer.inspect()
+        assert report.is_broken
+        assert report.manifest_contract_match is False
+        rebuilt = maintainer.rebuild()
+        assert not rebuilt.after.is_broken
 
 
 def test_broken_index_is_detected_and_rebuilt_from_active_chunks(tmp_path: Path) -> None:
