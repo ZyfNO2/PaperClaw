@@ -1,4 +1,4 @@
-# PaperClaw v0.06.3 MultiAgent TUI Panel Handoff
+# PaperClaw v0.07.9 MultiAgent TUI Panel Handoff
 
 ## 状态
 
@@ -7,26 +7,23 @@
 ## 仓库与分支
 
 - Repository: `ZyfNO2/PaperClaw`
-- Branch: `feat/v0.06.3-multiagent-tui-panel`
+- Formal version: `v0.07.9`
+- Legacy branch ref: `feat/v0.06.3-multiagent-tui-panel`
 - Draft PR: #16
-- Base: `main@ec1ecbeaf37c0e6ea85a07c12446b3d8f9b8e409`
-- Dependency: PR #15 / `feat/v0.06.2-multiagent-view-adapter`
-- Validated implementation HEAD: `f02193f486cfb44e11e694476be920dac54306c7`
-
-本 Handoff 发布后的文档提交 SHA 与最终文档 HEAD CI 记录在 PR #16 Conversation 中，避免在文档内递归引用自身提交。
+- Dependency: v0.07.8 / PR #15
+- Validated implementation HEAD before renumbering docs: `b272d8337eaed2f8c832af0da0793cb4f985c156`
 
 ## 已完成
 
 - 新增独立 Textual `TeamApp`；
 - Coordinator 在 Textual worker thread 中执行；
-- EventEnvelope 通过 Textual Message queue 进入 `TeamViewReducer`；
+- EventEnvelope 通过 Textual Message queue 进入 v0.07.8 `TeamViewReducer`；
 - 展示 team status、Worker/task、Reviewer/fix round、Global Verify 和安全 timeline；
 - 宽终端双栏、窄终端垂直布局；
 - active run duplicate-start 与 unsafe-quit 拒绝；
 - standalone runner 与 JSON plan fail-closed 校验；
 - headless Textual、敏感 payload suppression、快速 Coordinator、并发 gate 与 runner tests；
-- 任意 Coordinator 异常正文不进入 UI，只显示异常类型和固定 suppression 文案；
-- PR #15 与本分支均在不 force-push 的情况下更新到 v0.07.x 最新 main。
+- 任意 Coordinator 异常正文不进入 UI，只显示异常类型和固定 suppression 文案。
 
 ## 主要文件
 
@@ -38,15 +35,15 @@
 - `src/paperclaw/tui/team.tcss`
 - `tests/unit/test_team_tui.py`
 - `tests/unit/test_team_tui_runner.py`
-- `Plan/PaperClaw_v0.06.3_MultiAgent_TUI_Panel_SOP.md`
-- `docs/handoff/PaperClaw_v0.06.3_MultiAgent_TUI_Panel_HANDOFF.md`
+- legacy path `Plan/PaperClaw_v0.06.3_MultiAgent_TUI_Panel_SOP.md`
+- legacy path `docs/handoff/PaperClaw_v0.06.3_MultiAgent_TUI_Panel_HANDOFF.md`
 
-PR #16 当前以 `main` 为 base，以便运行完整仓库 CI，因此 diff 还包含前置 PR #15 的四个新增文件。PR #15 合并后，PR #16 的有效审查范围会收缩为上述 v0.06.3 文件。
+文件路径保留原编号是为了维持现有 PR 历史；文档正文与 PR 元数据中的正式版本统一为 `v0.07.9`。
 
 ## 关键架构决定
 
 1. 不修改现有单 Agent `PaperClawApp`，避免把 QueryEngine 与 Coordinator 生命周期混入同一 UI。
-2. UI 只消费 PR #15 的 `TeamViewSnapshot`，不读取 Coordinator 私有状态。
+2. UI 只消费 v0.07.8 PR #15 的 `TeamViewSnapshot`，不读取 Coordinator 私有状态。
 3. Timeline 使用白名单，只显示 sequence、event type、agent ID、task ID，不格式化任意 payload。
 4. Worker 面板只显示安全投影：截断 title/reason、status 与 changed-file count；不展示文件名。
 5. 当前 Coordinator 没有安全取消合同，因此 active run 期间拒绝退出，不伪造 hard-cancel。
@@ -63,29 +60,17 @@ PR #16 当前以 `main` 为 base，以便运行完整仓库 CI，因此 diff 还
 
 ## 自动化验证
 
-实现 HEAD `f02193f486cfb44e11e694476be920dac54306c7`：
+最终实现 HEAD `b272d8337eaed2f8c832af0da0793cb4f985c156`：
 
-- GitHub Actions run: `29453180907` / run #146
+- GitHub Actions run: `29453511388` / run #148
 - Windows Server 2025 / Python 3.12
 - pytest call phase: **481 passed, 0 failed, 0 skipped**
 - pytest exit status: `0`
 - Ruff E9/F63/F7/F82: **PASS**
-- artifact: `pytest-results-29453180907`
-- artifact digest: `sha256:c01378efa6882b3d7098aa0c443866b1ee60e451b9b2e5d31c942edd2a5201b7`
+- artifact: `pytest-results-29453511388`
+- artifact digest: `sha256:f253fe41cb47b66d2a346d61a38af7ed627cf9eee67cedfb6a77ff3f94cd3fdc`
 
 测试数量和退出状态已从 artifact 中的 `pytest_reportlog.jsonl` 独立解析。
-
-覆盖重点：
-
-- responsive headless mount；
-- Worker completed/failed、Reviewer verdict 与 team stop projection；
-- changed-file name、goal/objective、tool output、review reasoning 不进入 timeline；
-- secret-bearing exception detail 不进入 timeline；
-- 快速 Coordinator terminal 投影无启动竞态；
-- duplicate run 与 active-run quit rejection；
-- valid/invalid team plan；
-- `--no-tui` 在 Provider 初始化前 fail-closed；
-- v0.07.x 最新 main 上的全仓回归。
 
 ## 尚未执行的真实测试
 
@@ -119,8 +104,6 @@ python -m paperclaw.tui.team_runner --plan .\team-plan.json --workspace .\safe-w
 
 通过标准：以上九项全部满足，且 Coordinator 最终结果与面板一致。失败标准：任何崩溃、重复运行、active-run 强退、状态错位或敏感 payload 泄漏。
 
-应返回：终端录屏或截图、可脱敏 plan、最终终端输出及异常日志。
-
 ## 已知限制
 
 - 尚未接入 `paperclaw team --tui`，当前使用 module entry point；
@@ -132,7 +115,7 @@ python -m paperclaw.tui.team_runner --plan .\team-plan.json --workspace .\safe-w
 
 ## 下一位开发者接手
 
-1. 确认 PR #15 先于 #16 处理，且当前仍 mergeable、CI 通过；
+1. 确认 v0.07.8 PR #15 先于 v0.07.9 PR #16 处理；
 2. 在真实 TTY 完成上述九项验收；
 3. 将证据和结论写回本 Handoff；
 4. 如需产品级 CLI，在最新 main 上做独立小提交，将 `team --tui` 显式接到 `team_runner`，不要复制 Coordinator 组装逻辑；
@@ -146,3 +129,7 @@ python -m pytest tests/unit/test_team_view.py tests/unit/test_team_tui.py tests/
 python -m pytest -m "not real_llm" -q
 python -m ruff check . --select E9,F63,F7,F82
 ```
+
+## 编号说明
+
+本功能原先以 `v0.06.3` 开发，现正式调整为 `v0.07.9`。旧 branch ref 与文件路径仅作为历史兼容标识。
