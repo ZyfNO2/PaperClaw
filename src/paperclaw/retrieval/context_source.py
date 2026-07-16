@@ -24,6 +24,16 @@ from paperclaw.retrieval.query import (
 )
 
 _TASK_SECTION = re.compile(r"\[Task\]\s*(.*?)(?:\n\[History\]|\Z)", re.DOTALL)
+_WORD = re.compile(r"[^\W_]+(?:['’-][^\W_]+)*", re.UNICODE)
+_STOPWORDS = frozenset(
+    {
+        "a", "an", "and", "are", "as", "at", "be", "by", "can", "could",
+        "did", "do", "does", "for", "from", "how", "in", "is", "it", "of",
+        "on", "or", "should", "that", "the", "this", "to", "use", "using",
+        "was", "were", "what", "when", "where", "which", "who", "why", "with",
+        "would",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -222,14 +232,20 @@ def register_retrieval_context_source(
 
 
 def extract_retrieval_query(raw_prompt: str) -> str:
-    """Extract the Agent task without treating the full runtime protocol as query."""
+    """Extract task terms and remove fixed stopwords before BM25 retrieval."""
 
     match = _TASK_SECTION.search(raw_prompt)
-    query = match.group(1) if match else raw_prompt
-    query = " ".join(query.split())
-    if not query:
-        return "no retrieval query"
-    return query[:2_000]
+    task = match.group(1) if match else raw_prompt
+    tokens = []
+    seen: set[str] = set()
+    for token in _WORD.findall(task.casefold()):
+        if token in _STOPWORDS or len(token) < 2 or token in seen:
+            continue
+        seen.add(token)
+        tokens.append(token)
+    if not tokens:
+        return "no_retrieval_query_terms"
+    return " ".join(tokens)[:2_000]
 
 
 def _defensive_unique_active_candidates(
@@ -315,10 +331,7 @@ def _abstention_candidate(decision: RetrievalGroundingDecision) -> ContextCandid
         bucket="task",
         pinned=True,
         compressible=False,
-        metadata={
-            "answerable": False,
-            "reason": decision.reason,
-        },
+        metadata={"answerable": False, "reason": decision.reason},
     )
 
 
