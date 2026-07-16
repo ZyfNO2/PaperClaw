@@ -1,6 +1,14 @@
-"""PaperClaw v0.09.1 RAG document, index and BM25 retrieval foundation."""
+"""PaperClaw v0.09.1 local RAG retrieval and grounding foundation."""
 
 from paperclaw.retrieval.chunking import build_chunks
+from paperclaw.retrieval.context_source import (
+    CitationAnchor,
+    RetrievalContextSource,
+    RetrievalGroundingDecision,
+    RetrievalGroundingPolicy,
+    extract_retrieval_query,
+    register_retrieval_context_source,
+)
 from paperclaw.retrieval.contracts import (
     BlockLocator,
     Chunk,
@@ -27,6 +35,12 @@ from paperclaw.retrieval.evaluation import (
     recall_at_k,
     reciprocal_rank,
 )
+from paperclaw.retrieval.grounding import (
+    GroundingClaimJudgment,
+    GroundingMetrics,
+    cited_anchor_ids,
+    evaluate_grounding,
+)
 from paperclaw.retrieval.incremental import IncrementalIndexer, IncrementalIndexResult
 from paperclaw.retrieval.integrity import (
     IndexIntegrityReport,
@@ -52,8 +66,11 @@ __all__ = [
     "Chunk",
     "ChunkConfig",
     "ChunkLocator",
+    "CitationAnchor",
     "DocumentIdentity",
     "DocumentVersion",
+    "GroundingClaimJudgment",
+    "GroundingMetrics",
     "IncrementalIndexer",
     "IncrementalIndexResult",
     "IndexIntegrityReport",
@@ -66,7 +83,10 @@ __all__ = [
     "RankedResult",
     "RegistryMutationResult",
     "RetrievalCandidate",
+    "RetrievalContextSource",
     "RetrievalError",
+    "RetrievalGroundingDecision",
+    "RetrievalGroundingPolicy",
     "RetrievalJudgment",
     "RetrievalMetrics",
     "RetrievalRequest",
@@ -77,12 +97,16 @@ __all__ = [
     "StaleIndexError",
     "build_chunks",
     "canonical_json",
+    "cited_anchor_ids",
     "compute_corpus_hash",
+    "evaluate_grounding",
     "evaluate_judgment",
     "evaluate_suite",
+    "extract_retrieval_query",
     "ndcg_at_k",
     "recall_at_k",
     "reciprocal_rank",
+    "register_retrieval_context_source",
     "retrieved_ids",
     "select_parser",
     "sha256_bytes",
