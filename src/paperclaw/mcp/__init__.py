@@ -11,15 +11,18 @@ from paperclaw.mcp.contracts import (
     MCPServerIdentity,
     MCPToolDescriptor,
 )
+from paperclaw.mcp.registration import (
+    MCPRuntimeConnection,
+    connect_and_register_mcp_tools,
+    mcp_registry_tool_name,
+)
 from paperclaw.mcp.runtime import (
     AllowListMCPPermissionPolicy,
     DenyAllMCPPermissionPolicy,
     MCPPermissionDecision,
     MCPPermissionPolicy,
     MCPRegistrationResult,
-    MCPRuntimeConnection,
     MCPRuntimeTool,
-    connect_and_register_mcp_tools,
 )
 from paperclaw.mcp.schema import normalize_json_schema, normalize_tool_descriptor
 from paperclaw.mcp.session import MCPClientSession
@@ -47,6 +50,7 @@ __all__ = [
     "MCPTransport",
     "StdioMCPTransport",
     "connect_and_register_mcp_tools",
+    "mcp_registry_tool_name",
     "normalize_json_schema",
     "normalize_tool_descriptor",
     "validate_tool_arguments",
