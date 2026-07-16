@@ -2,7 +2,7 @@
 
 ## Status
 
-`IMPLEMENTATION_COMPLETE / REPOSITORY_CI_PENDING`
+`IMPLEMENTATION_COMPLETE / REPOSITORY_CI_RUNNING`
 
 ## Added coverage
 
@@ -29,6 +29,8 @@ nDCG@3            = 1.0
 Top-1 Accuracy    = 1.0
 ```
 
-## Repository CI
+## Repository CI strategy
 
-Exact pytest count, failures/skips, Ruff conclusion, run ID and artifact digest remain pending while the GitHub Actions connector returns upstream 502. No CI success is inferred from code review or commit creation.
+The repository workflow only listens to pull requests whose base is `main`. PR #26 is normally stacked on the MCP Runtime branch, so it is temporarily retargeted to `main` solely to execute the identical full Windows pytest and Ruff workflow. After validation and documentation closeout, the Draft PR will be restored to its dependency branch.
+
+Exact test counts, failures/skips, Ruff conclusion, run ID and artifact digest remain pending until that run completes.
