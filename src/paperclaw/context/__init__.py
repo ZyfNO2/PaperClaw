@@ -64,6 +64,15 @@ from paperclaw.context.session import (
     open_session,
     reopen_session,
 )
+from paperclaw.context.source_registry import (
+    ContextSourceCollectionError,
+    ContextSourceDescriptor,
+    ContextSourceRegistry,
+    ContextSourceRegistryError,
+    ContextSourceRegistryFrozen,
+    ContextSourceRegistrySnapshot,
+    SourceKind,
+)
 
 __all__ = [
     "Char4TokenEstimator",
@@ -89,6 +98,12 @@ __all__ = [
     "ContextSelection",
     "ContextSnapshot",
     "ContextSource",
+    "ContextSourceCollectionError",
+    "ContextSourceDescriptor",
+    "ContextSourceRegistry",
+    "ContextSourceRegistryError",
+    "ContextSourceRegistryFrozen",
+    "ContextSourceRegistrySnapshot",
     "DEFAULT_ESTIMATOR",
     "ESTIMATOR_CHAR4",
     "EventSink",
@@ -113,6 +128,7 @@ __all__ = [
     "SQLiteRepository",
     "SessionEvent",
     "SessionService",
+    "SourceKind",
     "SqliteEventSink",
     "TokenEstimator",
     "open_session",
