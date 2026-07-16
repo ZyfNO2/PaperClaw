@@ -2,7 +2,7 @@
 
 ## Status
 
-`IMPLEMENTATION_COMPLETE / REPOSITORY_CI_PENDING`
+`IMPLEMENTATION_COMPLETE / REPOSITORY_CI_PASS / OFFLINE_GO`
 
 ## Static and local smoke evidence
 
@@ -21,9 +21,7 @@ Result:
 - `total_matches = 1`;
 - the requested target document was returned.
 
-This smoke validates SQLite/FTS syntax only. It is not a substitute for repository pytest.
-
-## Automated test coverage added
+## Automated coverage
 
 - deterministic request identity and bounds;
 - incremental add/noop/update/delete;
@@ -36,11 +34,13 @@ This smoke validates SQLite/FTS syntax only. It is not a substitute for reposito
 - legal broken Manifest state;
 - tampered ready Manifest contract;
 - missing/stale FTS inspection and rebuild;
-- manifest identity/content collision during rebuild;
+- Manifest identity/content collision during rebuild;
 - metric definitions;
 - fixed retrieval fixture quality Gate.
 
-## Offline retrieval fixture target
+## Offline retrieval fixture
+
+The deterministic four-query fixture passed:
 
 ```text
 Recall@3 = 1.0
@@ -48,10 +48,26 @@ MRR      = 1.0
 nDCG@3   = 1.0
 ```
 
-These values are assertions in the deterministic fixture test. They will be reported as verified only after repository CI succeeds.
+This fixture is a regression Gate, not a public retrieval benchmark.
 
 ## Repository CI
 
-GitHub Actions run ID, final test-case count, failure count, skipped count, Ruff result, and artifact digest are pending because the GitHub connector currently returns an upstream 502 for Actions/PR status endpoints.
+Validated branch HEAD:
 
-No Repository GO claim is made while this section is pending.
+```text
+3442a60615a92ea360c0ef1544a06d19b6dba1a0
+```
+
+GitHub Actions:
+
+```text
+run: 29541314820
+runner: Windows Server 2025
+pytest call-phase: 572 passed, 0 failed, 0 skipped
+pytest exit status: 0
+Ruff E9/F63/F7/F82: PASS
+artifact: pytest-results-29541314820
+artifact digest: sha256:f757df67df136d1e269118f53aafcad832b28b5e3e9ad0ff0060660555915ce7
+```
+
+The test-case count is derived only from `when == "call"` records in `pytest_reportlog.jsonl`; setup and teardown lifecycle records are not counted as additional tests.
