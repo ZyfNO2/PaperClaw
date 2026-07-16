@@ -166,6 +166,8 @@ def select_parser(*, source_uri: str, media_type: str | None = None):
     suffix = PurePosixPath(source_uri.lower()).suffix
     if normalized_type in {"text/markdown", "text/x-markdown"} or suffix in {".md", ".markdown"}:
         return MarkdownParser()
-    if normalized_type in {"", "text/plain"} or suffix in {".txt", ".text"}:
+    if normalized_type == "text/plain" or (
+        not normalized_type and suffix in {".txt", ".text"}
+    ):
         return PlainTextParser()
     raise ValueError(f"unsupported Phase A document format: {media_type or suffix or source_uri}")

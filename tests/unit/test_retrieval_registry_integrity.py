@@ -12,6 +12,7 @@ from paperclaw.retrieval import (
     SourceArtifact,
     build_chunks,
     compute_corpus_hash,
+    select_parser,
 )
 
 
@@ -114,3 +115,10 @@ def test_delete_rejects_wrong_manifest_schema_and_rolls_back(tmp_path) -> None:
             )
         assert registry.active_counts() == (1, 1, len(chunks))
         assert registry.fts_row_count() == len(chunks)
+
+
+def test_parser_selection_rejects_unknown_suffix_without_media_type() -> None:
+    with pytest.raises(ValueError, match="unsupported"):
+        select_parser(source_uri="file:///docs/paper.pdf")
+    with pytest.raises(ValueError, match="unsupported"):
+        select_parser(source_uri="file:///docs/data.bin")
