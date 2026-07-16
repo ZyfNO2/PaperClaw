@@ -1,11 +1,12 @@
-# PaperClaw v0.06.2 MultiAgent View Adapter SOP
+# PaperClaw v0.07.8 MultiAgent View Adapter SOP
 
-> 状态：实现完成；实现 HEAD Windows CI 与 Ruff 已通过；等待最终文档 HEAD CI
-> 基线：`main@725e8a81425efa987f59a6f66ce0021fe7978261`
-> 分支：`feat/v0.06.2-multiagent-view-adapter`
+> 正式版本：`v0.07.8`
+> 状态：实现完成；Windows CI 与 Ruff 已通过
+> 基线：`main@ec1ecbeaf37c0e6ea85a07c12446b3d8f9b8e409`
+> Legacy branch ref：`feat/v0.06.2-multiagent-view-adapter`
 > Draft PR：`#15`
-> 实现验证：run `29450712508` / 403 passed / Ruff PASS
-> 冲突策略：不修改 `cli.py`、`tui/`、`trace/` 或任何 v0.07.x 文件。
+> 最终验证：run `29452574020` / 475 passed / Ruff PASS
+> 冲突策略：不修改 `cli.py`、`tui/`、`trace/`、Provider、Replay、Eval 或 exporter。
 
 ## 1. 用户故事
 
@@ -20,7 +21,7 @@ Coordinator EventEnvelope v1
              ↓
  immutable TeamViewSnapshot
              ↓
- future TUI / CLI / tests
+ v0.07.9 TUI / future CLI / tests
 ```
 
 ## 2. 实现范围
@@ -69,9 +70,8 @@ Coordinator EventEnvelope v1
 - [x] changed-file 名称不进入 snapshot，仅保留数量；
 - [x] LiveTeamView 可作为 Coordinator event handler；
 - [x] 缺失 terminal event 时可由 CoordinatorResult 防御性收口；
-- [x] GitHub Actions Windows 全量 pytest：403 passed，0 failed，0 skipped；
-- [x] Ruff high-signal gate：PASS；
-- [ ] Handoff/SOP 最终文档 HEAD CI。
+- [x] GitHub Actions Windows 全量 pytest：475 passed，0 failed，0 skipped；
+- [x] Ruff high-signal gate：PASS。
 
 ## 6. 接线方式
 
@@ -89,4 +89,8 @@ coordinator.run(goal, tasks)
 snapshot = team_view.snapshot
 ```
 
-v0.07.x 合并后，TUI 只需消费 `TeamViewSnapshot`，无需导入 Coordinator、Worker、Repository、SQLite 或 Trace 实现。
+v0.07.9 TUI 只消费 `TeamViewSnapshot`，无需导入 Coordinator、Worker、Repository、SQLite 或 Trace 实现。
+
+## 7. 编号说明
+
+本功能原先以 `v0.06.2` 开发。为统一当前版本线，正式功能编号调整为 `v0.07.8`。文件路径与 GitHub head branch ref 暂时保留旧名，仅用于维持 PR #15 历史与 CI 关联，不代表正式版本号。
