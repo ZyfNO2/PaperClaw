@@ -10,5 +10,6 @@
 - Capability selection, automatic routing and multi-Server conflict resolution remain out of scope.
 - MCP Resources, Prompts and non-text result content remain unsupported.
 - No remote write retry or idempotency semantics are provided.
+- Existing Trace records the node-safe Registry Tool identity and generic Tool lifecycle. It does not add an MCP-specific event schema or persist full ToolResult metadata.
 - Tests use deterministic fakes and a local stdio subprocess; third-party MCP interoperability is not claimed.
-- Merge remains blocked until prerequisite v0.08 and MCP Protocol Foundation PRs are accepted into the target branch.
+- The PR remains Draft and has not been merged automatically.

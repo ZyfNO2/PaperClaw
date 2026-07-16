@@ -2,13 +2,14 @@
 
 ## Status
 
-`IMPLEMENTED / CI_PENDING / PREREQUISITE_MERGES_PENDING`
+`COMPLETE / OFFLINE_GO / CI_PASS`
 
 ## Added automated coverage
 
 ### Unit
 
 - MCP Tool registration alongside local Tools;
+- node-safe deterministic Tool identity;
 - invocation schema rejection before remote call;
 - default-deny Permission;
 - Permission recheck and runtime revocation;
@@ -20,11 +21,30 @@
 ### Integration
 
 - real deterministic local stdio Fake MCP Server connect/initialize/discover/call/close;
-- registered echo/add Tools execute through existing `safe_execute` path;
+- registered echo/add Tools execute through the existing `safe_execute` path;
 - local Tool remains available in the same Registry;
 - `AgentRuntimeExecutor` applies existing `max_tool_calls` to MCP Tools;
 - MCP Tool lifecycle persists in the existing SQLite `session_events` fact source;
 - configured Server secret does not appear in durable event JSON.
+
+### Existing regression repaired
+
+Initial run `29516623795` exposed two failures:
+
+1. dotted MCP action names produced invalid `tool:<name>` NodeRegistry IDs; fixed by node-safe slugs plus an exact-identity hash;
+2. an existing Hypothesis redaction property generated `secret="authoriz"`, which appeared in the fixed JSON key `authorization` after values were correctly redacted; fixed by generating explicitly prefixed Secret values so the assertion measures payload content rather than schema keys.
+
+## Final verification
+
+- Code validation HEAD: `013fffd519e86efa88ef6e9d8e178a95224097de`
+- GitHub Actions run: `29517520350`
+- Windows Server 2025 / Python 3.12 pytest: `1713 passed`
+- Failed: `0`
+- Skipped: `0`
+- pytest exit status: `0`
+- Ruff E9/F63/F7/F82: PASS
+- Artifact: `pytest-results-29517520350`
+- Artifact digest: `sha256:83728a4cb5e7f26f657afd88c427954f3e4a11deee9326dedc75c510685a20b0`
 
 ## Verification commands
 
@@ -34,8 +54,6 @@ python -m pytest -q --basetemp=tmp/pytest -m "not real_llm"
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
 
-GitHub Actions on the Draft PR is the repository-wide Windows/Python 3.12 source of truth. Exact counts and artifact digest will be added after the final branch HEAD passes.
-
 ## Test classification
 
-All tests are offline. One integration test launches the deterministic repository Fake MCP Server through real stdio pipes. No production or third-party MCP Server is contacted.
+All tests are offline. One integration test launches the deterministic repository Fake MCP Server through real stdio pipes. No production or third-party MCP Server is contacted, so real interoperability remains not verified and is not represented as completed.
