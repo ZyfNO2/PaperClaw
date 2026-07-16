@@ -1,0 +1,50 @@
+{
+  "documents": [
+    {
+      "uri": "file:///fixture/asyncio.md",
+      "name": "asyncio.md",
+      "media_type": "text/markdown",
+      "text": "# Async Runtime\n\nPython asyncio runs coroutines on an event loop. Cooperative cancellation raises CancelledError at an await point and cleanup belongs in finally blocks."
+    },
+    {
+      "uri": "file:///fixture/sqlite.md",
+      "name": "sqlite.md",
+      "media_type": "text/markdown",
+      "text": "# SQLite Durability\n\nSQLite write-ahead logging uses a WAL file. Short transactions and a busy timeout reduce writer contention while preserving durable commits."
+    },
+    {
+      "uri": "file:///fixture/tcp.md",
+      "name": "tcp.md",
+      "media_type": "text/markdown",
+      "text": "# TCP Flow Control\n\nTCP sequence numbers and acknowledgement numbers provide ordered delivery. The advertised receive window implements sliding-window flow control."
+    },
+    {
+      "uri": "file:///fixture/rag.md",
+      "name": "rag.md",
+      "media_type": "text/markdown",
+      "text": "# Retrieval Grounding\n\nA retrieval system should invalidate stale document versions, filter duplicate chunks, preserve source locators and abstain when evidence is missing."
+    }
+  ],
+  "queries": [
+    {
+      "id": "async-cancel",
+      "query": "cooperative cancellation event loop CancelledError",
+      "relevance": {"file:///fixture/asyncio.md": 3}
+    },
+    {
+      "id": "sqlite-wal",
+      "query": "SQLite WAL busy timeout writer contention",
+      "relevance": {"file:///fixture/sqlite.md": 3}
+    },
+    {
+      "id": "tcp-window",
+      "query": "TCP acknowledgement sliding receive window",
+      "relevance": {"file:///fixture/tcp.md": 3}
+    },
+    {
+      "id": "rag-stale",
+      "query": "invalidate stale versions duplicate chunks locators",
+      "relevance": {"file:///fixture/rag.md": 3}
+    }
+  ]
+}
