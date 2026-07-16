@@ -1,0 +1,55 @@
+Screen {
+    layout: vertical;
+}
+
+#team-status {
+    height: 2;
+    padding: 0 1;
+}
+
+#team-main {
+    height: 1fr;
+    layout: horizontal;
+}
+
+#team-main.narrow {
+    layout: vertical;
+}
+
+#team-left {
+    width: 2fr;
+    border: round $primary;
+}
+
+#team-right {
+    width: 1fr;
+    border: round $secondary;
+}
+
+#team-main.narrow > #team-left,
+#team-main.narrow > #team-right {
+    width: 1fr;
+    height: 1fr;
+}
+
+#team-workers {
+    height: 1fr;
+    padding: 0 1;
+    overflow-y: auto;
+}
+
+#team-review {
+    height: 4;
+    padding: 0 1;
+    border-top: solid $primary;
+}
+
+#team-timeline {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#team-help {
+    height: 1;
+    padding: 0 1;
+}
