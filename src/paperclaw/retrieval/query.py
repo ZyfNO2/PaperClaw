@@ -9,7 +9,14 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from paperclaw.retrieval.contracts import ChunkLocator, canonical_json, sha256_text, stable_id
+from paperclaw.retrieval.contracts import (
+    ChunkLocator,
+    IndexManifest,
+    canonical_json,
+    sha256_text,
+    stable_id,
+)
+from paperclaw.retrieval.manifest import validate_manifest_row
 
 _QUERY_TOKEN = re.compile(r"[^\W_]+(?:['’\-][^\W_]+)*", re.UNICODE)
 
@@ -157,13 +164,6 @@ class RankedResult:
         return sha256_text(canonical_json(self.to_dict()))
 
 
-@dataclass(frozen=True)
-class _ManifestSnapshot:
-    manifest_id: str
-    corpus_hash: str
-    state: str
-
-
 class SQLiteBM25Retriever:
     """Read-only BM25 adapter that filters stale and duplicate FTS rows."""
 
@@ -304,17 +304,19 @@ class SQLiteBM25Retriever:
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
 
-    def _current_manifest(self) -> _ManifestSnapshot | None:
+    def _current_manifest(self) -> IndexManifest | None:
         try:
             row = self._conn.execute(
-                "SELECT manifest_id, corpus_hash, state FROM index_manifests "
-                "ORDER BY rowid DESC LIMIT 1"
+                "SELECT * FROM index_manifests ORDER BY rowid DESC LIMIT 1"
             ).fetchone()
         except sqlite3.OperationalError as exc:
             raise BrokenIndexError("retrieval schema is unavailable") from exc
         if row is None:
             return None
-        return _ManifestSnapshot(row["manifest_id"], row["corpus_hash"], row["state"])
+        try:
+            return validate_manifest_row(row)
+        except ValueError as exc:
+            raise BrokenIndexError("latest index manifest is invalid") from exc
 
     def _active_chunk_count(self) -> int:
         try:
@@ -328,7 +330,7 @@ class SQLiteBM25Retriever:
     @staticmethod
     def _validate_request_snapshot(
         request: RetrievalRequest,
-        manifest: _ManifestSnapshot,
+        manifest: IndexManifest,
     ) -> None:
         if request.expected_manifest_id and request.expected_manifest_id != manifest.manifest_id:
             raise StaleIndexError(
