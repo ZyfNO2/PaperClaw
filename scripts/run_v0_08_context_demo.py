@@ -18,7 +18,6 @@ from paperclaw.context.orchestration import (
     ContextRequest,
 )
 from paperclaw.context.repository import SQLiteRepository
-from paperclaw.context.session import SessionService
 
 
 _DEMO_WORKSPACE = "C:/paperclaw-v008-demo-workspace"
@@ -36,17 +35,16 @@ def build_demo_artifact() -> dict:
                 agent_id="demo",
                 role="agent",
             )
-            prior = SessionService(
-                repository,
+            repository.append_message_with_auto_sequence(
+                message_id="msg-prior-user",
                 conversation_id="conv-v008-demo",
                 run_id="run-prior",
-                agent_id="demo",
+                role="user",
+                content=(
+                    "Preserve constraints, failed checks, and evidence references."
+                ),
             )
-            prior.append_message(
-                "user",
-                "Preserve constraints, failed checks, and evidence references.",
-            )
-            prior.close(stop_reason="done")
+            repository.end_run("run-prior", stop_reason="done")
 
             external = ContextCandidate(
                 candidate_id="external-injection-fixture",
