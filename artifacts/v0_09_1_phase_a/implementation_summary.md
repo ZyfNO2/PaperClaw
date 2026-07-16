@@ -48,4 +48,10 @@ PYTHONPATH=src python -m compileall -q src tests
 PASS
 ```
 
-Full repository regression and Windows Ruff/pytest are delegated to the Draft PR CI because the execution environment cannot clone GitHub directly.
+## Draft PR verification
+
+```text
+GitHub Actions CI run 29511938895
+Windows pytest: 523 passed, 0 failed, 0 skipped
+Ruff E9/F63/F7/F82 gate: PASS
+```

@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation complete for Phase A. Local isolated tests pass. GitHub Actions status must be read from the Draft PR associated with `feat/v0.09.1-rag-index-foundation`.
+Implementation complete for Phase A. Local isolated tests and repository-wide Draft PR CI pass.
 
 ## Branch
 
@@ -35,6 +35,15 @@ python -m pytest tests/unit/test_retrieval_foundation.py -q --basetemp=tmp/pytes
 python -m pytest -q --basetemp=tmp/pytest -m "not real_llm"
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
+
+## Verification result
+
+- Local focused suite: `18 passed`;
+- Local compile check: PASS;
+- GitHub Actions run `29511938895`;
+- Windows repository suite: `523 passed, 0 failed, 0 skipped`;
+- Ruff `E9,F63,F7,F82`: PASS;
+- no live provider, online retrieval or real-model test was required or executed for this offline Phase A slice.
 
 ## Known limits
 
