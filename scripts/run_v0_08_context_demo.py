@@ -21,6 +21,9 @@ from paperclaw.context.repository import SQLiteRepository
 from paperclaw.context.session import SessionService
 
 
+_DEMO_WORKSPACE = "C:/paperclaw-v008-demo-workspace"
+
+
 def build_demo_artifact() -> dict:
     with tempfile.TemporaryDirectory(prefix="paperclaw-v008-") as temp_dir:
         root = Path(temp_dir)
@@ -76,7 +79,7 @@ def build_demo_artifact() -> dict:
                 conversation_id="conv-v008-demo",
                 step_id="model-1",
                 raw_prompt="Produce one evidence-backed report.",
-                workspace=str(root),
+                workspace=_DEMO_WORKSPACE,
                 additional_candidates=(external,),
             )
             # The Runtime normally creates the Run before the first model call.
