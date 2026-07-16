@@ -1,85 +1,91 @@
 # PaperClaw v0.08–v0.10：校招开发向路线修订草案
 
-> 状态：增量修订草案，不直接替换或删除既有 v0.08、v0.09、v0.10 草案  
-> 基线：`main@1a50a311b91af74375d6a3036e9ccb750e9f1b02`  
+> 状态：增量修订草案，不替换或删除既有 v0.08、v0.09、v0.10 草案  
 > 日期：2026-07-16  
-> 目标：在保留 PaperClaw 既有 Research / Evidence 方向的前提下，优先补齐 AI Agent 开发岗校招高频考察的 Context Engineering、动态 Prompt 装配、MCP、RAG 工程闭环、模型调配与可靠发布能力。
+> 目标：将后续路线统一拆成“当前版本 MVP 实现”与“Post-MVP 后续升级待办”两层，避免把长期能力混入版本完成条件。
 
-## 1. 本修订稿与旧草案的关系
+## 1. 与旧草案的关系
 
-本文件采用“叠加修订”而不是“覆盖重写”。以下旧文档继续保留，作为详细设计库和后续候选来源：
+以下旧文档继续保留，作为详细设计库和候选能力来源：
 
 - `PaperClaw_v0.08_RetrievalRAG与EvidenceEngine_SOP草案.md`；
 - `PaperClaw_v0.09_SeededResearch学术裁缝垂直切片_SOP草案.md`；
 - `PaperClaw_v0.10_ReliabilitySecurityPackagingRelease_SOP草案.md`。
 
-执行优先级和版本主线按本修订稿重新排序；旧草案中的契约、风险、Eval、Evidence 状态机、Release Checklist 不因排序调整而失效。
+本文件只重新定义执行顺序、MVP 边界和后续升级池，不声明新增能力已经实现。旧文档中已经形成的 Evidence 状态机、RAG Eval、SeededResearch 契约和 Release Checklist 仍可作为后续 SOP 的输入。
 
-本修订稿只调整路线与边界，不声明任何新增能力已经实现。
+## 2. 统一拆分规则
 
-## 2. 对现有 v0.08–v0.10 的覆盖审计
+每个版本统一采用两个部分：
 
-| 面试 / 工程能力 | 现有覆盖 | 判断 | 修订动作 |
-|---|---|---|---|
-| Context 分层、结构化压缩、Checkpoint | v0.04 已实现主体 | 已有基础 | 不重复造一套压缩器，补运行期选择、装配、冲突与预算策略 |
-| 动态 Prompt Assembly | Context 设计稿有骨架，后续版本未冻结 | 部分覆盖 | 提升为 v0.08 主故事 |
-| 长期 Memory 写入、召回、去重、失效 | L5 Retrieved Memory 仍为 no-op | 明显缺口 | v0.08 做轻量 Memory Retrieval MVP |
-| QueryEngine 与 Prompt 边界 | 设计稿明确 QueryEngine 不直接拼 Prompt | 边界正确 | 保持薄 façade，由独立 ContextOrchestrator 负责模型输入 |
-| Hybrid RAG、Chunk、Rerank、Citation、Eval | 原 v0.08 覆盖很强 | 强覆盖 | 保留设计，后移为 v0.09.1，先完成 Context 消费合同 |
-| MCP Client / Server / Tool Discovery | v0.08–v0.10 未形成版本切片 | 核心缺口 | 新增 v0.09 MCP Tool Gateway MVP |
-| Skill / Tool 渐进式披露 | 工具治理有概念，无动态能力选择闭环 | 部分覆盖 | v0.08 先做 Context/Capability Selection；v0.09 接 MCP discovery |
-| Model routing / fallback / cost policy | Provider retry 已有，v0.10 有性能与发布 | 部分覆盖 | v0.10 增加最小 ModelPolicyRouter 与可观察 fallback |
-| SeededResearch 学术垂直切片 | 原 v0.09 设计完整 | 有价值但主线偏科研 | 保留为 v0.09.2 可选 domain showcase，不阻塞通用开发能力 |
-| LoRA / SFT / DPO / GRPO | 不在当前 Runtime 路线 | 对开发岗非必做 | 只准备原理与选型讨论，不在 PaperClaw 内实现训练流水线 |
-| GraphRAG | 原 v0.08 明确延期 | 决策合理 | 继续延期，除非 Hybrid RAG Eval 证明多跳关系检索是实际瓶颈 |
+```text
+v0.XX MVP 实现
+├── 一个用户可见闭环
+├── 最多三个实施 Phase
+├── 最小契约
+├── 最小测试与离线演示
+├── GO / NO-GO
+└── 明确非目标
 
-## 3. 修订后的版本主线
+v0.XX Post-MVP 后续升级待办
+├── 不属于当前完成条件
+├── 没有默认实施顺序
+├── 必须写明升级触发条件
+├── 必须基于真实失败 Trace / Eval / 用户故事
+└── 升级时另开独立 SOP
+```
+
+约束：
+
+1. MVP 完成后停止，不自动进入升级池；
+2. 升级待办不能因为接口已预留就描述为已实现；
+3. 一个候选只有在真实 Trace、Eval 或下游用户故事证明必要时，才能升级为独立 SOP；
+4. QueryEngine 始终保持薄 façade，不直接拼 Prompt、执行 Tool、读取 RAG、管理 MCP 或实现 domain 规则；
+5. 每个 MVP 默认最多三个实施 Phase，超过范围必须继续拆版本。
+
+## 3. 修订后的主线
 
 ```text
 v0.07.x Trace / Eval / MultiAgent View
         ↓
-v0.08 Context Orchestration / Dynamic Prompt Assembly
+v0.08 Context Orchestration / Dynamic Prompt Assembly MVP
         ↓
-v0.09 MCP Tool Gateway
+v0.09 MCP Tool Gateway MVP
         ↓
-v0.09.1 Hybrid RAG / Evidence Engine
+v0.09.1 Hybrid RAG / Evidence Engine MVP
         ↓
-v0.09.2 SeededResearch Domain Showcase（可选，不阻塞发布）
+v0.09.2 SeededResearch Domain Showcase MVP（可选）
         ↓
-v0.10 Model Policy / Reliability / Security / Packaging / Release
+v0.10 Model Policy / Reliability / Security / Packaging / Release MVP
 ```
 
-依赖原则：
-
-1. RAG 先成为标准 `ContextSource`，再进入模型输入，不能由 RetrievalEngine 直接拼 Prompt；
-2. MCP Tool 必须经过 PaperClaw ToolRegistry、validation、Permission 和 Trace，不能绕过现有执行路径；
-3. QueryEngine 只管理 Run、预算、停止、事件和结果，不承担 Context、MCP、RAG 或 domain 规则；
-4. SeededResearch 只消费通用能力，不反向污染 Runtime 核心；
-5. v0.10 只收口已证明必要的能力，不为了“生产级平台”无限扩张。
+每个版本均有独立 Post-MVP 升级池，不阻塞下一主线版本。
 
 ---
 
-# v0.08：Context Orchestration 与 Dynamic Prompt Assembly MVP
+# v0.08：Context Orchestration 与 Dynamic Prompt Assembly
 
-## 4. 用户故事
+## 4. v0.08 MVP 实现
 
-用户提交一个跨多轮 Coding / Research 任务后，PaperClaw 能够在每次模型调用前，从系统规则、角色、Workspace、Task State、最近消息、Tool Result、长期 Memory 和 Retrieval Candidate 中，选择当前真正需要的信息，并在固定 token 预算内生成可追踪的模型输入。
+### 4.1 用户故事
 
-当规则、历史记忆、外部文档或用户要求冲突时，系统按显式优先级、trust、scope 和 freshness 处理，而不是依赖模型自行猜测。
+用户提交一个跨多轮 Coding / Research 任务后，PaperClaw 在每次模型调用前，从系统规则、角色、Workspace、Task State、最近消息、Tool Result 和已有 Context / Checkpoint 中选择当前真正需要的信息，在固定 token 预算内生成可追踪的 Provider 输入。
 
-## 5. 定位与边界
+当项目规则、用户要求、历史内容或外部文本冲突时，系统按照显式 trust、scope、priority 和 freshness 处理，而不是依赖模型自由猜测。
+
+### 4.2 MVP 边界
 
 ```text
 QueryEngine
-    负责 Run lifecycle / limits / stop / events / terminal result
+    Run lifecycle / limits / stop / events / result
         ↓
 AgentRuntimeExecutor / Agent Loop
         ↓
 ContextOrchestrator
-    负责 collect / resolve / select / compress / allocate / render
+    collect / resolve / select / allocate / compact
         ↓
 PromptAssembler
-    只把已选 ContextItem 渲染成 Provider 输入
+    render selected ContextItem into provider payload
         ↓
 ChatModel
 ```
@@ -87,17 +93,16 @@ ChatModel
 必须保持：
 
 - QueryEngine 不直接拼接 Prompt；
-- ContextOrchestrator 不调用 Tool，不写任意业务数据库 SQL；
-- PromptAssembler 不决定权限，不提升 Evidence / Memory 的 trust；
-- 外部 README、网页、PDF、MCP Resource、RAG Chunk 一律是 untrusted data；
+- ContextOrchestrator 不调用 Tool；
+- PromptAssembler 不决定 Permission，不提升 Evidence trust；
+- 外部 README、网页、PDF、MCP Resource 和 RAG Chunk 一律属于 untrusted data；
 - Prompt 优先级不能替代执行层 Permission。
 
-## 6. 最小契约
+### 4.3 MVP 最小契约
 
 ```text
 ContextRequest
 ContextPolicy
-ContextSource
 ContextCandidate
 ContextSelection
 ContextConflict
@@ -105,19 +110,15 @@ ContextBudgetAllocation
 PromptSection
 PromptAssembly
 ContextAssemblyTrace
-MemoryRecord
-MemoryWriteDecision
-MemoryRetrievalResult
 ```
 
-关键字段至少包括：
+关键字段：
 
 ```text
 run_id / step_id
 source / source_ref
 layer / kind / scope
 priority / trust / freshness
-valid_from / valid_to / superseded_by
 estimated_tokens / selected_tokens
 selection_reason / exclusion_reason
 conflict_group / conflict_resolution
@@ -125,196 +126,138 @@ compressible / pinned / sensitive
 content_hash / policy_version / prompt_version
 ```
 
-## 7. 必做能力
+### 4.4 MVP 必做能力
 
-### 7.1 Context Source Adapter
+1. 接入现有 Runtime Constitution、Role / Mode、Workspace Rules、Task State、recent conversation、recent Tool Results 和 v0.04 Context / Checkpoint；
+2. 所有来源先转为 `ContextCandidate`，禁止模块直接字符串拼 Prompt；
+3. 实现显式冲突规则：system policy > project rule > user request > external data；
+4. verified fact 不被 hypothesis 覆盖，用户显式纠正可使旧 preference 失效；
+5. 区分 protected、task、recent message、tool result、retrieval 和 output reserve 预算；
+6. protected 内容超预算时 fail-closed，不静默删除目标、硬约束、决策、失败和 Evidence ref；
+7. 优先复用 v0.04 deterministic dedup / compaction；
+8. PromptAssembler 生成稳定 section、prompt version、fingerprint 和 token estimate；
+9. 每次 assembly 输出 selection / exclusion / conflict Trace；
+10. Retrieval 只预留 `ContextSource` Protocol，不在本版本实现 RAG。
 
-首切片只接入现有可验证来源：
+### 4.5 MVP 三阶段
 
-- Runtime Constitution；
-- Role / Mode；
-- Workspace Rules；
-- structured Task State；
-- recent conversation；
-- recent Tool Results；
-- v0.04 Context / Checkpoint；
-- lightweight MemoryStore；
-- Retrieval ContextSource Protocol 预留。
+#### Phase A：ContextOrchestrator 契约与现有 ContextBuilder 适配
 
-每个 Source 只提交 `ContextCandidate`，不能自行修改最终 Prompt。
+- 冻结请求、候选、选择、预算、冲突和 PromptAssembly 契约；
+- 在现有 ContextBuilder 上增加 policy façade，优先避免复制一套完整 Pipeline；
+- 保持当前公共 API 和 v0.04 回归兼容。
 
-### 7.2 Conflict Resolution
+#### Phase B：预算、冲突与 Prompt Assembly
 
-至少覆盖：
+- 实现 protected budget、source quota、output reserve；
+- 实现 deterministic conflict resolver；
+- 实现 PromptAssembler 与 assembly trace；
+- 接入单 Agent Runtime，MultiAgent 只做 role-scoped regression。
 
-- system policy > project rule > user request > external data；
-- 当前 scope > 远程 scope；
-- 新版本 supersede 旧版本；
-- verified fact 不被 hypothesis 覆盖；
-- explicit user correction 可使旧 preference 失效；
-- 外部文本中的 instruction 不进入 L0/L1；
-- unresolved conflict 显式进入 Trace，必要时要求澄清或 blocked。
+#### Phase C：Context Eval 与离线演示
 
-### 7.3 Token Budget Allocation
+- 固定跨域 fixture；
+- 对比旧路径和新 assembly；
+- 验证约束保留、注入隔离、token 效率和 deterministic output；
+- 形成一条可复现 CLI demo。
 
-预算不是简单保留最近 N 条消息。至少区分：
+### 4.6 MVP Eval 与 Gate
 
-```text
-protected_budget
-recent_message_budget
-active_task_budget
-tool_result_budget
-memory_budget
-retrieval_budget
-output_reserve
-```
-
-硬约束：
-
-- goal、confirmed constraints、current decision、pending work、failed verification 和 Evidence ref 是 protected；
-- 超过 protected budget 时 fail-closed，不得静默删除；
-- ContextSource 之间使用显式配额与可解释评分；
-- 输出必须保留 reserve，不能把窗口全部占满；
-- selection / exclusion 原因进入 ContextAssemblyTrace。
-
-### 7.4 Compression
-
-优先级：
-
-1. deterministic dedup；
-2. 删除重复日志与低价值 Observation；
-3. raw → summary + reference；
-4. structured compaction；
-5. optional LLM summarizer。
-
-LLM summarizer 不是 MVP 硬依赖。若启用，必须：
-
-- 保留 source refs；
-- 区分 fact / decision / hypothesis / todo；
-- 通过 constraint-retention fixture；
-- 摘要失败时回退 deterministic path；
-- 不把摘要结果自动写成长期 verified memory。
-
-### 7.5 Lightweight Memory
-
-首切片不引入独立向量数据库。使用 SQLite registry + FTS5 / metadata scoring：
-
-- semantic-like project knowledge；
-- episodic task result；
-- procedural verified workflow；
-- negative failed attempt；
-- user preference。
-
-写入策略：
-
-- 不是每轮都写；
-- 只有 explicit preference、confirmed decision、verified workflow、stable project fact、high-value failure 才能进入候选；
-- 相似去重、supersede、TTL / invalidation；
-- sensitive / secret 永不写入；
-- automatic candidate 与 user-confirmed memory 区分状态。
-
-召回策略：
-
-- keyword / scope / recency / priority / task alignment / token cost 混合评分；
-- threshold + top-k + per-kind quota；
-- stale memory 显式标记；
-- 召回不等于必选，仍经过 ContextOrchestrator。
-
-### 7.6 Prompt Assembly
-
-PromptAssembler 只负责稳定分区与 Provider payload：
-
-```text
-[System: Constitution]
-[System: Role / Mode]
-[System: Workspace Rules]
-[System: Permission View]
-[System: Task State]
-[System: Retrieved Memory]
-[System/Data: Retrieved Evidence]
-[Messages: Recent Conversation]
-[Tool: Recent Results]
-[User: Current Request]
-```
-
-需要记录静态 section fingerprint、动态 section fingerprint、prompt version 和 token estimate，为 Prompt Cache、Trace 与 Eval 提供依据。
-
-## 8. v0.08 Eval
+必须覆盖：
 
 - Constraint Retention；
 - Context Precision / Recall；
 - Conflict Resolution Accuracy；
-- Stale Memory Rate；
-- Memory Write Precision；
 - Prompt Injection Containment；
 - Token Efficiency；
 - Compaction Drift；
-- Tool Selection Accuracy；
-- same task / same fixture assembly determinism；
+- same fixture assembly determinism；
 - Context build latency。
-
-## 9. v0.08 明确延期
-
-- 独立 Vector DB；
-- 自动 Skill 生成；
-- 全量语义 Memory embedding；
-- 任意 Provider Prompt Cache 强绑定；
-- 通用 policy DSL；
-- 让模型自由决定指令优先级；
-- 将 RAG、MCP 或 Skill Registry 直接塞进 QueryEngine。
-
-## 10. v0.08 GO / NO-GO
 
 `GO`：
 
 - QueryEngine 保持薄 façade；
 - 每次模型调用有可回溯 PromptAssembly；
-- protected items 在压缩后 100% 保留；
+- protected item 保留率 100%；
 - external instruction 不进入高 trust section；
-- Memory 写入、召回和失效有独立证据；
-- token budget 超限时行为可预测。
+- 超预算行为可预测；
+- 旧单 Agent 路径无功能回归。
 
 `NO-GO`：
 
-- Prompt 由多个模块直接字符串拼接；
+- 多个模块继续直接拼 Prompt；
 - Context 超限时随机截断；
-- hypothesis 被压缩成 fact；
-- stale memory 无标记进入 Prompt；
-- QueryEngine 直接执行 Memory / RAG / Tool 逻辑。
+- hypothesis 被压缩为 fact；
+- QueryEngine 直接执行 Context / RAG / Tool 逻辑。
+
+### 4.7 MVP 明确非目标
+
+- 独立向量数据库；
+- LLM 摘要器作为硬依赖；
+- 完整长期 Memory；
+- 自动 Skill 生成；
+- Provider-specific Prompt Cache 强绑定；
+- 通用 policy DSL；
+- RAG、MCP 或 Skill Registry 直接接入 QueryEngine。
+
+## 5. v0.08 Post-MVP 后续升级待办
+
+候选项：
+
+- `memory_items` SQLite 表与 Memory lifecycle；
+- user-confirmed / automatic candidate 两级 Memory 状态；
+- keyword + scope + recency + task alignment 的 Memory 召回；
+- stale、TTL、supersede、删除和敏感信息拒绝；
+- optional LLM summarizer；
+- Prompt Cache fingerprint 与 provider cache hint；
+- ContextSource 动态权重；
+- capability / Skill progressive disclosure；
+- MultiAgent shared / private context policy；
+- Context assembly 可视化面板。
+
+升级触发条件：
+
+- 多轮任务真实出现重复信息导致 token 浪费；
+- Session resume 缺少稳定长期知识；
+- Context Eval 证明静态 quota 明显损害召回；
+- MCP / RAG 接入后候选能力或 Evidence 数量超过当前预算策略；
+- 至少有一条失败 Trace 可以稳定复现。
 
 ---
 
-# v0.09：MCP Tool Gateway MVP
+# v0.09：MCP Tool Gateway
 
-## 11. 用户故事
+## 6. v0.09 MVP 实现
 
-用户配置一个受信或待审查的 MCP Server 后，PaperClaw 可以发现其工具，将工具描述归一化为内部 Tool contract，并通过现有 ToolRegistry、Schema validation、Permission、timeout、Trace 和 Run Budget 调用。
+### 6.1 用户故事
 
-MCP Server 失联、返回非法 schema、输出过大、请求越权或包含 Prompt Injection 时，PaperClaw fail-closed 或降级，不影响本地 Tool 的既有路径。
+用户配置一个本地或明确授权的 MCP Server 后，PaperClaw 可以发现其工具，将描述归一化为内部 Tool contract，并通过既有 ToolRegistry、Schema validation、Permission、timeout、Trace 和 Run Budget 调用。
 
-## 12. 定位与边界
+MCP Server 失联、schema 非法、输出过大或请求越权时，系统 fail-closed 或降级，不影响本地 Tool 路径。
+
+### 6.2 MVP 边界
 
 ```text
 MCP Transport Adapter
         ↓
 MCP Client Session
-        ↓ list / call
-MCP Capability Normalizer
         ↓
-PaperClaw ToolDescriptor / ResourceDescriptor
+Capability Normalizer
         ↓
-ToolRegistry + Permission + Executor + Trace
+PaperClaw ToolDescriptor
+        ↓
+ToolRegistry / Permission / Executor / Trace
 ```
 
 原则：
 
 - MCP 是外部能力协议，不是新的 Agent Runtime；
-- MCP Tool 不直接获得 PaperClaw workspace 权限；
+- MCP Tool 不自动获得 Workspace 权限；
 - MCP Prompt / Resource 是外部 data，不自动成为 system instruction；
-- 先实现 Client 侧最小闭环；本地 deterministic test server 只用于验收；
-- Transport 和协议版本在执行 SOP 时以官方当前规范重新冻结，本草案不锁死长期细节。
+- 首切片只做 Client 侧闭环；
+- 具体协议和 transport 在冻结 SOP 时按官方当前规范重新核对。
 
-## 13. 最小契约
+### 6.3 MVP 最小契约
 
 ```text
 MCPServerConfig
@@ -322,305 +265,495 @@ MCPServerIdentity
 MCPConnectionState
 MCPCapabilitySnapshot
 MCPToolDescriptor
-MCPResourceDescriptor
 MCPInvocationRequest
 MCPInvocationResult
 MCPError
 MCPProvenance
 ```
 
-必须记录：
+### 6.4 MVP 必做能力
 
-- server identity / config fingerprint；
-- protocol / capability version；
-- discovery timestamp / cache status；
-- original schema hash / normalized schema hash；
-- tool side-effect classification；
-- request / response size；
-- timeout / cancellation / error taxonomy；
-- permission decision / trace id。
+1. 一个本地 transport baseline；
+2. connect / initialize / discover / call / close lifecycle；
+3. tool schema normalization；
+4. unknown / unsupported schema fail-closed；
+5. per-server allowlist；
+6. tool name collision namespace；
+7. payload、timeout、并发和调用次数限制；
+8. cancellation propagation；
+9. 先 redact 再 truncate；
+10. capability cache 与 stale 标记；
+11. deterministic fake MCP server integration test；
+12. MCP event 进入现有 Trace，不新建第二套事实源。
 
-## 14. 必做能力
+### 6.5 MVP 三阶段
 
-- 一个本地 transport baseline；
-- connect / initialize / discovery / call / close lifecycle；
-- tool schema normalization；
-- unknown / unsupported schema fail-closed；
-- per-server allowlist；
-- tool name collision namespace；
-- payload、timeout、并发和调用次数限制；
-- cancellation propagation；
-- output redaction、truncate-before-context 禁止，必须先 redact 再 truncate；
-- discovery cache 与 stale 标记；
-- server unavailable 时本地 Tool 路径不受影响；
-- deterministic fake server integration test；
-- MCP Tool event 进入现有 Trace，不创建第二套事实源。
+#### Phase A：协议边界与本地测试 Server
 
-## 15. Capability Progressive Disclosure
+- 冻结 MCP adapter / normalized Tool contract；
+- 实现 deterministic fake server；
+- 覆盖初始化、发现、调用、关闭和错误分类。
 
-不能把所有 MCP Tool schema 每轮全部注入模型。首切片采用：
+#### Phase B：ToolRegistry、Permission 与 Runtime 接入
 
-1. server / capability metadata 本地索引；
-2. 基于用户任务、关键词、scope 和 permission 选出候选工具；
-3. 只把 Top-K ToolDescriptor 交给 ContextOrchestrator；
-4. 模型选择后，执行层再次按真实参数校验权限；
-5. Tool miss / wrong selection 进入 Eval。
+- MCP Tool 注册到既有 Registry；
+- 调用前按真实参数重验 Permission；
+- 接入 timeout、cancel、budget、redaction 和 Trace；
+- 本地 Tool 与 MCP Tool 保持统一结果契约。
 
-这与 v0.08 ContextOrchestrator 共享 selection trace，但 MCP Gateway 不直接修改 Prompt。
+#### Phase C：Capability Selection 与验收
 
-## 16. MCP Eval
+- 本地索引 capability metadata；
+- 基于任务、关键词、scope 和 permission 选出 Top-K ToolDescriptor；
+- 只将候选工具交给 v0.08 ContextOrchestrator；
+- 完成 fake server E2E 和失败注入。
+
+### 6.6 MVP Eval 与 Gate
 
 - discovery correctness；
 - schema normalization correctness；
-- tool selection accuracy；
 - invalid schema rejection；
+- tool selection accuracy；
 - permission bypass rate = 0；
-- timeout / disconnect recovery；
+- timeout / disconnect containment；
 - oversized payload containment；
 - secret / injection leakage = 0；
-- stale capability rate；
 - local Tool regression = 0。
 
-## 17. v0.09 明确延期
+`GO`：MCP 工具从发现到调用完整经过 Registry、Permission、Executor 和 Trace，Server 失败不破坏本地 Tool。
+
+`NO-GO`：MCP Tool 绕过 Permission、远端 Prompt 进入 system instruction、schema 不明仍执行、断线导致 Run 无界挂起。
+
+### 6.7 MVP 明确非目标
 
 - 插件市场；
 - 自动信任任意 Server；
-- 任意第三方代码安装；
 - 多租户 MCP Gateway；
+- 任意第三方代码自动安装；
 - MCP Server 托管平台；
-- 把 MCP Resource 当 verified Evidence；
-- 未经评估的远程写操作自动重试。
+- MCP Resource 自动升级为 verified Evidence；
+- 远程写操作自动重试。
+
+## 7. v0.09 Post-MVP 后续升级待办
+
+候选项：
+
+- 多 transport 支持；
+- Resources / Prompts adapter；
+- capability refresh / reconnect state machine；
+- server health scoring；
+- per-tool cost / latency model；
+- Human approval UI；
+- remote write operation idempotency；
+- MCP Resource → RAG ingestion adapter；
+- server profile import / export；
+- capability version migration；
+- 多 Server 冲突与路由策略。
+
+升级触发条件：
+
+- 真实 Server 不支持首个 transport；
+- discovery cache stale 导致稳定失败；
+- 多 Server 出现同名能力或选择错误；
+- 用户故事明确需要 Resource / Prompt；
+- 远程写操作有可审计的业务需求和 Permission 设计。
 
 ---
 
-# v0.09.1：Hybrid RAG 与 Evidence Engine MVP
+# v0.09.1：Hybrid RAG 与 Evidence Engine
 
-## 18. 与原 v0.08 草案的关系
+## 8. v0.09.1 MVP 实现
 
-原 `PaperClaw_v0.08_RetrievalRAG与EvidenceEngine_SOP草案.md` 保留为本切片的详细设计来源。本修订只改变前置依赖和 MVP 收缩：
+### 8.1 用户故事
 
-- Retrieval 结果必须先转为 `ContextCandidate`；
-- ContextOrchestrator 决定哪些结果进入模型；
-- 先做本地可复现 baseline，再做 online scholarly backend；
-- 先证明 Retrieval / Grounding Eval，再决定 Dense、Reranker 或 GraphRAG。
+用户导入一组本地 Markdown / plain text 文档后，可以通过 SQLite FTS5 / BM25 检索相关 chunk；检索结果以标准 `ContextCandidate` 进入 v0.08 ContextOrchestrator，最终引用能够回溯到 document version、chunk、locator 和 content hash。
 
-## 19. MVP 用户故事
+### 8.2 MVP 边界
 
-用户导入一组本地 Markdown / 文档 fixture 后，可以通过 BM25 baseline 检索相关 chunk；可选 Dense adapter 打开后，系统使用 Hybrid + RRF；最终回答中的每个引用可以回溯到 document version、chunk、locator 和 content hash。
+本版本不是“先接一个向量数据库”，而是先完成：
 
-## 20. 最小实现顺序
+```text
+Document Registry
+→ deterministic chunking
+→ FTS5 / BM25 baseline
+→ incremental index
+→ Retrieval ContextSource
+→ CitationAnchor
+→ Retrieval / Grounding Eval
+```
 
-1. Document / Version / Chunk / IndexManifest；
-2. SQLite document registry + FTS5 / BM25；
-3. deterministic chunking + metadata；
-4. incremental add / update / delete；
-5. Retrieval API + ContextSource adapter；
-6. Retrieval Eval dataset；
-7. optional EmbeddingProvider / in-memory VectorIndex；
-8. RRF ablation；
-9. optional reranker；
-10. EvidenceRecord / CitationAnchor / Grounding Eval。
+原 `PaperClaw_v0.08_RetrievalRAG与EvidenceEngine_SOP草案.md` 继续作为详细设计来源，但 Dense、Reranker、online scholarly backend 和复杂 Evidence 状态不自动进入 MVP。
 
-## 21. 必须回答的工程问题
+### 8.3 MVP 最小契约
 
-- Chunk 为什么这样切，如何处理标题、代码、表格和超长段落；
-- Index 如何增量更新、失效和重建；
-- BM25 与 Dense 各自失败在哪里；
-- Hybrid 如何融合，为什么选择 RRF；
-- Top-K 如何受 Context budget 约束；
-- duplicate / stale / conflicting chunk 如何处理；
-- Retrieval 正确但 Generation 错误如何区分；
-- Citation correctness 与 faithfulness 如何评估；
-- offline、cache-first、online 如何降级。
+```text
+DocumentIdentity
+DocumentVersion
+SourceArtifact
+Chunk
+IndexManifest
+RetrievalRequest
+RetrievalCandidate
+RankedResult
+CitationAnchor
+RetrievalRun
+```
 
-## 22. MVP Gate
+### 8.4 MVP 必做能力
 
-至少包含：
+1. SQLite document registry；
+2. Markdown / plain text deterministic parser；
+3. 标题、段落、超长块和 overlap 的固定 chunk config；
+4. Chunk 绑定 version、source hash、locator 和 chunk config；
+5. FTS5 / BM25 baseline；
+6. incremental add / update / delete；
+7. broken index rebuild；
+8. Retrieval ContextSource adapter；
+9. duplicate / stale 过滤；
+10. citation locator；
+11. no-answer / abstention case；
+12. Retrieval 与 Generation / Grounding 分离评估。
+
+### 8.5 MVP 三阶段
+
+#### Phase A：Document / Chunk / Index Contract
+
+- 冻结 DocumentVersion、Chunk、IndexManifest；
+- 实现 parser 和 deterministic chunking；
+- 实现 SQLite registry 与 FTS5 schema。
+
+#### Phase B：Retrieval 与 Context 接入
+
+- 实现 BM25 查询、过滤、去重和 stale invalidation；
+- 实现 incremental index；
+- 通过 ContextSource 向 v0.08 提交候选，不直接拼 Prompt。
+
+#### Phase C：Eval 与引用闭环
+
+- 构建 graded relevance fixture；
+- 计算 Recall@K、MRR、nDCG、Duplicate Rate；
+- 验证 Citation Correctness、Unsupported Claim Rate 和 abstention；
+- 完成本地离线 demo。
+
+### 8.6 MVP Gate
+
+必须包含：
 
 - BM25 baseline；
-- Hybrid 公平对照；
-- Recall@K、MRR、nDCG、Duplicate Rate；
+- Recall@K、MRR、nDCG；
 - Context Precision / Recall；
-- Faithfulness、Citation Correctness、Unsupported Claim Rate；
-- Prompt injection fixture；
-- broken index rebuild；
+- Citation Correctness；
+- Unsupported Claim Rate；
+- prompt injection fixture；
 - stale document invalidation；
-- no-answer / abstention case。
+- broken index rebuild；
+- no-answer / abstention。
 
-Vector DB、CrossEncoder 和 GraphRAG 都不能成为 MVP 的前置条件。
+`GO`：每个进入模型的 chunk 可回溯，index 可增量更新和重建，Retrieval 失败与 Generation 失败可区分。
+
+`NO-GO`：检索结果直接升级 verified Evidence、Chunk 无版本和 locator、全文缺失时模型补写细节、RAG 绕过 Context budget。
+
+### 8.7 MVP 明确非目标
+
+- Vector DB；
+- Dense Retrieval；
+- CrossEncoder；
+- GraphRAG；
+- PDF OCR；
+- 生产爬虫；
+- 自动下载受限全文；
+- 在线学术搜索作为 MVP 必需条件。
+
+## 9. v0.09.1 Post-MVP 后续升级待办
+
+候选项：
+
+- `EmbeddingProvider` 与 in-memory / FAISS `VectorIndex`；
+- BM25 + Dense + RRF；
+- optional CrossEncoder reranker；
+- PDF parser / OCR adapter；
+- online Crossref、Semantic Scholar、arXiv、GitHub backend；
+- cache-first / online / offline 三模式；
+- Evidence identity resolve 与状态机；
+- claim extraction、counter-evidence 与 conflict；
+- advanced citation repair；
+- GraphRAG / knowledge graph；
+- 大规模 Vector DB。
+
+升级触发条件：
+
+- BM25 在固定 Eval 上出现稳定语义漏召回；
+- Hybrid ablation 能证明 Dense 带来可解释收益；
+- 文档关系型多跳问题成为真实瓶颈；
+- PDF 是明确用户故事，而不是为了堆功能；
+- 本地索引规模证明 SQLite / in-memory 已不足。
 
 ---
 
-# v0.09.2：SeededResearch Domain Showcase（可选）
+# v0.09.2：SeededResearch Domain Showcase
 
-## 23. 与原 v0.09 草案的关系
+## 10. v0.09.2 MVP 实现
 
-原 `PaperClaw_v0.09_SeededResearch学术裁缝垂直切片_SOP草案.md` 完整保留，不删除、不降格为无效文档。
+### 10.1 定位
 
-调整仅是：
+SeededResearch 是可选 domain showcase，不阻塞 MCP、RAG 或 Release。它用于证明通用 Runtime 能承载复杂 Research domain，而不是把学术逻辑塞回 Runtime 核心。
 
-- 不再阻塞通用 Runtime、MCP、RAG 和 Release 主线；
-- 只有 v0.08 Context、v0.09 MCP（如需要外部工具）和 v0.09.1 Evidence 通过后才冻结；
-- 作为 Research domain showcase，用于展示通用 Runtime 如何支撑复杂领域；
-- 校招开发岗面试中重点讲 adapter、contract、Evidence、Eval、failure handling，不把论文训练或自动写作包装成主贡献。
+### 10.2 MVP 用户故事
 
-若时间不足，可以只交付：
+用户输入研究方向和少量真假混杂种子论文，系统交付一个可追溯的 Seed Audit / Evidence Gap / Baseline / Compatibility / Decision Package，并允许 `GO / REVISE / NO-GO`，不为了完成任务强行生成创新点或实验结果。
 
+### 10.3 MVP 必做能力
+
+- ResearchContract；
+- Seed identity resolve / fake seed rejection；
 - Seed Audit；
 - Evidence Gap；
+- v0.09.1 Retrieval 接入；
 - Baseline Card；
 - Compatibility Matrix；
+- bounded Reviewer；
 - GO / REVISE / NO-GO；
 - Offline Replay fixture。
 
-不能为了版本号完成而自动生成训练结果、实验结论或论文正文。
+### 10.4 MVP 三阶段
+
+#### Phase A：Seed / Identity / Evidence Gap
+
+冻结 SeedInput、Identity、Claim / Evidence ref 和 Gap 契约，完成真假种子 fixture。
+
+#### Phase B：Baseline / Compatibility / Decision
+
+接入 Retrieval，形成 Baseline Card、Compatibility Matrix 和 bounded Review。
+
+#### Phase C：Research Package 与 Eval
+
+交付离线 Research Package，验证 fake paper leakage、Evidence alignment、NO-GO calibration 和 schema parity。
+
+### 10.5 MVP Gate
+
+`GO`：假论文不进入 Evidence；所有 Claim 有 source ref；无法支持创新时能合法输出 NO-GO 或 Evidence Gap。
+
+`NO-GO`：自动生成实验结果、把 metadata verified 当全文 verified、强行拼接 A+B+C、Domain 逻辑污染通用 QueryEngine / Context / Tool。
+
+### 10.6 MVP 明确非目标
+
+- 自动训练；
+- 自动运行大规模实验；
+- 自动生成论文正文；
+- LoRA / SFT / DPO / GRPO；
+- 全学科 ontology；
+- 无人工 Gate 的高风险代码下载和执行。
+
+## 11. v0.09.2 Post-MVP 后续升级待办
+
+候选项：
+
+- Method Family Explorer；
+- Academic Tailor Skill；
+- Novelty / falsifiability pressure test；
+- Baseline reproduction runner；
+- Experiment Matrix 与 ablation planning；
+- competing / counter-evidence lanes；
+- retraction / erratum / version relation；
+- Repo commit / license / checkpoint freeze；
+- Full Agent / Lite Chain / Offline Replay 三模式；
+- Research Workbench UI。
+
+升级触发条件：
+
+- 通用 RAG / Evidence 已稳定；
+- 至少三个跨领域 SeededResearch fixture；
+- 当前 MVP 无法回答具体 Research 用户故事；
+- 用户明确希望把该项目作为第二个校招展示故事。
 
 ---
 
 # v0.10：Model Policy、Reliability、Security、Packaging 与 Release
 
-## 24. 与原 v0.10 草案的关系
+## 12. v0.10 MVP 实现
 
-原 `PaperClaw_v0.10_ReliabilitySecurityPackagingRelease_SOP草案.md` 继续作为 Release / Security 主体。新增一个受控的 Model Policy 切片，补齐校招开发岗常见的模型选择、成本、fallback、限流与可观测性问题。
+### 12.1 用户故事
 
-## 25. ModelPolicyRouter 最小边界
+用户能在干净 Windows 环境安装、运行和卸载 PaperClaw；Provider 发生有限网络故障时有可观察重试和静态 fallback；Secret、越权、数据库恢复、构建和许可证通过硬 Gate；Offline demo 可重复执行。
+
+### 12.2 MVP 收缩原则
+
+原 `PaperClaw_v0.10_ReliabilitySecurityPackagingRelease_SOP草案.md` 范围过大，MVP 只保留发布必需闭环：
+
+```text
+version / package contract
++ clean install
++ static model policy
++ secret / permission gate
++ SQLite backup / restore smoke
++ deterministic offline demo
++ release manifest / known limitations
+```
+
+跨平台完整 Shell、SBOM 深化、容器隔离、复杂 crash recovery 和多 Provider Gateway 进入后续升级池。
+
+### 12.3 MVP 最小契约
 
 ```text
 ModelRequestProfile
-    capability / context length / structured output / cost budget
-        ↓
-ModelPolicyRouter
-        ↓
-Provider Candidate
-        ↓
-OpenAICompatibleModel / future adapter
+ModelCandidate
+ModelPolicyDecision
+FallbackAttempt
+ReleaseManifest
+SupportMatrix
+KnownLimitation
+BackupManifest
 ```
 
-路由输入只允许使用结构化事实：
+### 12.4 MVP 必做能力
 
-- required capability；
-- context size；
-- structured-output requirement；
-- task risk；
-- latency / cost budget；
-- provider health；
-- explicit user override。
+1. package version 单一来源；
+2. Windows clean venv install / run / uninstall；
+3. 静态 `ModelPolicyRouter`：capability、context length、structured output、cost ceiling、explicit override；
+4. 显式 bounded fallback chain；
+5. auth / permission / invalid request 不自动 fallback；
+6. network / 429 / 5xx 在 bounded retry 后允许切换；
+7. input / output tokens、attempt、retry、fallback、duration 和 estimated cost metadata；
+8. Secret redaction canary；
+9. Permission / path escape 最小安全 corpus；
+10. SQLite online backup + restore smoke；
+11. deterministic offline demo；
+12. release manifest、support matrix、known limitations 和 checksum。
 
-不得使用隐藏 reasoning 或未经验证的“任务看起来难”作为唯一依据。
+### 12.5 MVP 三阶段
 
-## 26. Fallback 规则
+#### Phase A：Version / Packaging / Model Policy
 
-- fallback chain 必须显式配置并进入 Trace；
-- authentication、permission、invalid request 不自动 fallback；
-- network、429、5xx 可在 bounded retry 后切换候选；
-- context overflow 可以触发 ContextOrchestrator 重新压缩，不能直接丢约束；
-- structured output failure 先进行有限 repair / retry，不能无限循环；
-- 高风险写操作在模型切换后必须重新走 Permission；
-- fallback 不得把“失败”伪装成同模型成功；
-- Provider / model / attempts / cost / latency 写入安全 metadata。
+- 统一版本源；
+- 冻结 CLI version、User-Agent 和 Trace metadata；
+- 实现静态 Router 和 fallback trace；
+- 构建 wheel / sdist 并 clean install。
 
-## 27. Usage / Cost / Rate Limit
+#### Phase B：Security / Backup / Recovery Smoke
 
-至少记录：
+- Secret canary；
+- Permission / path escape corpus；
+- SQLite online backup；
+- restore drill；
+- unknown outcome 明确标记，不自动重放副作用。
 
-- input / output / total tokens；
-- attempt / retry / fallback count；
-- duration；
-- estimated cost（标记 pricing snapshot version）；
-- cache hit（Provider 可提供时）；
-- provider error code；
-- concurrency slot / rate-limit wait。
+#### Phase C：Offline Demo / Release Candidate
 
-成本估算不是账单事实，必须区分 estimated 与 provider-reported。
+- 固定 clock、UUID、seed 和 fixture；
+- 生成 manifest、checksum、support matrix 和 known limitations；
+- Windows Tier 1 跑完整 release smoke。
 
-## 28. v0.10 主体继续沿用的硬门
+### 12.6 MVP Gate
 
-- version single source；
-- Windows clean install；
-- Ubuntu / WSL contract test；
-- Shell backend 与 path contract；
-- Permission / Secret / SSRF / path escape；
-- SQLite migration / online backup / restore / crash drill；
-- unknown_outcome 不自动重放；
-- wheel / sdist / pip check；
-- lock / vulnerability / secret / license scan；
-- SBOM / THIRD_PARTY / NOTICE；
-- deterministic offline demo；
-- performance baseline；
-- known limitations；
-- release manifest / checksum / rollback instructions。
+- package / CLI / User-Agent / Trace version 一致；
+- clean install 和卸载成功；
+- fallback 全链路可追踪；
+- Secret 在 stdout、stderr、Trace、DB 和 export 中为 0；
+- backup 可恢复 Session / Trace；
+- wheel / sdist 不含 `.env`、绝对路径、临时文件和 artifacts；
+- Offline demo 无网络和真实 API Key；
+- known limitations 明确 native mode 非 OS sandbox。
 
-## 29. v0.10 明确非目标
+`GO`：上述硬门全部通过。
+
+`NO-GO`：Secret 泄露、越权执行、数据损坏、backup 不可恢复、构建物包含敏感内容、版本漂移或许可证不明。
+
+### 12.7 MVP 明确非目标
 
 - 通用多云 LLM Gateway；
-- 动态竞价路由；
-- 自动在线学习 Router；
-- 多租户计费平台；
-- 模型训练、LoRA、SFT、DPO、GRPO 流水线；
-- 将 Prompt 或 Router 配置隐藏在不可审计的模型决策中；
-- 为追求“生产级”引入分布式队列、Kubernetes 或独立微服务集群。
+- 动态健康度路由；
+- 自动竞价路由；
+- 多租户计费；
+- Kubernetes / 分布式队列；
+- Container-first sandbox；
+- 全平台完整支持；
+- 自动 PyPI 发布。
+
+## 13. v0.10 Post-MVP 后续升级待办
+
+候选项：
+
+- Ubuntu / WSL Tier 2 扩展；
+- Windows PowerShell / pwsh / POSIX / WSL Shell contract；
+- process tree cleanup；
+- full PermissionEngine `allow / ask / deny / sandbox`；
+- SSRF、DNS rebinding、redirect 和 download isolation；
+- schema migration checksum / downgrade refusal；
+- transaction / outbox；
+- unknown_outcome reconciliation；
+- dependency lock、vulnerability、secret 和 license scan；
+- SBOM、THIRD_PARTY、NOTICE；
+- optional WSL / container sandbox；
+- dynamic provider health scoring；
+- cost-aware routing；
+- Prompt Cache usage；
+- TUI backpressure / resize / Ctrl+C 完整验收；
+- performance baseline 与 regression gate；
+- release workflow / PyPI automation。
+
+升级触发条件：
+
+- Tier 1 release 已稳定；
+- 用户明确需要第二平台；
+- crash / unknown outcome 有真实失败 Trace；
+- Provider fallback 数据证明静态 Router 不足；
+- 发布渠道要求 SBOM、签名或自动化；
+- native application-level isolation 无法满足明确安全需求。
 
 ---
 
-# 30. 校招开发向面试覆盖矩阵
+# 14. 面试覆盖矩阵
 
-| 高频问题 | 主要版本 | 可展示证据 |
+| 高频问题 | MVP 版本 | 后续升级 |
 |---|---|---|
-| Prompt Engineering、Context Engineering、Harness、Loop 的区别 | v0.05 / v0.08 | QueryEngine 边界、ContextOrchestrator、PromptAssembly Trace |
-| 上下文窗口满了怎么办 | v0.04 / v0.08 | budget allocation、protected items、deterministic compaction |
-| 长短期记忆怎么设计，如何避免越聊越脏 | v0.08 | MemoryWriteDecision、dedup、supersede、TTL、stale fixture |
-| 动态 Prompt 和静态 Prompt 如何组装 | v0.08 | PromptSection、fingerprint、assembly trace |
-| 指令、项目规则、历史记忆冲突怎么办 | v0.08 | trust / scope / freshness conflict fixtures |
-| QueryEngine 是否应该负责拼 Prompt | v0.05 / v0.08 | 薄 façade + injected ContextOrchestrator |
-| Agent 如何调用工具 | v0.01 / v0.05 | ToolRegistry、validation、budget、Trace |
-| MCP 解决什么问题，怎么接入 | v0.09 | discovery、normalization、Permission、fake server E2E |
-| Skill / Tool 太多如何选择 | v0.08 / v0.09 | progressive disclosure、selection trace、tool accuracy |
-| RAG 完整链路 | v0.09.1 | ingestion、chunk、index、retrieve、fusion、context、citation |
-| BM25 与向量检索区别 | v0.09.1 | baseline / hybrid ablation |
-| Chunk 如何设计 | v0.09.1 | chunk manifest、locator、eval dataset |
-| RAG 怎么评估 | v0.09.1 | Recall@K、MRR、nDCG、faithfulness、citation |
-| 小模型能力不足怎么办 | v0.08 / v0.10 | task/context reduction、capability routing、bounded fallback |
-| Provider 429、断线、超时怎么办 | v0.07.1+ / v0.10 | RetryPolicy、error taxonomy、fallback trace |
-| 如何控制成本和延迟 | v0.08 / v0.10 | token budget、usage/cost/latency metadata |
-| Agent 如何做生产可靠性与安全 | v0.10 | permission、redaction、crash recovery、release gates |
-| Agent 如何评估 | v0.07 / v0.08 / v0.09.1 | Trace Eval、Context Eval、Retrieval/Grounding Eval |
+| Context Engineering、动态 Prompt | v0.08 | Memory、Prompt Cache、Skill selection |
+| 上下文窗口满了怎么办 | v0.08 | LLM summarizer、动态 quota |
+| QueryEngine 是否拼 Prompt | v0.05 + v0.08 | 无，边界保持不变 |
+| MCP 如何接入 | v0.09 | Resource / Prompt、多 transport |
+| Tool 太多如何选择 | v0.09 | health / cost-aware routing |
+| RAG 完整链路 | v0.09.1 | Dense、RRF、Reranker、PDF |
+| RAG 如何评估 | v0.09.1 | online dataset、GraphRAG Eval |
+| Agent 如何支持科研 domain | v0.09.2 | Tailor、Novelty、Experiment runner |
+| 小模型能力不足怎么办 | v0.08 + v0.10 | dynamic Model Router |
+| 429、断线、超时怎么办 | v0.07.1+ + v0.10 | provider health / multi-provider policy |
+| 如何控制成本 | v0.08 + v0.10 | cost-aware routing、cache |
+| 安全、恢复和发布 | v0.10 | sandbox、供应链、跨平台、自动发布 |
 
-以下内容不应硬塞进 PaperClaw 版本：
+以下内容仍单独准备，不硬塞进 PaperClaw：
 
 - LeetCode 手撕；
-- SQL 执行计划、索引与事务；
-- OS、网络、计算机组成基础；
-- Java / Go / Python 语言八股；
+- SQL 执行计划、索引和事务；
+- OS、网络、计算机组成；
+- Python / Java / Go 语言基础；
 - 通用后端系统设计。
 
-这些属于个人校招准备主线，PaperClaw 只负责证明 Agent Runtime、工程设计和可验证落地能力。
+# 15. 执行顺序与停止条件
 
-# 31. 执行顺序与停止条件
+执行顺序：
 
-优先顺序：
-
-1. 冻结 v0.08 Context Orchestration MVP；
-2. 完成离线 Context Eval 后再开始 MCP；
-3. MCP 工具接入稳定后，冻结 v0.09.1 RAG MVP；
-4. 根据时间决定是否做 SeededResearch showcase；
-5. 最后统一做 v0.10 Model Policy 和 Release hardening。
+1. 冻结并实现 v0.08 MVP；
+2. v0.08 GO 后停止，单独决定是否开始 v0.09；
+3. v0.09 GO 后开始 v0.09.1；
+4. 根据求职时间决定是否实现 v0.09.2；
+5. 最后执行 v0.10 Release MVP；
+6. 所有 Post-MVP 候选均需单独授权。
 
 停止条件：
 
-- 每个版本只保留一个用户可见闭环；
-- MVP 最多三个实施 Phase；
-- 没有测试或 Trace 证明必要时，不升级候选能力；
-- GraphRAG、Vector DB、LLM summarizer、remote MCP write、复杂 Router 都默认延期；
-- 校招时间不足时，优先保证 v0.08、v0.09、v0.09.1 有可运行 demo，SeededResearch 可只保留设计与离线 fixture。
+- 每个 MVP 只有一个用户可见闭环；
+- 每个 MVP 最多三个 Phase；
+- 没有失败证据，不升级候选；
+- GraphRAG、Vector DB、LLM summarizer、remote MCP write、复杂 Router 和生产级平台默认延期；
+- 校招时间不足时，优先保证 v0.08、v0.09、v0.09.1 和 v0.10 有可运行离线 demo。
 
-# 32. 下一步冻结前需要讨论的问题
+# 16. 冻结下一份 SOP 前的待讨论项
 
-1. v0.08 首切片是否包含真正的 `memory_items` 表，还是先使用现有 SessionEvent / ContextItem 投影；
-2. ContextOrchestrator 是扩展现有 `ContextBuilder`，还是在其上增加 policy façade；
-3. v0.08 的模型调用入口是否只接单 Agent，MultiAgent 只做 role-scoped regression；
-4. MCP 首切片选择哪一种本地 transport baseline；
-5. v0.09.1 的文档类型先只支持 Markdown / plain text，还是加入 PDF parser adapter；
-6. ModelPolicyRouter 是否在 v0.10 只支持静态规则，不做动态 health scoring；
-7. SeededResearch 是否作为校招演示的第二故事，还是完全移到发布后。
+1. v0.08 采用现有 ContextBuilder 上层 policy façade，还是扩展其内部 Pipeline；
+2. v0.08 MVP 是否完全不创建 `memory_items` 表；
+3. MCP 首个 transport baseline；
+4. v0.09.1 首批只支持 Markdown / plain text 是否足够；
+5. v0.09.2 是否进入校招展示主线；
+6. v0.10 静态 ModelPolicyRouter 的候选配置格式；
+7. Release MVP 的 Windows Tier 1 Python 版本范围。
 
-冻结任何 SOP 前，必须重新检查当前 `main`、已有实现、测试、CI、Handoff 和官方协议现状，不能直接按本草案编码。
+冻结任何 SOP 前，必须重新检查当前 `main`、现有实现、测试、CI、Handoff 和官方协议现状，不能直接按本草案编码。
