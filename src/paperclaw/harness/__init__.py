@@ -1,6 +1,7 @@
-"""Public v0.05 Harness and QueryEngine contracts."""
+"""Public Harness and QueryEngine contracts."""
 
 from .agent_runtime_executor import AgentRuntimeExecutor
+from .context_runtime_executor import ContextOrchestratedAgentRuntimeExecutor
 from .contracts import (
     AgentRunView,
     ExecutionReport,
@@ -15,6 +16,7 @@ from .query_engine import ExecutorContractError, QueryEngine
 __all__ = [
     "AgentRunView",
     "AgentRuntimeExecutor",
+    "ContextOrchestratedAgentRuntimeExecutor",
     "ExecutionReport",
     "ExecutorContractError",
     "QueryEngine",
