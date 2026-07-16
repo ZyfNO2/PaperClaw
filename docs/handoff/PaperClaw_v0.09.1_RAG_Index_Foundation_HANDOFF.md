@@ -27,6 +27,7 @@ Implementation complete for Phase A. Local isolated tests and repository-wide Dr
 - `src/paperclaw/retrieval/chunking.py`
 - `src/paperclaw/retrieval/registry.py`
 - `tests/unit/test_retrieval_foundation.py`
+- `tests/unit/test_retrieval_registry_integrity.py`
 
 ## Verification commands
 
@@ -38,10 +39,10 @@ python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 
 ## Verification result
 
-- Local focused suite: `18 passed`;
+- Local focused suite: `21 passed`;
 - Local compile check: PASS;
-- GitHub Actions run `29511938895`;
-- Windows repository suite: `523 passed, 0 failed, 0 skipped`;
+- GitHub Actions run `29512932897`;
+- Windows repository suite: `526 passed, 0 failed, 0 skipped`;
 - Ruff `E9,F63,F7,F82`: PASS;
 - no live provider, online retrieval or real-model test was required or executed for this offline Phase A slice.
 

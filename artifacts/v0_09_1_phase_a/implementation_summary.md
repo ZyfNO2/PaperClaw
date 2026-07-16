@@ -42,7 +42,7 @@ This slice freezes the write-side contracts required before retrieval is added:
 
 ```text
 PYTHONPATH=src python -m pytest -q
-18 passed
+21 passed
 
 PYTHONPATH=src python -m compileall -q src tests
 PASS
@@ -51,7 +51,7 @@ PASS
 ## Draft PR verification
 
 ```text
-GitHub Actions CI run 29511938895
-Windows pytest: 523 passed, 0 failed, 0 skipped
+GitHub Actions CI run 29512932897
+Windows pytest: 526 passed, 0 failed, 0 skipped
 Ruff E9/F63/F7/F82 gate: PASS
 ```
