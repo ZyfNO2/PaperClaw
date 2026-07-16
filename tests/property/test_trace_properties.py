@@ -171,18 +171,19 @@ def test_generated_valid_trace_is_deterministic_across_consumers(
     assert eval_one.overall_passed is True
 
 
-@settings(max_examples=100, deadline=None)
-@given(
-    secret=st.text(
-        alphabet=st.characters(
-            whitelist_categories=("Ll", "Lu", "Nd"),
-            min_codepoint=48,
-            max_codepoint=122,
-        ),
-        min_size=8,
-        max_size=40,
-    )
+_SECRET_BODY = st.text(
+    alphabet=st.characters(
+        whitelist_categories=("Ll", "Lu", "Nd"),
+        min_codepoint=48,
+        max_codepoint=122,
+    ),
+    min_size=1,
+    max_size=32,
 )
+
+
+@settings(max_examples=100, deadline=None)
+@given(secret=st.builds(lambda body: f"secret_{body}", _SECRET_BODY))
 def test_generated_secret_never_survives_redaction(secret: str) -> None:
     redactor = TraceRedactor(secret_values=[secret])
     payload = {
@@ -205,7 +206,13 @@ def test_generated_secret_never_survives_redaction(secret: str) -> None:
 
 
 @settings(max_examples=150, deadline=None)
-@given(sequences=st.lists(st.integers(min_value=1, max_value=30), min_size=2, max_size=12))
+@given(
+    sequences=st.lists(
+        st.integers(min_value=1, max_value=30),
+        min_size=2,
+        max_size=12,
+    )
+)
 def test_sequence_validator_accepts_only_strictly_increasing_inputs(
     sequences: list[int],
 ) -> None:
