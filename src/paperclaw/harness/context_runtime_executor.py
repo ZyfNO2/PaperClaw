@@ -22,6 +22,7 @@ from paperclaw.context.orchestration import (
 )
 from paperclaw.context.repository import Repository
 from paperclaw.context.session import SessionService
+from paperclaw.context.source_registry import ContextSourceRegistry
 from paperclaw.models.base import ChatModel, ModelTurn
 from paperclaw.tools.registry import ToolRegistry
 
@@ -151,13 +152,29 @@ class ContextOrchestratedAgentRuntimeExecutor:
         legacy_event_handler: Any | None = None,
         context_policy: ContextPolicy | None = None,
         orchestrator: ContextOrchestrator | None = None,
+        context_source_registry: ContextSourceRegistry | None = None,
     ) -> None:
+        if orchestrator is not None and context_source_registry is not None:
+            raise ValueError(
+                "orchestrator and context_source_registry are mutually exclusive"
+            )
         self._workspace = Path(workspace).resolve(strict=True)
         self._repository = repository
-        self._orchestrator = orchestrator or ContextOrchestrator(
-            repository,
-            policy=context_policy,
-        )
+        self.context_source_registry = context_source_registry
+        if orchestrator is not None:
+            self._orchestrator = orchestrator
+        elif context_source_registry is not None:
+            context_source_registry.freeze()
+            self._orchestrator = ContextOrchestrator(
+                repository,
+                policy=context_policy,
+                sources=(context_source_registry,),
+            )
+        else:
+            self._orchestrator = ContextOrchestrator(
+                repository,
+                policy=context_policy,
+            )
         self._model = _ContextAwareModel(model, self._orchestrator)
         self._delegate = AgentRuntimeExecutor(
             self._model,
