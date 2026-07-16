@@ -1,16 +1,8 @@
-"""PaperClaw Context Engineering package (v0.04).
+"""PaperClaw Context Engineering package.
 
-This package implements the layered Context Runtime: structured ContextItem
-contracts, SQLite persistence with append-only SessionEvent log, role-scoped
-ContextBuilder, deterministic compaction, and step-boundary safe resume.
-
-Design boundaries:
-- The context package owns data contracts, persistence, builder, compaction,
-  budget, and resume logic.
-- It must NOT depend on `paperclaw.multiagent` internal scheduler state; the
-  MultiAgent layer is a consumer, not a dependency.
-- Long-term auto memory, vector retrieval, and arbitrary crash recovery are
-  explicitly out of scope (deferred to v0.04.1+).
+The package owns structured Context contracts, persistence, deterministic
+selection/compaction, safe resume, and the opt-in v0.08 orchestration layer.
+It does not own QueryEngine lifecycle or Tool permissions.
 """
 
 from paperclaw.context.builder import (
@@ -47,6 +39,22 @@ from paperclaw.context.contracts import (
     SessionEvent,
 )
 from paperclaw.context.migrations import MigrationRunner, SCHEMA_VERSION_V1
+from paperclaw.context.orchestration import (
+    ContextAssemblyBudgetExhausted,
+    ContextAssemblyError,
+    ContextAssemblyTrace,
+    ContextBudgetAllocation,
+    ContextCandidate,
+    ContextCandidateSource,
+    ContextConflict,
+    ContextOrchestrator,
+    ContextPolicy,
+    ContextRequest,
+    ContextSelection,
+    PromptAssembler,
+    PromptAssembly,
+    PromptSection,
+)
 from paperclaw.context.repository import Repository, SQLiteRepository
 from paperclaw.context.session import (
     EventSink,
@@ -63,11 +71,22 @@ __all__ = [
     "CompactionOutcome",
     "CompactionPolicy",
     "CompactionResult",
+    "ContextAssemblyBudgetExhausted",
+    "ContextAssemblyError",
+    "ContextAssemblyTrace",
     "ContextBudget",
+    "ContextBudgetAllocation",
     "ContextBudgetExhausted",
     "ContextBuilder",
     "ContextBuilderError",
+    "ContextCandidate",
+    "ContextCandidateSource",
+    "ContextConflict",
     "ContextItem",
+    "ContextOrchestrator",
+    "ContextPolicy",
+    "ContextRequest",
+    "ContextSelection",
     "ContextSnapshot",
     "ContextSource",
     "DEFAULT_ESTIMATOR",
@@ -82,6 +101,9 @@ __all__ = [
     "EXCLUSION_TRUST_VIOLATION",
     "MigrationRunner",
     "NullEventSink",
+    "PromptAssembler",
+    "PromptAssembly",
+    "PromptSection",
     "ROLE_COORDINATOR",
     "ROLE_REVIEWER",
     "ROLE_WORKER",
