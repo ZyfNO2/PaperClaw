@@ -10,9 +10,8 @@
 - PR state: `Draft`
 - First full code Gate head: `1b563c3959a854c5c7c2e1f6a952edd3c614b415`
 - Validated closeout head: `b3f56af23de73d7921dc49ee6dda8a0dccb61878`
+- Final PR-head validation: `c4eaa5dadb1ad624edbf71ba2af3d4fe43bcf51c`
 - Current status: `OFFLINE GO / waiting owner review`
-
-The branch may contain later evidence-only documentation commits. The exact current PR head and latest CI are reported in the final development response; no implementation or test logic changed after the validated closeout head.
 
 ## Completed Content
 
@@ -118,7 +117,17 @@ The branch may contain later evidence-only documentation commits. The exact curr
 - Artifact ID: `8378659060`
 - Report artifact digest: `sha256:a3f84b3e01908f2d032e0e7ea7ef48465c02d23403962a55f44d1ea102e6ff4f`
 
-The closeout suite verifies the canonical JSON artifact, SOP completion, required handoff files, generic hook completeness, and actual hook process execution.
+### Final PR-head Gate
+
+- Run: `29506642313`
+- Head: `c4eaa5dadb1ad624edbf71ba2af3d4fe43bcf51c`
+- Windows pytest: `524 passed, 0 failed, 0 skipped, 0 warnings`
+- Ruff high-signal lint: `PASS`
+- Report artifact: `pytest-results-29506642313`
+- Artifact ID: `8378870851`
+- Report artifact digest: `sha256:25c5031a5c0383990a09d32893fc18903ba88bfc6dfef1915e9583fa6814ea2e`
+
+The closeout and final PR-head suites verify the canonical JSON artifact, SOP completion, required handoff files, generic hook completeness, and actual hook process execution.
 
 ### Test classification
 
