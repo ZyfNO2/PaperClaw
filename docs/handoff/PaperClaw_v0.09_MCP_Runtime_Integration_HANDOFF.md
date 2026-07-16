@@ -7,11 +7,12 @@
 - Draft PR: `#23`
 - Status: `COMPLETE / OFFLINE_GO / CI_PASS / NOT_MERGED`
 - Base: `main@872c4532fe00b3a3e8b72202fdd4c504594d8acc`
-- Final validated implementation HEAD: `013fffd519e86efa88ef6e9d8e178a95224097de`
+- Final validated implementation commit: `013fffd519e86efa88ef6e9d8e178a95224097de`
+- Documentation closeout commit before count correction: `02b4c3a95e308917e86fa6d6032e7f9422b0d857`
 - Prerequisites: v0.08 PR #19 and MCP Protocol Foundation PR #21 are merged
 - Capability selection: intentionally not implemented
 
-The branch may contain a later documentation-only closeout commit. The validated implementation SHA and CI evidence above remain the executable acceptance point; the current branch HEAD is recorded in PR #23 and the final development report.
+The current PR head after this Handoff correction is authoritative for review and is also reported in the final development response. The executable implementation acceptance point remains `013fffd519e86efa88ef6e9d8e178a95224097de`.
 
 ## 2. Completed
 
@@ -68,21 +69,31 @@ The branch may contain a later documentation-only closeout commit. The validated
 
 ## 5. Test and CI evidence
 
-- Initial diagnostic run: `29516623795` — failed with two identified and fixed issues.
-- Final passing run: `29517520350`.
-- Windows pytest: `1713 passed, 0 failed, 0 skipped`.
-- pytest exit status: `0`.
-- Ruff E9/F63/F7/F82: PASS.
-- Artifact: `pytest-results-29517520350`.
-- Artifact digest: `sha256:83728a4cb5e7f26f657afd88c427954f3e4a11deee9326dedc75c510685a20b0`.
+### Initial diagnostic run
 
-Recommended commands:
+- Run: `29516623795`
+- Result: `569 passed, 2 failed`
+- Failures were identified and fixed; this run is not acceptance evidence.
 
-```powershell
-python -m pytest tests/unit/test_mcp_protocol_foundation.py tests/unit/test_mcp_runtime_integration.py tests/integration/test_mcp_runtime_executor.py -q --basetemp=tmp/pytest
-python -m pytest -q --basetemp=tmp/pytest -m "not real_llm"
-python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
-```
+### Final implementation run
+
+- Commit: `013fffd519e86efa88ef6e9d8e178a95224097de`
+- Run: `29517520350`
+- Windows pytest: `571 passed, 0 failed, 0 skipped`
+- pytest exit status: `0`
+- Ruff E9/F63/F7/F82: PASS
+- Artifact: `pytest-results-29517520350`
+- Artifact digest: `sha256:83728a4cb5e7f26f657afd88c427954f3e4a11deee9326dedc75c510685a20b0`
+
+### Documentation closeout run
+
+- Commit: `02b4c3a95e308917e86fa6d6032e7f9422b0d857`
+- Run: `29518130494`
+- Windows pytest: `571 passed, 0 failed, 0 skipped`
+- Ruff: PASS
+- Artifact digest: `sha256:da41bfb72bdaa04feda6a367e767606ac9a9435edf89457b96bafcdcb6580c20`
+
+`1713` is the sum of setup/call/teardown report entries and is not the test-case count. The correct test count is 571.
 
 ## 6. Not verified / not implemented
 
@@ -94,7 +105,7 @@ python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 
 ## 7. Next developer steps
 
-1. Review Draft PR #23 against this Handoff and CI artifact.
+1. Review Draft PR #23 against this Handoff and CI artifacts.
 2. Keep capability selection in a separate later PR.
 3. When capability selection is implemented, consume exact descriptor identity and never infer permission from the node-safe Registry name.
 4. Add third-party interoperability only when a concrete Server/user story exists; do not convert local Fake Server results into a production claim.

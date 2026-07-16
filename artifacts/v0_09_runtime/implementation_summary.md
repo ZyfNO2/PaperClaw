@@ -22,7 +22,7 @@
 2. Registration is explicit; capability selection remains out of scope.
 3. Registry names use readable slugs plus a 12-character SHA-256 identity suffix, while Permission continues to use exact `server_id.tool_name` identity.
 4. Registration failure is returned as `MCPRegistrationResult`, leaving existing local Tools unchanged.
-5. The Permission boundary defaults to deny and is evaluated at execution time, not cached at discovery time.
+5. Permission defaults to deny and is evaluated at execution time, not cached at discovery time.
 6. Synchronous protocol calls run behind a cancellation-aware daemon worker because the merged protocol session is single-flight and synchronous.
 7. Timeout/cancellation closes the connection to prevent late responses from contaminating subsequent requests.
 8. Environment values used to launch a Server become exact redaction inputs but never enter durable metadata.
@@ -36,15 +36,17 @@
 - `src/paperclaw/mcp/__init__.py`
 - `tests/unit/test_mcp_runtime_integration.py`
 - `tests/integration/test_mcp_runtime_executor.py`
-- `tests/property/test_trace_properties.py` (test-generator collision fix)
+- `tests/property/test_trace_properties.py`（test-generator collision fix）
 
 ## Validation
 
 - Final code validation HEAD: `013fffd519e86efa88ef6e9d8e178a95224097de`
 - GitHub Actions run: `29517520350`
-- Windows pytest: `1713 passed, 0 failed, 0 skipped`
+- Windows pytest: `571 passed, 0 failed, 0 skipped`
 - Ruff high-signal gate: PASS
 - Artifact digest: `sha256:83728a4cb5e7f26f657afd88c427954f3e4a11deee9326dedc75c510685a20b0`
+
+The pytest reportlog contains 571 setup, 571 call and 571 teardown success records. Only the 571 call records are test-case outcomes; 1713 is not the test count.
 
 ## Explicit non-goals
 
