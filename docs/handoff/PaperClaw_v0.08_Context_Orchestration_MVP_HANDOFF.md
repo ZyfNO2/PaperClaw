@@ -8,8 +8,11 @@
 - Draft PR: `#19`
 - Merge state: `not merged`
 - PR state: `Draft`
-- Implementation code Gate head: `1b563c3959a854c5c7c2e1f6a952edd3c614b415`
-- Current status: `offline_validated / closeout CI pending`
+- First full code Gate head: `1b563c3959a854c5c7c2e1f6a952edd3c614b415`
+- Validated closeout head: `b3f56af23de73d7921dc49ee6dda8a0dccb61878`
+- Current status: `OFFLINE GO / waiting owner review`
+
+The branch may contain later evidence-only documentation commits. The exact current PR head and latest CI are reported in the final development response; no implementation or test logic changed after the validated closeout head.
 
 ## Completed Content
 
@@ -32,7 +35,8 @@
 - deterministic deduplication;
 - explicit conflict resolution;
 - protected-context fail-closed behavior;
-- static source quotas and exclusion reasons;
+- external self-promotion prevention;
+- static source quotas and explicit exclusion reasons;
 - oversized candidate rejection;
 - final rendered-prompt token Gate;
 - stable Prompt/policy versions and fingerprint;
@@ -49,16 +53,15 @@
 - SQLite assembly events stored in existing `session_events`;
 - explicit Context budget failure normalized to `budget_exhausted / context_budget_exhausted`.
 
-### Demo and artifacts
+### Demo and closeout
 
 - deterministic cross-domain external-instruction fixture;
 - reproducible CLI generator;
 - source-controlled JSON artifact with normalized fixture latency;
-- implementation summary;
-- test report;
-- known limitations;
-- file manifest;
-- SOP and README synchronization.
+- committed artifact equality test;
+- implementation summary, test report, known limitations, and file manifest;
+- SOP and README synchronization;
+- closeout acceptance test for SOP checkboxes, artifact package, Handoff, and completion hook.
 
 ## Main Files
 
@@ -73,7 +76,9 @@
 - `tests/unit/test_context_runtime_executor.py`
 - `tests/integration/test_v0_08_context_assembly_demo.py`
 - `tests/integration/test_v0_08_demo_script.py`
+- `tests/integration/test_v0_08_closeout.py`
 - `artifacts/v0_08/*`
+- `docs/handoff/PaperClaw_v0.08_Context_Orchestration_MVP_HANDOFF.md`
 
 ### Modified
 
@@ -91,10 +96,11 @@
 6. Prompt priority does not grant execution permission.
 7. `session_events` remains the only durable event fact source.
 8. Legacy behavior remains available by using `AgentRuntimeExecutor`.
+9. The committed demo normalizes fixture latency only; live runtime events preserve measured latency.
 
 ## Validation
 
-### GitHub Actions code Gate
+### First full code Gate
 
 - Run: `29504198854`
 - Head: `1b563c3959a854c5c7c2e1f6a952edd3c614b415`
@@ -102,11 +108,21 @@
 - Ruff high-signal lint: `PASS`
 - Report artifact digest: `sha256:6317963d55efef7cb4a2b786b7f7285c38d19ab70d309f295c5106387d9ee287`
 
-The closeout run after committed artifacts and completion checks is recorded below when complete.
+### Closeout Gate
+
+- Run: `29506146021`
+- Head: `b3f56af23de73d7921dc49ee6dda8a0dccb61878`
+- Windows pytest: `524 passed, 0 failed, 0 skipped, 0 warnings`
+- Ruff high-signal lint: `PASS`
+- Report artifact: `pytest-results-29506146021`
+- Artifact ID: `8378659060`
+- Report artifact digest: `sha256:a3f84b3e01908f2d032e0e7ea7ef48465c02d23403962a55f44d1ea102e6ff4f`
+
+The closeout suite verifies the canonical JSON artifact, SOP completion, required handoff files, generic hook completeness, and actual hook process execution.
 
 ### Test classification
 
-The suite exercises real QueryEngine, AgentRuntimeExecutor, SQLite Repository, schema migration, SessionService, filesystem workspaces, ContextBuilder, Orchestrator, Prompt assembly, and durable events. Provider output and external Retrieval are deterministic fakes. This is offline integration validation, not live external-service validation.
+The suite exercises real QueryEngine, AgentRuntimeExecutor, SQLite Repository, schema migration, SessionService, filesystem workspaces, ContextBuilder, Orchestrator, Prompt assembly, durable events, and the completion hook. Provider output and external Retrieval are deterministic fakes. This is offline integration validation, not live external-service validation.
 
 ## Live or External Validation Not Executed
 
@@ -133,17 +149,20 @@ See `artifacts/v0_08/known_limitations.md`. The most important current limits ar
 
 ## Remaining Work
 
-For v0.08 MVP closeout only:
+No implementation, automated test, artifact, SOP, README, or Handoff item remains for the frozen v0.08 MVP.
 
-1. complete final closeout CI on the documentation/artifact head;
-2. record final CI run, test count, and branch head in this Handoff and `test_report.md`;
-3. keep PR #19 Draft and unmerged for owner review.
+Repository administration still requires owner action:
+
+1. review Draft PR `#19`;
+2. decide whether to request an independent code review;
+3. merge only after owner acceptance;
+4. do not start v0.09 automatically.
 
 Post-MVP items are not remaining v0.08 defects. They require separate user authorization and a new SOP.
 
 ## Next Developer Steps
 
-1. Open Draft PR `#19` and confirm its head matches this Handoff's latest validated head.
+1. Open Draft PR `#19` and confirm its current head has green pytest and Ruff checks.
 2. Review `Plan/PaperClaw_v0.08_Context_Orchestration_MVP_SOP.md`.
 3. Run:
 
@@ -160,4 +179,4 @@ python .claude/hooks/sop_completion_check.py
 
 ## Acceptance Decision
 
-`OFFLINE GO` for v0.08 MVP. Final branch closeout remains pending only until the documentation/artifact head receives a successful CI run.
+`OFFLINE GO` for v0.08 MVP. The PR remains Draft and unmerged by design.
