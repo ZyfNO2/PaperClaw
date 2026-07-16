@@ -36,6 +36,7 @@ Legend:
 
 [A] tests/integration/test_v0_08_context_assembly_demo.py
 [A] tests/integration/test_v0_08_demo_script.py
+[A] tests/integration/test_v0_08_closeout.py
 
 ## Artifacts
 
@@ -55,8 +56,8 @@ Plan / README             : 2 files
 Source code               : 4 files
 Demo                      : 1 file
 Unit tests                : 3 files
-Integration tests         : 2 files
+Integration tests         : 3 files
 Artifacts                 : 5 files
 Handoff                   : 1 file
 -----------------------------------
-Total                     : 18 files
+Total                     : 19 files
