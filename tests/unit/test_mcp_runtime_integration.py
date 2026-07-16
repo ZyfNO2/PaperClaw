@@ -16,6 +16,7 @@ from paperclaw.mcp import (
     MCPPermissionDecision,
     MCPServerConfig,
     connect_and_register_mcp_tools,
+    mcp_registry_tool_name,
     normalize_tool_descriptor,
 )
 from paperclaw.tools.base import (
@@ -142,7 +143,15 @@ class CancelToken:
         self._reason = reason
 
 
-def test_registers_mcp_tools_without_replacing_local_tools(tmp_path: Path) -> None:
+def _registered_tool(registry: ToolRegistry, registration):
+    assert registration.ok
+    assert len(registration.registered_tools) == 1
+    return registry.get(registration.registered_tools[0])
+
+
+def test_registers_node_safe_mcp_tool_without_replacing_local_tools(
+    tmp_path: Path,
+) -> None:
     local = LocalTool()
     registry = ToolRegistry([local])
     session = FakeSession(_config())
@@ -154,9 +163,10 @@ def test_registers_mcp_tools_without_replacing_local_tools(tmp_path: Path) -> No
         session_factory=lambda config: session,
     )
 
-    assert registration.ok
-    assert registration.registered_tools == ("mcp.fake.echo",)
-    assert registry.names == ("local", "mcp.fake.echo")
+    expected = mcp_registry_tool_name(_descriptor())
+    assert registration.registered_tools == (expected,)
+    assert registry.names == ("local", expected)
+    assert "." not in expected
     assert safe_execute(local, {}, ToolContext(tmp_path)).output == "local-ok"
     assert registration.connection is not None
     registration.connection.close()
@@ -173,7 +183,7 @@ def test_schema_validation_blocks_remote_call(tmp_path: Path) -> None:
     )
 
     result = safe_execute(
-        registry.get("mcp.fake.echo"),
+        _registered_tool(registry, registration),
         {"text": "", "extra": True},
         ToolContext(tmp_path),
     )
@@ -195,7 +205,7 @@ def test_permission_is_rechecked_for_every_invocation(tmp_path: Path) -> None:
         permission_policy=policy,
         session_factory=lambda config: session,
     )
-    tool = registry.get("mcp.fake.echo")
+    tool = _registered_tool(registry, registration)
 
     first = safe_execute(tool, {"text": "first"}, ToolContext(tmp_path))
     policy.allowed = False
@@ -221,7 +231,7 @@ def test_default_permission_policy_is_fail_closed(tmp_path: Path) -> None:
     )
 
     result = safe_execute(
-        registry.get("mcp.fake.echo"),
+        _registered_tool(registry, registration),
         {"text": "blocked"},
         ToolContext(tmp_path),
     )
@@ -248,7 +258,7 @@ def test_timeout_closes_remote_connection_but_local_tool_still_works(
     )
 
     remote = safe_execute(
-        registry.get("mcp.fake.echo"),
+        _registered_tool(registry, registration),
         {"text": "slow"},
         ToolContext(tmp_path),
     )
@@ -280,7 +290,7 @@ def test_cancellation_terminates_remote_connection(tmp_path: Path) -> None:
     threading.Thread(target=cancel_after_start, daemon=True).start()
     with pytest.raises(ToolControlFlow, match="user_requested"):
         safe_execute(
-            registry.get("mcp.fake.echo"),
+            _registered_tool(registry, registration),
             {"text": "cancel"},
             ToolContext(tmp_path, stop_token=token),
         )
@@ -303,7 +313,7 @@ def test_output_is_redacted_before_tool_truncation(tmp_path: Path) -> None:
     )
 
     result = safe_execute(
-        registry.get("mcp.fake.echo"),
+        _registered_tool(registry, registration),
         {"text": "safe"},
         ToolContext(tmp_path, output_limit=14),
     )
