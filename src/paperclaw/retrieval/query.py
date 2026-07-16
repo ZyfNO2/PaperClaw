@@ -174,7 +174,7 @@ class SQLiteBM25Retriever:
         self._closed = False
 
     def query(self, request: RetrievalRequest) -> RankedResult:
-        manifest = self._current_ready_manifest()
+        manifest = self._current_manifest()
         if manifest is None:
             if self._active_chunk_count() == 0:
                 corpus_hash = sha256_text(canonical_json([]))
@@ -187,7 +187,11 @@ class SQLiteBM25Retriever:
                     filtered_stale=0,
                     filtered_duplicates=0,
                 )
-            raise BrokenIndexError("active chunks exist but no ready index manifest is available")
+            raise BrokenIndexError("active chunks exist but no index manifest is available")
+        if manifest.state != "ready":
+            raise BrokenIndexError(
+                f"latest index manifest {manifest.manifest_id} is {manifest.state}"
+            )
         self._validate_request_snapshot(request, manifest)
 
         match_query = _build_match_query(request.normalized_query)
@@ -291,11 +295,11 @@ class SQLiteBM25Retriever:
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
 
-    def _current_ready_manifest(self) -> _ManifestSnapshot | None:
+    def _current_manifest(self) -> _ManifestSnapshot | None:
         try:
             row = self._conn.execute(
                 "SELECT manifest_id, corpus_hash, state FROM index_manifests "
-                "WHERE state = 'ready' ORDER BY rowid DESC LIMIT 1"
+                "ORDER BY rowid DESC LIMIT 1"
             ).fetchone()
         except sqlite3.OperationalError as exc:
             raise BrokenIndexError("retrieval schema is unavailable") from exc
@@ -340,7 +344,7 @@ def _build_match_query(query: str) -> str:
 
 
 def _row_is_active(row: sqlite3.Row) -> bool:
-    return bool(
+    if not (
         row["chunk_id"]
         and row["chunk_active"] == 1
         and row["version_active"] == 1
@@ -349,7 +353,14 @@ def _row_is_active(row: sqlite3.Row) -> bool:
         and row["fts_document_id"] == row["document_id"]
         and row["fts_version_id"] == row["version_id"]
         and row["fts_text"] == row["text"]
-    )
+    ):
+        return False
+    try:
+        locator = json.loads(row["locator_json"])
+    except (TypeError, json.JSONDecodeError):
+        return False
+    expected_heading = " > ".join(locator.get("heading_path", ()))
+    return row["fts_heading"] == expected_heading
 
 
 def _candidate_from_row(
