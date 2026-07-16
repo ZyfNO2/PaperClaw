@@ -10,9 +10,17 @@
 
 ## Automated Validation
 
-### Code Gate
+### First Full Code Gate
 
 The first complete code Gate ran against head `1b563c3959a854c5c7c2e1f6a952edd3c614b415` in GitHub Actions CI run `29504198854`.
+
+- Windows pytest: `521 passed, 0 failed, 0 skipped, 0 warnings`
+- Ruff high-signal lint: `PASS`
+- pytest artifact digest: `sha256:6317963d55efef7cb4a2b786b7f7285c38d19ab70d309f295c5106387d9ee287`
+
+### Closeout Gate
+
+The full closeout Gate ran against head `b3f56af23de73d7921dc49ee6dda8a0dccb61878` in GitHub Actions CI run `29506146021` after the canonical demo artifact, README, SOP, Handoff, and closeout acceptance test were committed.
 
 | Job | Platform | Result |
 |---|---|---|
@@ -21,15 +29,24 @@ The first complete code Gate ran against head `1b563c3959a854c5c7c2e1f6a952edd3c
 
 Machine-readable pytest report artifact:
 
-- artifact: `pytest-results-29504198854`
-- artifact ID: `8377847358`
-- digest: `sha256:6317963d55efef7cb4a2b786b7f7285c38d19ab70d309f295c5106387d9ee287`
-- tests: `521 passed`
+- artifact: `pytest-results-29506146021`
+- artifact ID: `8378659060`
+- digest: `sha256:a3f84b3e01908f2d032e0e7ea7ef48465c02d23403962a55f44d1ea102e6ff4f`
+- tests: `524 passed`
 - failed: `0`
 - skipped: `0`
 - warnings: `0`
 
-The final closeout CI run will revalidate the committed demo artifact, documentation, SOP completion state, and the added artifact equality assertion. Its result is recorded in the final Handoff and this report before handoff completion.
+The 524-test closeout suite includes:
+
+- committed demo artifact equality;
+- full artifact determinism with normalized fixture latency;
+- SOP checkbox completeness;
+- required artifact and Handoff presence;
+- generic handoff-package completeness through the repository hook helpers;
+- actual execution of `.claude/hooks/sop_completion_check.py`.
+
+Any later evidence-only documentation commit is also required to retain a green PR CI check before final handoff.
 
 ## v0.08 Gate Matrix
 
@@ -49,6 +66,7 @@ The final closeout CI run will revalidate the committed demo artifact, documenta
 | Trace content boundary | no raw Prompt or malicious external content | PASS |
 | Legacy compatibility | existing `AgentRuntimeExecutor` emits no v0.08 events | PASS |
 | Demo CLI | reproducible JSON writer | PASS |
+| SOP completion | checkbox/artifact/hook closeout acceptance test | PASS |
 | Full non-live regression | GitHub Actions Windows pytest | PASS |
 | Static correctness | Ruff `E9,F63,F7,F82` | PASS |
 
@@ -61,7 +79,8 @@ The final closeout CI run will revalidate the committed demo artifact, documenta
 - real temporary filesystem workspaces;
 - real `ContextBuilder` selection path;
 - real `ContextOrchestrator`, Prompt assembly, fingerprint, and Trace contracts;
-- real `QueryEngine` and `AgentRuntimeExecutor` control flow.
+- real `QueryEngine` and `AgentRuntimeExecutor` control flow;
+- real SOP completion hook process execution.
 
 ### Test doubles
 
@@ -89,4 +108,5 @@ These items are outside the frozen v0.08 MVP Gate.
 - assembly output and source-controlled demo are deterministic;
 - QueryEngine and legacy executor remain unchanged;
 - durable assembly events are content-free;
+- SOP completion and handoff package are executable acceptance checks;
 - full non-live pytest and Ruff pass with no failures, skips, or warnings.
