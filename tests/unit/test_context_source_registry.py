@@ -144,6 +144,7 @@ def test_executor_freezes_registry_and_routes_candidates_through_orchestrator(
         kind="retrieval",
     )
     model = FakeModel([done(result="assembled")])
+    events: list[tuple[str, dict]] = []
     executor = ContextOrchestratedAgentRuntimeExecutor(
         model,
         tmp_path,
@@ -154,13 +155,28 @@ def test_executor_freezes_registry_and_routes_candidates_through_orchestrator(
     result = QueryEngine(
         executor,
         conversation_id="conv-source-registry",
+        event_handler=lambda event_type, payload: events.append(
+            (event_type, payload)
+        ),
     ).submit("use registered context")
 
     assert result.status == "completed"
     assert registry.is_frozen
+    assert executor.context_source_snapshot is not None
     assert "## UNTRUSTED DATA" in model.prompts[0]
     assert "cobalt-42" in model.prompts[0]
     assert executor.last_assemblies[0].sections[-1].trust == "external_untrusted"
+    assembly_payload = next(
+        payload
+        for event_type, payload in events
+        if event_type == "context.assembly.completed"
+    )
+    assert assembly_payload["context_source_count"] == 1
+    assert (
+        assembly_payload["context_source_registry_fingerprint"]
+        == executor.context_source_snapshot.fingerprint
+    )
+    assert "cobalt-42" not in str(assembly_payload)
     with pytest.raises(ContextSourceRegistryFrozen):
         registry.register("late", StaticSource(), kind="custom")
 
