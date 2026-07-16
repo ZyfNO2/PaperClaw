@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from paperclaw.retrieval import (
+    BrokenIndexError,
     ChunkConfig,
     IncrementalIndexer,
     RetrievalJudgment,
@@ -145,6 +146,74 @@ def test_stale_fts_rows_are_invalidated_at_read_time(tmp_path: Path) -> None:
     assert len(result.candidates) == 1
     assert result.filtered_stale == 1
     assert result.candidates[0].canonical_uri == "file:///docs/orion.md"
+
+
+def test_heading_drift_is_filtered_even_when_chunk_text_matches(tmp_path: Path) -> None:
+    db = tmp_path / "rag.db"
+    with IncrementalIndexer(db, chunk_config=CONFIG) as indexer:
+        _index(indexer, "file:///docs/heading.md", "# Exact Heading\n\nheadingdrift evidence")
+
+    connection = sqlite3.connect(db)
+    row = connection.execute(
+        "SELECT rowid, chunk_id, document_id, version_id, text FROM chunk_fts LIMIT 1"
+    ).fetchone()
+    connection.execute("DELETE FROM chunk_fts WHERE rowid = ?", (row[0],))
+    connection.execute(
+        "INSERT INTO chunk_fts(chunk_id, document_id, version_id, heading, text) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (row[1], row[2], row[3], "Wrong Heading", row[4]),
+    )
+    connection.commit()
+    connection.close()
+
+    with SQLiteBM25Retriever(db) as retriever:
+        result = retriever.query(RetrievalRequest(query="headingdrift", top_k=3))
+    assert not result.candidates
+    assert result.filtered_stale == 1
+
+
+def test_latest_broken_manifest_blocks_query_until_rebuild(tmp_path: Path) -> None:
+    db = tmp_path / "rag.db"
+    with IncrementalIndexer(db, chunk_config=CONFIG) as indexer:
+        _index(indexer, "file:///docs/broken.md", "# Broken\n\nbrokenmanifest evidence")
+        ready = indexer.registry.latest_manifest()
+        assert ready is not None
+
+    connection = sqlite3.connect(db)
+    content_hash = "f" * 64
+    connection.execute(
+        "INSERT INTO index_manifests(manifest_id, schema_version, index_version, created_at, "
+        "chunk_config_hash, parser_versions_json, document_count, version_count, chunk_count, "
+        "state, corpus_hash, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "manifest_broken_test",
+            ready.schema_version,
+            ready.index_version,
+            "2099-01-01T00:00:00+00:00",
+            ready.chunk_config_hash,
+            json.dumps(list(ready.parser_versions)),
+            ready.document_count,
+            ready.version_count,
+            ready.chunk_count,
+            "broken",
+            ready.corpus_hash,
+            content_hash,
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    with SQLiteBM25Retriever(db) as retriever:
+        with pytest.raises(BrokenIndexError, match="broken"):
+            retriever.query(RetrievalRequest(query="brokenmanifest"))
+
+    with SQLiteIndexMaintainer(db, chunk_config=CONFIG) as maintainer:
+        rebuilt = maintainer.rebuild()
+        assert rebuilt.rebuilt
+        assert not rebuilt.after.is_broken
+
+    with SQLiteBM25Retriever(db) as retriever:
+        assert retriever.query(RetrievalRequest(query="brokenmanifest")).candidates
 
 
 def test_broken_index_is_detected_and_rebuilt_from_active_chunks(tmp_path: Path) -> None:
