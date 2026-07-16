@@ -181,15 +181,10 @@ class SQLiteIndexMaintainer:
                 [fts_key(row) for row in rows],
             )
             manifest = current_manifest(self._conn, chunk_config=self.chunk_config)
-            existing = self._conn.execute(
-                "SELECT manifest_id FROM index_manifests WHERE content_hash = ?",
-                (manifest.content_hash,),
-            ).fetchone()
-            if existing is not None:
-                self._conn.execute(
-                    "DELETE FROM index_manifests WHERE manifest_id = ?",
-                    (existing["manifest_id"],),
-                )
+            self._conn.execute(
+                "DELETE FROM index_manifests WHERE manifest_id = ? OR content_hash = ?",
+                (manifest.manifest_id, manifest.content_hash),
+            )
             insert_manifest(self._conn, manifest)
             self._conn.commit()
         except Exception:
