@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "version": "v0.08",
+  "fixture": "cross_domain_context_injection",
+  "policy_version": "paperclaw.context.v0.08.1",
+  "prompt_version": "paperclaw.prompt.v0.08.1",
+  "fingerprint": "2920f37ba5280ef1298935b3560cb9c0456cffe6341f2407746d6c2803943ea4",
+  "estimated_tokens": 150,
+  "sections": [
+    {
+      "name": "RUNTIME PROTOCOL",
+      "trust": "system",
+      "candidate_ids": [
+        "runtime-prompt"
+      ]
+    },
+    {
+      "name": "SELECTED CONTEXT",
+      "trust": "mixed_trusted",
+      "candidate_ids": [
+        "message:msg-prior-user",
+        "workspace"
+      ]
+    },
+    {
+      "name": "UNTRUSTED DATA",
+      "trust": "external_untrusted",
+      "candidate_ids": [
+        "external-injection-fixture"
+      ]
+    }
+  ],
+  "trace": {
+    "policy_version": "paperclaw.context.v0.08.1",
+    "prompt_version": "paperclaw.prompt.v0.08.1",
+    "fingerprint": "2920f37ba5280ef1298935b3560cb9c0456cffe6341f2407746d6c2803943ea4",
+    "selected": [
+      {
+        "candidate_id": "runtime-prompt",
+        "selected": true,
+        "reason": "protected",
+        "selected_tokens": 9
+      },
+      {
+        "candidate_id": "workspace",
+        "selected": true,
+        "reason": "selected_from:task",
+        "selected_tokens": 12
+      },
+      {
+        "candidate_id": "message:msg-prior-user",
+        "selected": true,
+        "reason": "selected_from:recent",
+        "selected_tokens": 17
+      },
+      {
+        "candidate_id": "external-injection-fixture",
+        "selected": true,
+        "reason": "selected_from:retrieval",
+        "selected_tokens": 20
+      }
+    ],
+    "excluded": [],
+    "conflicts": [],
+    "allocation": {
+      "available_input_tokens": 1700,
+      "output_reserve_tokens": 300,
+      "protected_tokens": 9,
+      "selected_tokens": 58,
+      "rendered_prompt_tokens": 150,
+      "bucket_tokens": {
+        "context": 0,
+        "recent": 17,
+        "retrieval": 20,
+        "task": 12,
+        "tool": 0
+      }
+    },
+    "latency_ms": 0,
+    "selected_count": 4,
+    "excluded_count": 0,
+    "conflict_count": 0,
+    "trace_truncated": false
+  },
+  "checks": {
+    "deterministic_prompt": true,
+    "deterministic_fingerprint": true,
+    "protected_retained": true,
+    "external_is_untrusted": true,
+    "raw_prompt_absent_from_trace": true,
+    "external_content_absent_from_trace": true
+  }
+}
