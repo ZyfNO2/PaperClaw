@@ -1,25 +1,24 @@
 """Deterministic Context Orchestration and Prompt Assembly for v0.08.
 
-This module is deliberately independent from QueryEngine and the Agent graph.
-It turns heterogeneous runtime inputs into explicit ``ContextCandidate`` values,
-resolves conflicts, allocates a bounded input budget, and renders stable Provider
-input.  Retrieval and other future sources implement ``ContextCandidateSource``;
-they cannot directly mutate the final prompt.
+The orchestrator is intentionally independent from QueryEngine and the Agent
+graph. Heterogeneous inputs become attributed ``ContextCandidate`` values,
+then pass through deterministic deduplication, conflict resolution, budget
+allocation, trust-separated rendering, and a final rendered-token Gate.
 
-Security boundary:
-- external/untrusted candidates are rendered only in ``UNTRUSTED DATA``;
-- prompt priority never grants Tool or workspace permission;
-- assembly Trace contains hashes and bounded identifiers, never raw candidate
-  content.
+Security boundaries:
+- external/untrusted material is rendered only in ``UNTRUSTED DATA``;
+- external candidates cannot make themselves protected through ``kind`` or
+  ``pinned`` metadata;
+- Trace contains hashes, IDs, reasons, and token counts, never raw content;
+- Context priority never grants Tool or workspace permission.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from math import ceil
-from pathlib import Path
 from time import perf_counter
 from typing import Any, Iterable, Protocol
 
@@ -53,7 +52,7 @@ class ContextAssemblyError(RuntimeError):
 
 
 class ContextAssemblyBudgetExhausted(ContextAssemblyError):
-    """Raised when protected candidates cannot fit without silent deletion."""
+    """Raised when protected content cannot fit without silent deletion."""
 
     def __init__(self, *, required_tokens: int, available_tokens: int) -> None:
         super().__init__(
@@ -66,13 +65,7 @@ class ContextAssemblyBudgetExhausted(ContextAssemblyError):
 
 @dataclass(frozen=True)
 class ContextPolicy:
-    """Deterministic policy for one Context assembly.
-
-    ``source_quotas`` applies only to non-protected candidates. Protected
-    candidates use the shared available input budget and fail closed if they do
-    not fit. Fractions are interpreted against the budget remaining after
-    protected selection.
-    """
+    """Deterministic policy for one Context assembly."""
 
     max_input_tokens: int = 8_000
     output_reserve_tokens: int = 1_200
@@ -94,13 +87,18 @@ class ContextPolicy:
             raise ValueError("max_single_candidate_tokens must be positive")
         if self.recent_message_limit < 0 or self.recent_tool_result_limit < 0:
             raise ValueError("recent limits must be non-negative")
-        names: set[str] = set()
+
+        seen: set[str] = set()
+        total = 0.0
         for bucket, fraction in self.source_quotas:
-            if bucket in names:
+            if bucket in seen:
                 raise ValueError(f"duplicate source quota: {bucket}")
-            names.add(bucket)
+            seen.add(bucket)
             if fraction < 0 or fraction > 1:
                 raise ValueError("source quota fractions must be within [0, 1]")
+            total += fraction
+        if total > 1.000001:
+            raise ValueError("source quota fractions must sum to at most 1")
 
     @property
     def available_input_tokens(self) -> int:
@@ -163,6 +161,10 @@ class ContextCandidate:
 
     @property
     def is_protected(self) -> bool:
+        # External data cannot self-promote by declaring itself pinned or a
+        # constraint. It remains quota-bound and untrusted at render time.
+        if self.trust == "external_untrusted":
+            return False
         return (
             self.pinned
             or self.layer in {"L0", "L1"}
@@ -193,6 +195,7 @@ class ContextBudgetAllocation:
     output_reserve_tokens: int
     protected_tokens: int
     selected_tokens: int
+    rendered_prompt_tokens: int
     bucket_tokens: tuple[tuple[str, int], ...]
 
     def to_dict(self) -> dict[str, Any]:
@@ -254,9 +257,9 @@ class PromptAssembly:
 
 
 class ContextCandidateSource(Protocol):
-    """Extension point for Retrieval/Memory/MCP data adapters.
+    """Extension point for Retrieval, Memory, or MCP data adapters.
 
-    A source returns candidates only. It cannot render or mutate Provider input.
+    Sources return candidates only. They cannot render or mutate Provider input.
     """
 
     def collect(self, request: ContextRequest) -> Iterable[ContextCandidate]: ...
@@ -272,14 +275,15 @@ class PromptAssembler:
         selected: Iterable[ContextCandidate],
         policy: ContextPolicy,
     ) -> tuple[str, tuple[PromptSection, ...], str, int]:
+        del request  # all rendered facts are carried by selected candidates
         candidates = tuple(selected)
         runtime = next(
             (item for item in candidates if item.source == "runtime_prompt"),
             None,
         )
         supplemental = tuple(item for item in candidates if item is not runtime)
-
         sections: list[PromptSection] = []
+
         if runtime is not None:
             sections.append(
                 PromptSection(
@@ -310,7 +314,6 @@ class PromptAssembler:
                 key=_stable_candidate_order,
             )
         )
-
         if trusted:
             sections.append(
                 PromptSection(
@@ -334,15 +337,14 @@ class PromptAssembler:
                 )
             )
 
-        # Parity mode: when no supplemental candidate survives, preserve the
-        # exact v0.01-v0.07 prompt instead of wrapping it in new delimiters.
+        # Parity mode preserves the exact historical Runtime prompt if no
+        # supplemental candidate survives the budget Gate.
         if runtime is not None and not supplemental:
             prompt = runtime.content
         else:
-            rendered_sections = [
+            prompt = "\n\n".join(
                 f"## {section.name}\n{section.content}" for section in sections
-            ]
-            prompt = "\n\n".join(rendered_sections)
+            )
 
         fingerprint_payload = {
             "prompt_version": policy.prompt_version,
@@ -398,13 +400,27 @@ class ContextOrchestrator:
         selected, selections, budget_exclusions, allocation = self._allocate(
             conflict_free
         )
-        prompt, sections, fingerprint, prompt_tokens = self._assembler.assemble(
+        (
+            selected,
+            selections,
+            rendered_exclusions,
+            allocation,
+            prompt,
+            sections,
+            fingerprint,
+            prompt_tokens,
+        ) = self._fit_rendered_budget(
             request=request,
             selected=selected,
-            policy=self._policy,
+            selections=selections,
+            allocation=allocation,
         )
+        del selected  # captured by selections/sections after the final Gate
         excluded = tuple(
-            duplicate_exclusions + conflict_exclusions + budget_exclusions
+            duplicate_exclusions
+            + conflict_exclusions
+            + budget_exclusions
+            + rendered_exclusions
         )
         trace = ContextAssemblyTrace(
             run_id=request.run_id,
@@ -446,6 +462,7 @@ class ContextOrchestrator:
             )
         ]
         if request.workspace:
+            workspace_content = f"Workspace root: {request.workspace}"
             candidates.append(
                 ContextCandidate(
                     candidate_id="workspace",
@@ -457,8 +474,8 @@ class ContextOrchestrator:
                     priority=700,
                     trust="trusted_local",
                     freshness=request.at_sequence,
-                    estimated_tokens=estimate_tokens(request.workspace),
-                    content=f"Workspace root: {request.workspace}",
+                    estimated_tokens=estimate_tokens(workspace_content),
+                    content=workspace_content,
                     bucket="task",
                     compressible=False,
                 )
@@ -475,18 +492,22 @@ class ContextOrchestrator:
         repo = self._repository
         collected: list[ContextCandidate] = []
 
-        messages = repo.list_messages(request.conversation_id)
-        prior_messages = [
+        messages = [
             message
-            for message in messages
+            for message in repo.list_messages(request.conversation_id)
             if message.get("run_id") != request.run_id
-        ][-self._policy.recent_message_limit :]
-        for index, message in enumerate(prior_messages):
+        ]
+        if self._policy.recent_message_limit:
+            messages = messages[-self._policy.recent_message_limit :]
+        else:
+            messages = []
+        for index, message in enumerate(messages):
             content = str(message.get("content", ""))
             if not content:
                 continue
             role = str(message.get("role", "unknown"))
             sequence = _safe_int(message.get("sequence"), index)
+            rendered = f"{role}: {content}"
             collected.append(
                 ContextCandidate(
                     candidate_id=f"message:{message.get('message_id', sequence)}",
@@ -498,8 +519,8 @@ class ContextOrchestrator:
                     priority=500 if role == "user" else 400,
                     trust="user" if role == "user" else "trusted_local",
                     freshness=sequence,
-                    estimated_tokens=estimate_tokens(content),
-                    content=f"{role}: {content}",
+                    estimated_tokens=estimate_tokens(rendered),
+                    content=rendered,
                     bucket="recent",
                 )
             )
@@ -512,6 +533,11 @@ class ContextOrchestrator:
                 default=str,
             )
             task_id = str(state.get("task_id", "unknown"))
+            rendered = (
+                f"Task {task_id} status={state.get('status', 'unknown')} "
+                f"state={payload}"
+            )
+            resolved = state.get("status") in {"done", "completed"}
             collected.append(
                 ContextCandidate(
                     candidate_id=f"task:{task_id}",
@@ -523,17 +549,12 @@ class ContextOrchestrator:
                     priority=800,
                     trust="trusted_local",
                     freshness=_safe_int(state.get("revision"), request.at_sequence),
-                    estimated_tokens=estimate_tokens(payload),
-                    content=(
-                        f"Task {task_id} status={state.get('status', 'unknown')} "
-                        f"state={payload}"
-                    ),
+                    estimated_tokens=estimate_tokens(rendered),
+                    content=rendered,
                     bucket="task",
-                    pinned=state.get("status") not in {"done", "completed"},
+                    pinned=not resolved,
                     compressible=False,
-                    metadata={
-                        "resolved": state.get("status") in {"done", "completed"}
-                    },
+                    metadata={"resolved": resolved},
                 )
             )
 
@@ -542,7 +563,11 @@ class ContextOrchestrator:
             for event in repo.list_events(request.run_id)
             if event.event_type
             in {"tool.completed", "tool.failed", "permission.denied"}
-        ][-self._policy.recent_tool_result_limit :]
+        ]
+        if self._policy.recent_tool_result_limit:
+            tool_events = tool_events[-self._policy.recent_tool_result_limit :]
+        else:
+            tool_events = []
         for event in tool_events:
             payload = json.dumps(
                 event.payload,
@@ -550,6 +575,7 @@ class ContextOrchestrator:
                 ensure_ascii=False,
                 default=str,
             )
+            rendered = f"{event.event_type}: {payload}"
             collected.append(
                 ContextCandidate(
                     candidate_id=f"event:{event.event_id}",
@@ -561,20 +587,22 @@ class ContextOrchestrator:
                     priority=550,
                     trust="tool_output",
                     freshness=event.sequence,
-                    estimated_tokens=estimate_tokens(payload),
-                    content=f"{event.event_type}: {payload}",
+                    estimated_tokens=estimate_tokens(rendered),
+                    content=rendered,
                     bucket="tool",
                 )
             )
 
         context_items = repo.list_context_items(request.run_id)
         if context_items:
-            selected_items = self._select_existing_context(request, context_items)
-            collected.extend(_candidate_from_context_item(item) for item in selected_items)
+            selected_items = self._select_existing_context(request)
+            collected.extend(
+                _candidate_from_context_item(item) for item in selected_items
+            )
 
         checkpoint = repo.latest_checkpoint(request.run_id)
         if checkpoint is not None:
-            content = json.dumps(
+            rendered = json.dumps(
                 {
                     "last_committed_sequence": checkpoint.last_committed_sequence,
                     "task_state_revision": checkpoint.task_state_revision,
@@ -597,8 +625,8 @@ class ContextOrchestrator:
                     priority=850,
                     trust="trusted_local",
                     freshness=checkpoint.last_committed_sequence,
-                    estimated_tokens=estimate_tokens(content),
-                    content=content,
+                    estimated_tokens=estimate_tokens(rendered),
+                    content=rendered,
                     bucket="task",
                     pinned=bool(checkpoint.pending_operations),
                     compressible=False,
@@ -606,11 +634,7 @@ class ContextOrchestrator:
             )
         return collected
 
-    def _select_existing_context(
-        self,
-        request: ContextRequest,
-        items: list[ContextItem],
-    ) -> list[ContextItem]:
+    def _select_existing_context(self, request: ContextRequest) -> list[ContextItem]:
         assert self._repository is not None
         role = request.role
         if role not in {"coordinator", "worker", "reviewer"}:
@@ -621,22 +645,27 @@ class ContextOrchestrator:
             self._repository.last_committed_sequence(request.run_id),
         )
         safety_margin = max(1, ceil(self._policy.max_input_tokens * 0.10))
-        budget = ContextBudget(
-            max_input_tokens=self._policy.max_input_tokens,
-            reserved_output_tokens=self._policy.output_reserve_tokens,
-            safety_margin_tokens=safety_margin,
-            max_single_item_tokens=self._policy.max_single_candidate_tokens,
-            max_tool_output_tokens=self._policy.max_single_candidate_tokens,
-        )
         snapshot = ContextBuilder(self._repository).build(
             run_id=request.run_id,
             view=RoleContextView(role=role, task_id=task_id),
-            budget=budget,
+            budget=ContextBudget(
+                max_input_tokens=self._policy.max_input_tokens,
+                reserved_output_tokens=self._policy.output_reserve_tokens,
+                safety_margin_tokens=safety_margin,
+                max_single_item_tokens=self._policy.max_single_candidate_tokens,
+                max_tool_output_tokens=self._policy.max_single_candidate_tokens,
+            ),
             agent_id="context_orchestrator",
             at_sequence=at_sequence,
         )
         selected_ids = set(snapshot.source_item_ids)
-        return [item for item in items if item.item_id in selected_ids]
+        # Refetch because compaction may have persisted new summary items during
+        # build; the pre-build list would otherwise lose selected summaries.
+        return [
+            item
+            for item in self._repository.list_context_items(request.run_id)
+            if item.item_id in selected_ids
+        ]
 
     @staticmethod
     def _deduplicate(
@@ -686,25 +715,24 @@ class ContextOrchestrator:
                 item for item in group if item.candidate_id != winner.candidate_id
             )
             free.append(winner)
-            if losers:
-                conflicts.append(
-                    ContextConflict(
-                        conflict_group=group_name,
-                        winner_id=winner.candidate_id,
-                        loser_ids=tuple(item.candidate_id for item in losers),
-                        resolution=(
-                            "trust>verified_fact>priority>freshness>candidate_id"
-                        ),
-                    )
+            if not losers:
+                continue
+            conflicts.append(
+                ContextConflict(
+                    conflict_group=group_name,
+                    winner_id=winner.candidate_id,
+                    loser_ids=tuple(item.candidate_id for item in losers),
+                    resolution="trust>verified_fact>priority>freshness>candidate_id",
                 )
-                excluded.extend(
-                    ContextSelection(
-                        candidate_id=item.candidate_id,
-                        selected=False,
-                        reason=f"conflict_lost_to:{winner.candidate_id}",
-                    )
-                    for item in losers
+            )
+            excluded.extend(
+                ContextSelection(
+                    candidate_id=item.candidate_id,
+                    selected=False,
+                    reason=f"conflict_lost_to:{winner.candidate_id}",
                 )
+                for item in losers
+            )
         return free, conflicts, excluded
 
     def _allocate(
@@ -752,10 +780,16 @@ class ContextOrchestrator:
         bucket_used: dict[str, int] = {bucket: 0 for bucket in quota_map}
 
         for item in evictable:
-            item_tokens = min(
-                item.estimated_tokens,
-                self._policy.max_single_candidate_tokens,
-            )
+            if item.estimated_tokens > self._policy.max_single_candidate_tokens:
+                exclusions.append(
+                    ContextSelection(
+                        candidate_id=item.candidate_id,
+                        selected=False,
+                        reason="candidate_too_large",
+                    )
+                )
+                continue
+            item_tokens = item.estimated_tokens
             bucket_limit = bucket_limits.get(item.bucket, remaining)
             current_bucket = bucket_used.get(item.bucket, 0)
             if current_bucket + item_tokens > bucket_limit:
@@ -788,14 +822,110 @@ class ContextOrchestrator:
                 )
             )
 
-        allocation = ContextBudgetAllocation(
-            available_input_tokens=available,
-            output_reserve_tokens=self._policy.output_reserve_tokens,
+        return (
+            selected,
+            selection_records,
+            exclusions,
+            ContextBudgetAllocation(
+                available_input_tokens=available,
+                output_reserve_tokens=self._policy.output_reserve_tokens,
+                protected_tokens=protected_tokens,
+                selected_tokens=used,
+                rendered_prompt_tokens=0,
+                bucket_tokens=tuple(sorted(bucket_used.items())),
+            ),
+        )
+
+    def _fit_rendered_budget(
+        self,
+        *,
+        request: ContextRequest,
+        selected: list[ContextCandidate],
+        selections: list[ContextSelection],
+        allocation: ContextBudgetAllocation,
+    ) -> tuple[
+        list[ContextCandidate],
+        list[ContextSelection],
+        list[ContextSelection],
+        ContextBudgetAllocation,
+        str,
+        tuple[PromptSection, ...],
+        str,
+        int,
+    ]:
+        exclusions: list[ContextSelection] = []
+        current = list(selected)
+        current_selections = list(selections)
+        while True:
+            prompt, sections, fingerprint, prompt_tokens = self._assembler.assemble(
+                request=request,
+                selected=current,
+                policy=self._policy,
+            )
+            if prompt_tokens <= self._policy.available_input_tokens:
+                final_allocation = self._recalculate_allocation(
+                    current,
+                    rendered_prompt_tokens=prompt_tokens,
+                    previous=allocation,
+                )
+                return (
+                    current,
+                    current_selections,
+                    exclusions,
+                    final_allocation,
+                    prompt,
+                    sections,
+                    fingerprint,
+                    prompt_tokens,
+                )
+
+            droppable = [item for item in current if not item.is_protected]
+            if not droppable:
+                raise ContextAssemblyBudgetExhausted(
+                    required_tokens=prompt_tokens,
+                    available_tokens=self._policy.available_input_tokens,
+                )
+            loser = max(droppable, key=_winner_order)
+            current = [item for item in current if item.candidate_id != loser.candidate_id]
+            current_selections = [
+                item
+                for item in current_selections
+                if item.candidate_id != loser.candidate_id
+            ]
+            exclusions.append(
+                ContextSelection(
+                    candidate_id=loser.candidate_id,
+                    selected=False,
+                    reason="rendered_prompt_budget",
+                )
+            )
+
+    def _recalculate_allocation(
+        self,
+        selected: Iterable[ContextCandidate],
+        *,
+        rendered_prompt_tokens: int,
+        previous: ContextBudgetAllocation,
+    ) -> ContextBudgetAllocation:
+        candidates = tuple(selected)
+        protected_tokens = sum(
+            item.estimated_tokens for item in candidates if item.is_protected
+        )
+        bucket_used: dict[str, int] = {
+            bucket: 0 for bucket, _ in self._policy.source_quotas
+        }
+        for item in candidates:
+            if not item.is_protected:
+                bucket_used[item.bucket] = (
+                    bucket_used.get(item.bucket, 0) + item.estimated_tokens
+                )
+        return replace(
+            previous,
             protected_tokens=protected_tokens,
-            selected_tokens=used,
+            selected_tokens=sum(item.estimated_tokens for item in candidates),
+            rendered_prompt_tokens=rendered_prompt_tokens,
             bucket_tokens=tuple(sorted(bucket_used.items())),
         )
-        return selected, selection_records, exclusions, allocation
 
 
 def estimate_tokens(content: str) -> int:
@@ -808,7 +938,6 @@ def estimate_tokens(content: str) -> int:
 
 def _candidate_from_context_item(item: ContextItem) -> ContextCandidate:
     metadata = dict(item.metadata)
-    bucket = str(metadata.get("bucket", "context"))
     conflict_group = metadata.get("conflict_group")
     return ContextCandidate(
         candidate_id=f"context:{item.item_id}",
@@ -822,7 +951,7 @@ def _candidate_from_context_item(item: ContextItem) -> ContextCandidate:
         freshness=item.valid_from_sequence,
         estimated_tokens=item.estimated_tokens,
         content=item.content,
-        bucket=bucket,
+        bucket=str(metadata.get("bucket", "context")),
         pinned=bool(metadata.get("pinned", False)),
         compressible=bool(metadata.get("compressible", True)),
         sensitive=bool(metadata.get("sensitive", False)),
@@ -849,9 +978,11 @@ def _stable_candidate_order(candidate: ContextCandidate) -> tuple[str, int, str]
 def _render_candidate_block(candidates: Iterable[ContextCandidate]) -> str:
     blocks: list[str] = []
     for item in candidates:
-        content = item.content
-        if item.estimated_tokens > 0 and item.sensitive:
-            content = "[sensitive content withheld by context policy]"
+        content = (
+            "[sensitive content withheld by context policy]"
+            if item.sensitive
+            else item.content
+        )
         blocks.append(
             "\n".join(
                 (
