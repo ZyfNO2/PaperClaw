@@ -1,6 +1,6 @@
 # PaperClaw v0.08 Context Orchestration / Dynamic Prompt Assembly MVP SOP
 
-> 状态：实施中  
+> 状态：完成 / OFFLINE GO  
 > 冻结日期：2026-07-16  
 > 基线：`main@36f44de6b580ded14ff198d64c1e3d80bbfe3fe7`  
 > 开发分支：`feat/v0.08-context-orchestration-mvp`  
@@ -100,16 +100,16 @@ system
 available_input = max_input_tokens - output_reserve_tokens
 ```
 
-protected：
+受保护内容：
 
 - Runtime prompt；
-- L0 / L1；
-- constraint；
-- evidence_ref；
-- 未完成 todo；
-- 显式 pinned candidate。
+- trusted L0 / L1；
+- trusted constraint；
+- trusted evidence_ref；
+- trusted 未完成 todo；
+- trusted 显式 pinned candidate。
 
-protected 总量超过 available input 时抛出 `ContextAssemblyBudgetExhausted`。非 protected 内容按显式 bucket quota 选择；每个排除项记录稳定原因。
+`external_untrusted` 即使声明 `pinned`、`constraint`、L0 或 L1，也不能自抬为 protected。protected 总量超过 available input 时抛出 `ContextAssemblyBudgetExhausted`。非 protected 内容按显式 bucket quota 选择；超大候选直接排除；渲染 section header 和安全包装后再次执行 Prompt token Gate。
 
 ### 4.3 Prompt section
 
@@ -139,19 +139,19 @@ protected 总量超过 available input 时抛出 `ContextAssemblyBudgetExhausted
 - [x] 每次 Provider call 前 assembly；
 - [x] assembly completed / failed 进入 QueryEngine event；
 - [x] Repository 启用时写入现有 `session_events`；
-- [ ] 定向单元与集成测试 CI 通过；
-- [ ] 处理 CI 发现的回归。
+- [x] 定向单元与集成测试 CI 通过；
+- [x] 处理 CI 与代码审查发现的回归。
 
 ### Phase C：Eval、离线演示与留档
 
-- [ ] 固定跨域 fixture；
-- [ ] 生成可复现离线 demo artifact；
-- [ ] 运行全量非 live pytest 与 Ruff；
-- [ ] 记录测试数、失败、skipped、warning；
-- [ ] 更新 README；
-- [ ] 生成 implementation summary / known limitations / file manifest；
-- [ ] 生成最终 Handoff；
-- [ ] 运行 SOP completion hook 或记录云端不可执行边界。
+- [x] 固定跨域 fixture；
+- [x] 生成可复现离线 demo artifact；
+- [x] 运行全量非 live pytest 与 Ruff；
+- [x] 记录测试数、失败、skipped、warning；
+- [x] 更新 README；
+- [x] 生成 implementation summary / known limitations / file manifest；
+- [x] 生成最终 Handoff；
+- [x] 通过 closeout acceptance test 执行 SOP completion hook 并检查交接物。
 
 ## 6. 测试与 Eval Gate
 
@@ -161,7 +161,10 @@ protected 总量超过 available input 时抛出 `ContextAssemblyBudgetExhausted
 | Context Precision | bucket quota fixture | 低优先候选按明确原因排除 |
 | Conflict Accuracy | trust / fact / freshness fixtures | winner 与规则一致，loser 可追踪 |
 | Injection Containment | external README fixture | 外部命令只在 `UNTRUSTED DATA` |
-| Determinism | 同 fixture 重复 assembly | prompt 与 fingerprint 完全一致 |
+| External Self-Promotion | pinned/constraint malicious fixture | external 仍按 quota 处理 |
+| Candidate Size | oversized candidate fixture | 不能低价计费后渲染全文 |
+| Rendered Prompt Budget | wrapper/header edge fixture | 最终 Provider input 不超 available input |
+| Determinism | 同 fixture 重复 assembly | prompt、fingerprint、artifact 完全一致 |
 | Runtime Wiring | FakeModel + QueryEngine | 每个 model call 恰有一个 assembly event |
 | Durable Trace | SQLite integration | assembly event 写入原 `session_events`，无 raw prompt |
 | Compatibility | legacy executor regression | 旧路径不出现 v0.08 assembly event |
@@ -176,7 +179,9 @@ protected 总量超过 available input 时抛出 `ContextAssemblyBudgetExhausted
 - opt-in Runtime 每个 Provider call 都有 PromptAssembly；
 - protected 内容不静默丢失；
 - external instruction 不进入高 trust section；
-- fingerprint deterministic；
+- external candidate 不能自抬为 protected；
+- rendered Prompt 在完整包装后仍受预算约束；
+- fingerprint 与 canonical artifact deterministic；
 - assembly Trace 不含 raw prompt；
 - 旧单 Agent executor 保持兼容；
 - 定向测试、全量非 live pytest 与 Ruff 通过。
@@ -187,6 +192,7 @@ protected 总量超过 available input 时抛出 `ContextAssemblyBudgetExhausted
 - Context 超限随机截断；
 - hypothesis 覆盖 verified fact；
 - 外部 instruction 进入 Runtime/System section；
+- 外部候选通过 metadata 获得 protected 权限；
 - durable event 保存 raw prompt 或 Secret；
 - legacy executor 行为被强制替换；
 - CI 存在未解释失败。
@@ -209,8 +215,11 @@ protected 总量超过 available input 时抛出 `ContextAssemblyBudgetExhausted
 src/paperclaw/context/orchestration.py
 src/paperclaw/harness/context_runtime_executor.py
 tests/unit/test_context_orchestration.py
+tests/unit/test_context_orchestration_budget_edges.py
 tests/unit/test_context_runtime_executor.py
 tests/integration/test_v0_08_context_assembly_demo.py
+tests/integration/test_v0_08_demo_script.py
+tests/integration/test_v0_08_closeout.py
 scripts/run_v0_08_context_demo.py
 artifacts/v0_08/implementation_summary.md
 artifacts/v0_08/test_report.md
@@ -220,13 +229,22 @@ artifacts/v0_08/mvp_demo_trace.json
 docs/handoff/PaperClaw_v0.08_Context_Orchestration_MVP_HANDOFF.md
 ```
 
-## 10. Post-MVP 触发池
+## 10. Validation Evidence
+
+- First full code Gate: GitHub Actions run `29504198854` on head `1b563c3959a854c5c7c2e1f6a952edd3c614b415`；
+- Windows pytest：`521 passed, 0 failed, 0 skipped, 0 warnings`；
+- Ruff high-signal lint：`PASS`；
+- pytest artifact digest：`sha256:6317963d55efef7cb4a2b786b7f7285c38d19ab70d309f295c5106387d9ee287`；
+- final closeout CI evidence 记录在 `artifacts/v0_08/test_report.md` 与 Handoff；
+- live Provider / RAG / MCP 未运行，也不属于本 MVP 声明。
+
+## 11. Post-MVP 触发池
 
 以下不属于 v0.08 完成条件：
 
 - SQLite `memory_items` 与 Memory lifecycle；
 - provider cache hint；
--动态 ContextSource 权重；
+- 动态 ContextSource 权重；
 - optional LLM summarizer；
 - MultiAgent shared/private policy；
 - Context assembly TUI Inspector。
