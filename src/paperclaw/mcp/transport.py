@@ -266,7 +266,7 @@ class StdioMCPTransport:
             return
         try:
             while True:
-                line = process.stdout.readline()
+                line = process.stdout.readline(self._config.max_message_bytes + 1)
                 if not line:
                     self._messages.put(_EOF)
                     return
