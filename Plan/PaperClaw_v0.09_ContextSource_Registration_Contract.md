@@ -1,7 +1,8 @@
 # PaperClaw v0.09 Shared ContextSource Registration Contract
 
-> 状态：Implementation complete / repository CI pending  
+> 状态：Implementation complete / Repository CI PASS / Offline GO  
 > 分支：`feat/v0.09-context-source-registration-contract`  
+> Draft PR：`#25`  
 > 范围：冻结 MCP Capability Selection 与 RAG Retrieval ContextSource 共用的注册、冻结、DI 与 Trace 边界。
 
 ## 1. 目标
@@ -107,9 +108,23 @@ context_source_registry: ContextSourceRegistry | None = None
 - Source-specific timeout/retry/circuit breaker；
 - Source scope/permission policy；
 - Prompt section rendering；
-- Context budget policy修改；
+- Context budget policy 修改；
 - QueryEngine 修改。
 
-## 9. 后续使用
+## 9. 验证结果
 
-PR 5 注册 `tool_selection` Source；PR 6 注册 `retrieval` Source。二者均返回 `ContextCandidate`，均不得直接构造 Provider Prompt。
+```text
+Validated HEAD: b3625c9f0e6d851fb81b09a7444aa91cb0fd26dd
+GitHub Actions run: 29541766937
+Windows pytest: 567 passed, 0 failed, 0 skipped
+pytest exit status: 0
+Ruff E9/F63/F7/F82: PASS
+artifact: pytest-results-29541766937
+artifact digest: sha256:0621460b94791cba0aca7b89c05c1298f76bdff0de2efc9e5a081d0668524aed
+```
+
+测试数按 `pytest_reportlog.jsonl` 的 call-phase 记录统计。
+
+## 10. 后续使用
+
+PR #26 注册 `tool_selection` Source；PR #27 注册 `retrieval` Source。二者均返回 `ContextCandidate`，均不得直接构造 Provider Prompt。
