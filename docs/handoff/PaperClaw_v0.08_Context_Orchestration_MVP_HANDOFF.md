@@ -11,7 +11,7 @@
 - First full code Gate head: `1b563c3959a854c5c7c2e1f6a952edd3c614b415`
 - Validated closeout head: `b3f56af23de73d7921dc49ee6dda8a0dccb61878`
 - Evidence-sync head: `c4eaa5dadb1ad624edbf71ba2af3d4fe43bcf51c`
-- Final handoff head: `e9693f9954886068992170344bb93d54e9ab91ff`
+- Final handoff evidence head: `51fcd84c58cfe09eb807621ba2c4d0e0cc765a14`
 - Current status: `OFFLINE GO / waiting owner review`
 
 ## Completed Content
@@ -128,15 +128,15 @@
 - Artifact ID: `8378870851`
 - Report artifact digest: `sha256:25c5031a5c0383990a09d32893fc18903ba88bfc6dfef1915e9583fa6814ea2e`
 
-### Final handoff-head Gate
+### Final handoff-evidence Gate
 
-- Run: `29507042546`
-- Head: `e9693f9954886068992170344bb93d54e9ab91ff`
+- Run: `29507438269`
+- Head: `51fcd84c58cfe09eb807621ba2c4d0e0cc765a14`
 - Windows pytest: `524 passed, 0 failed, 0 skipped, 0 warnings`
 - Ruff high-signal lint: `PASS`
-- Report artifact: `pytest-results-29507042546`
-- Artifact ID: `8379033993`
-- Report artifact digest: `sha256:2035527539055bc66eea8b8d3e952f31c2199e7222d3c0b4e2f204f136b6d028`
+- Report artifact: `pytest-results-29507438269`
+- Artifact ID: `8379197409`
+- Report artifact digest: `sha256:ecd800984c7497351076214338f8831a66f64b12fca1c0e3fe86a463959d9139`
 
 The closeout and final suites verify the canonical JSON artifact, SOP completion, required handoff files, generic hook completeness, and actual hook process execution.
 
