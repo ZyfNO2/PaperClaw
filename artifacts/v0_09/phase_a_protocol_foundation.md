@@ -2,7 +2,7 @@
 
 ## Status
 
-`LOCAL_OFFLINE_PASS / REPOSITORY_CI_PENDING`
+`PHASE_A_GO / LOCAL_OFFLINE_PASS / REPOSITORY_CI_PASS`
 
 This artifact covers only the protocol foundation Phase A. It does not claim the
 complete v0.09 MCP Tool Gateway MVP.
@@ -47,7 +47,7 @@ PYTHONPATH=src python -m pytest tests/unit/test_mcp_protocol_foundation.py -q
 Result:
 
 ```text
-16 passed in 15.42s
+16 passed in 17.40s
 ```
 
 Also executed:
@@ -66,8 +66,16 @@ PYTHONPATH=src python -m ruff check src/paperclaw/mcp \
   tests/fixtures/fake_mcp_server.py --select E9,F63,F7,F82
 ```
 
-Result: PASS (`All checks passed!`). Repository CI remains the Python 3.12 full
-regression and Ruff source of truth.
+Result: PASS (`All checks passed!`).
+
+Repository CI source of truth:
+
+- final implementation commit: `f872a815f3ecf8f358a442580716fc46ab0e85f2`;
+- run: `29513038780`;
+- Windows Server 2025 / Python 3.12;
+- pytest: `521 passed, 0 failed, 0 skipped`, exit status `0`;
+- Ruff: PASS;
+- artifact digest: `sha256:dc3544da93c5e235554d942264146bb2e2facceb3bd0261f57bbd9bd531a0a15`.
 
 ## Test classification
 

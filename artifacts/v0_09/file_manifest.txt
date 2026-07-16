@@ -1,0 +1,14 @@
+Plan/PaperClaw_v0.09_MCP_Protocol_Foundation_Phase_A_SOP.md
+artifacts/v0_09/file_manifest.txt
+artifacts/v0_09/implementation_summary.md
+artifacts/v0_09/known_limitations.md
+artifacts/v0_09/phase_a_protocol_foundation.md
+artifacts/v0_09/test_report.md
+docs/handoff/PaperClaw_v0.09_MCP_Protocol_Foundation_Phase_A_HANDOFF.md
+src/paperclaw/mcp/__init__.py
+src/paperclaw/mcp/contracts.py
+src/paperclaw/mcp/schema.py
+src/paperclaw/mcp/session.py
+src/paperclaw/mcp/transport.py
+tests/fixtures/fake_mcp_server.py
+tests/unit/test_mcp_protocol_foundation.py

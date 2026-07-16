@@ -1,6 +1,6 @@
 # PaperClaw v0.09 MCP Protocol Foundation — Phase A SOP
 
-> 状态：Phase A offline implemented / repository CI pending  
+> 状态：Phase A GO / offline validated / repository CI passed  
 > 基线：`main@36f44de6b580ded14ff198d64c1e3d80bbfe3fe7`  
 > 分支：`feat/v0.09-mcp-protocol-foundation`  
 > 协议冻结：Model Context Protocol `2025-11-25`  
@@ -39,14 +39,14 @@ Phase A 只证明协议边界，不让 MCP Tool 进入 Agent Runtime。
 
 ### 2.2 明确不做
 
-- [ ] 不接 `ToolRegistry`
-- [ ] 不接 Permission / approval
-- [ ] 不做 capability selection 或 Top-K
-- [ ] 不把 MCP 描述或 Server instructions 注入 Prompt
-- [ ] 不支持 MCP Resources / Prompts
-- [ ] 不支持远程写操作或副作用重试
-- [ ] 不做多 Server 路由、冲突消解或健康评分
-- [ ] 不接 Trace、Run Budget 或 ContextOrchestrator
+- 不接 `ToolRegistry`
+- 不接 Permission / approval
+- 不做 capability selection 或 Top-K
+- 不把 MCP 描述或 Server instructions 注入 Prompt
+- 不支持 MCP Resources / Prompts
+- 不支持远程写操作或副作用重试
+- 不做多 Server 路由、冲突消解或健康评分
+- 不接 Trace、Run Budget 或 ContextOrchestrator
 
 未勾选项是明确非目标，不是本 Phase 的 pending。
 
@@ -207,3 +207,16 @@ python -m pytest tests/unit/test_mcp_protocol_foundation.py -q
 python -m pytest --basetemp=tmp/pytest -q -m "not real_llm"
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
+
+## 10. 验证结果
+
+- 本地 Linux / Python 3.13.5 定向测试：`16 passed`；
+- 本地 Ruff E9/F63/F7/F82：PASS；
+- GitHub Actions run `29513038780`；
+- Windows Server 2025 / Python 3.12 全量回归：`521 passed, 0 failed, 0 skipped`；
+- pytest exit status：`0`；
+- CI Ruff：PASS；
+- pytest artifact：`pytest-results-29513038780`；
+- artifact digest：`sha256:dc3544da93c5e235554d942264146bb2e2facceb3bd0261f57bbd9bd531a0a15`。
+
+第三方真实 MCP Server interoperability 未验证，也不属于 Phase A 完成条件。
