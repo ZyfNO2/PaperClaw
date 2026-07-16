@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from email.message import Message
+import http.client
 from io import BytesIO
 import json
 from typing import Any
@@ -223,6 +224,54 @@ def test_adapter_retries_429_and_returns_normalized_metadata() -> None:
     }
     assert sleeps == [1.0]
     assert attempts == []
+
+
+def test_adapter_retries_remote_disconnect_as_network_error() -> None:
+    attempts = [
+        http.client.RemoteDisconnected("remote end closed connection"),
+        _Response(
+            {"choices": [{"message": {"content": "recovered"}}]},
+            {},
+        ),
+    ]
+
+    def urlopen(*_args: object, **_kwargs: object):
+        item = attempts.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    model = OpenAICompatibleModel(
+        api_key="provider-secret",
+        base_url="https://provider.invalid/v1",
+        model="test-model",
+        retry_policy=RetryPolicy(
+            max_attempts=2,
+            base_delay_seconds=0,
+            max_delay_seconds=0,
+        ),
+        urlopen=urlopen,
+    )
+
+    turn = model.complete("recover from disconnect")
+
+    assert turn.content == "recovered"
+    assert turn.metadata["attempt_count"] == 2
+    assert turn.metadata["retry_count"] == 1
+    assert attempts == []
+
+
+def test_from_env_enables_bounded_retries_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PAPERCLAW_API_KEY", "provider-secret")
+    monkeypatch.setenv("PAPERCLAW_BASE_URL", "https://provider.invalid/v1")
+    monkeypatch.setenv("PAPERCLAW_MODEL", "test-model")
+    monkeypatch.delenv("PAPERCLAW_PROVIDER_MAX_ATTEMPTS", raising=False)
+
+    model = OpenAICompatibleModel.from_env()
+
+    assert model.retry_policy.max_attempts == 3
 
 
 def test_adapter_does_not_retry_authentication_failure() -> None:

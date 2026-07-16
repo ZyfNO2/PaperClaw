@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import http.client
 import json
 import os
 import platform
@@ -64,7 +65,11 @@ class OpenAICompatibleModel:
         timeout = float(os.getenv("PAPERCLAW_TIMEOUT_SECONDS", "120"))
         provider = os.getenv("PAPERCLAW_PROVIDER", "openai-compatible")
         retry_policy = RetryPolicy(
-            max_attempts=int(os.getenv("PAPERCLAW_PROVIDER_MAX_ATTEMPTS", "1")),
+            # Environment-backed clients serve the live CLI/TUI path, where a
+            # transient connection close should receive a small bounded retry
+            # budget. Direct constructor callers retain RetryPolicy's opt-in
+            # default of one attempt.
+            max_attempts=int(os.getenv("PAPERCLAW_PROVIDER_MAX_ATTEMPTS", "3")),
             base_delay_seconds=float(
                 os.getenv("PAPERCLAW_PROVIDER_BACKOFF_SECONDS", "0.5")
             ),
@@ -191,7 +196,13 @@ class OpenAICompatibleModel:
                 ),
                 response_excerpt=excerpt,
             ) from exc
-        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+        except (
+            urllib.error.URLError,
+            http.client.RemoteDisconnected,
+            ConnectionError,
+            TimeoutError,
+            socket.timeout,
+        ) as exc:
             raise ProviderError(
                 "provider request timed out or failed to connect",
                 code="PROVIDER_NETWORK_ERROR",
