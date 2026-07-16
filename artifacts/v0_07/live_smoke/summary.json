@@ -11,7 +11,7 @@
     "terminal_is_completed": true,
     "trace_starts_with_run_started": true
   },
-  "database_sha256": "ac2ce1ad8fd85035a872b7166a8485f476a91e0bb14b7d2d526d7d836324f56d",
+  "database_sha256": "e3e6643e3b63b678c580c4acbcf6b6d68437b9cd757335d23918a7eabc3eaa66",
   "event_count": 4,
   "event_types": [
     "run.started",
@@ -26,8 +26,8 @@
   "result": {
     "last_event_sequence": 4,
     "model_calls": 1,
-    "output": "PaperClaw v0.07 Provider trace smoke OK.",
-    "run_id": "run-9913f2a81842",
+    "output": "PaperClaw v0.07 Provider trace smoke OK",
+    "run_id": "run-7677999f51d5",
     "status": "completed",
     "stop_reason": "done",
     "tool_calls": 0
@@ -35,6 +35,6 @@
   "scenario": "v0.07-provider-durable-trace-smoke",
   "schema_version": 1,
   "timeout_seconds": 120.0,
-  "timestamp_utc": "2026-07-15T21:16:49.207607+00:00",
-  "trace_sha256": "8542c992cbe3e546f69136262a9b429e8b0b495eba794d893fd8d8e3402cf80c"
+  "timestamp_utc": "2026-07-16T11:32:56.529041+00:00",
+  "trace_sha256": "9e74f06dc91867c2bbf63ae19bdc7a73032feb8817b8ed425035f8e3b6f8d0b3"
 }
