@@ -240,6 +240,8 @@ v0.08 当前是 Python API 的 opt-in executor，不是默认 CLI/TUI 路径。R
 - `artifacts/v0_08/mvp_demo_trace.json`
 - `docs/handoff/PaperClaw_v0.08_Context_Orchestration_MVP_HANDOFF.md`
 
+最终验收：Draft PR #19 的最终开发 HEAD 通过 Windows 全量非 live pytest 与 Ruff；精确 run、SHA、测试数和 artifact digest 见 Handoff 与 `artifacts/v0_08/test_report.md`。
+
 生成离线 demo：
 
 ```powershell
