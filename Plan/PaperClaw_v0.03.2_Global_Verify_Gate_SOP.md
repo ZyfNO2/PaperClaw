@@ -1,11 +1,12 @@
-# PaperClaw v0.03.2 Global Verify Gate SOP
+# PaperClaw v0.07.7 Global Verify Gate SOP
 
-> 状态：实现完成；实现 HEAD Windows CI 与 Ruff 已通过；等待最终文档 HEAD CI
-> 基线：`main@725e8a81425efa987f59a6f66ce0021fe7978261`
-> 分支：`feat/v0.03.2-global-verify-gate`
+> 正式版本：`v0.07.7`
+> 状态：实现完成；实现 HEAD Windows CI 与 Ruff 已通过；等待更新到最新 main 后的最终 CI
+> 原始基线：`main@725e8a81425efa987f59a6f66ce0021fe7978261`
+> Legacy branch ref：`feat/v0.03.2-global-verify-gate`
 > Draft PR：`#14`
 > 实现验证：run `29450607810` / 403 passed / Ruff PASS
-> 冲突策略：不修改 `cli.py`、`tui/`、`trace/`、Provider、Replay、Eval 或 v0.07.x 文件。
+> 冲突策略：不修改 `cli.py`、`tui/`、`trace/`、Provider、Replay、Eval 或既有 v0.07.x 文件。
 
 ## 1. 用户故事
 
@@ -58,7 +59,8 @@ failed/incomplete → effective BLOCKED
 - [x] 事件只包含计数、状态和 effective stop reason；
 - [x] GitHub Actions Windows 全量 pytest：403 passed，0 failed，0 skipped；
 - [x] Ruff high-signal gate：PASS；
-- [ ] Handoff/SOP 最终文档 HEAD CI。
+- [ ] 更新到包含 v0.07.0–v0.07.6 与 test hardening 的最新 `main`；
+- [ ] 最终文档 HEAD CI。
 
 ## 5. 接线方式
 
@@ -95,5 +97,9 @@ result = verified.run(
 
 - 将 Project Claim 加入 team plan JSON；
 - 在 CLI 中增加 opt-in 参数；
-- 将 aggregate result 接入 MultiAgent View；
+- 将 aggregate result 接入 v0.07.8 MultiAgent View；
 - 基于 v0.07 Trace 持久化 Global Verify 事实。
+
+## 7. 编号说明
+
+本功能原先以 `v0.03.2` 开发。为统一当前版本线，正式功能编号调整为 `v0.07.7`。文件路径与 GitHub head branch ref 暂时保留旧名，仅用于维持 PR #14 历史与 CI 关联，不代表正式版本号。
