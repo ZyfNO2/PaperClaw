@@ -16,6 +16,7 @@ from paperclaw.retrieval._store import (
     insert_manifest,
 )
 from paperclaw.retrieval.contracts import ChunkConfig, canonical_json, sha256_text
+from paperclaw.retrieval.manifest import validate_manifest_row
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class IndexIntegrityReport:
     mismatched_fts_rows: int
     manifest_id: str | None
     manifest_state: str | None
+    manifest_contract_match: bool
     manifest_counts_match: bool
     manifest_corpus_match: bool
     corpus_hash: str
@@ -42,6 +44,7 @@ class IndexIntegrityReport:
             or self.duplicate_fts_rows
             or self.mismatched_fts_rows
             or self.manifest_state != "ready"
+            or not self.manifest_contract_match
             or not self.manifest_counts_match
             or not self.manifest_corpus_match
         )
@@ -115,23 +118,30 @@ class SQLiteIndexMaintainer:
         duplicates = sum(max(0, count - 1) for count in exact_counts.values())
         documents, versions, chunks = active_counts(self._conn)
         current_hash = corpus_hash(expected_rows)
-        manifest = self._conn.execute(
+        manifest_row = self._conn.execute(
             "SELECT * FROM index_manifests ORDER BY rowid DESC LIMIT 1"
         ).fetchone()
-        if manifest is None:
+        if manifest_row is None:
             manifest_id = None
             manifest_state = None
+            contract_match = documents == versions == chunks == 0
             counts_match = documents == versions == chunks == 0
             corpus_match = chunks == 0
         else:
-            manifest_id = manifest["manifest_id"]
-            manifest_state = manifest["state"]
+            manifest_id = manifest_row["manifest_id"]
+            manifest_state = manifest_row["state"]
+            try:
+                validate_manifest_row(manifest_row)
+            except ValueError:
+                contract_match = False
+            else:
+                contract_match = True
             counts_match = (
-                int(manifest["document_count"]),
-                int(manifest["version_count"]),
-                int(manifest["chunk_count"]),
+                int(manifest_row["document_count"]),
+                int(manifest_row["version_count"]),
+                int(manifest_row["chunk_count"]),
             ) == (documents, versions, chunks)
-            corpus_match = manifest["corpus_hash"] == current_hash
+            corpus_match = manifest_row["corpus_hash"] == current_hash
         return IndexIntegrityReport(
             active_documents=documents,
             active_versions=versions,
@@ -143,6 +153,7 @@ class SQLiteIndexMaintainer:
             mismatched_fts_rows=mismatched,
             manifest_id=manifest_id,
             manifest_state=manifest_state,
+            manifest_contract_match=contract_match,
             manifest_counts_match=counts_match,
             manifest_corpus_match=corpus_match,
             corpus_hash=current_hash,
