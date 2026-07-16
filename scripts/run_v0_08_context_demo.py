@@ -91,6 +91,10 @@ def build_demo_artifact() -> dict:
             second = orchestrator.assemble(request)
 
             first_trace = first.trace.to_event_payload()
+            # Runtime latency is observable but not part of the deterministic
+            # fixture contract. Normalize it so the source-controlled artifact
+            # is byte-for-byte reproducible across machines and CI runners.
+            first_trace["latency_ms"] = 0
             section_contract = [
                 {
                     "name": section.name,
