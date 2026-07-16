@@ -1,0 +1,62 @@
+PaperClaw v0.08 File Manifest
+=============================
+
+Baseline: main@36f44de6b580ded14ff198d64c1e3d80bbfe3fe7
+Branch: feat/v0.08-context-orchestration-mvp
+Draft PR: #19
+Generated: 2026-07-16 (Asia/Bangkok)
+
+Legend:
+  [A] added by v0.08
+  [M] modified by v0.08
+
+## Plan / Repository Documentation
+
+[A] Plan/PaperClaw_v0.08_Context_Orchestration_MVP_SOP.md
+[M] README.md
+
+## Source Code
+
+[M] src/paperclaw/context/__init__.py
+[A] src/paperclaw/context/orchestration.py
+[M] src/paperclaw/harness/__init__.py
+[A] src/paperclaw/harness/context_runtime_executor.py
+
+## Demo
+
+[A] scripts/run_v0_08_context_demo.py
+
+## Unit Tests
+
+[A] tests/unit/test_context_orchestration.py
+[A] tests/unit/test_context_orchestration_budget_edges.py
+[A] tests/unit/test_context_runtime_executor.py
+
+## Integration Tests
+
+[A] tests/integration/test_v0_08_context_assembly_demo.py
+[A] tests/integration/test_v0_08_demo_script.py
+
+## Artifacts
+
+[A] artifacts/v0_08/mvp_demo_trace.json
+[A] artifacts/v0_08/implementation_summary.md
+[A] artifacts/v0_08/test_report.md
+[A] artifacts/v0_08/known_limitations.md
+[A] artifacts/v0_08/file_manifest.txt
+
+## Handoff
+
+[A] docs/handoff/PaperClaw_v0.08_Context_Orchestration_MVP_HANDOFF.md
+
+## Summary
+
+Plan / README             : 2 files
+Source code               : 4 files
+Demo                      : 1 file
+Unit tests                : 3 files
+Integration tests         : 2 files
+Artifacts                 : 5 files
+Handoff                   : 1 file
+-----------------------------------
+Total                     : 18 files
