@@ -1,16 +1,17 @@
-# PaperClaw v0.03.2 Global Verify Gate Handoff
+# PaperClaw v0.07.7 Global Verify Gate Handoff
 
 ## 状态
 
-`IMPLEMENTATION GO / DRAFT PR / WAITING FINAL HEAD CI`
+`IMPLEMENTATION GO / DRAFT PR / WAITING CURRENT-MAIN CI`
 
-Global Verify 首切片已经实现并在实现 HEAD `22615d3c4af7b3a42dcd421291a2382c3dd9363a` 上通过完整 Windows 离线回归。本文档提交后仍需以最终分支 HEAD 的 CI 为最终证据。
+Global Verify 首切片已经实现并在实现 HEAD `22615d3c4af7b3a42dcd421291a2382c3dd9363a` 上通过完整 Windows 离线回归。正式版本编号现统一为 `v0.07.7`；合并前仍需更新到最新 `main` 并以最终分支 HEAD CI 为准。
 
 ## 仓库与分支
 
 - Repository: `ZyfNO2/PaperClaw`
-- Base: `main@725e8a81425efa987f59a6f66ce0021fe7978261`
-- Branch: `feat/v0.03.2-global-verify-gate`
+- Formal version: `v0.07.7`
+- Original base: `main@725e8a81425efa987f59a6f66ce0021fe7978261`
+- Legacy branch ref: `feat/v0.03.2-global-verify-gate`
 - Draft PR: `#14`
 
 ## 已完成内容
@@ -29,10 +30,10 @@ Global Verify 首切片已经实现并在实现 HEAD `22615d3c4af7b3a42dcd421291
 
 - `src/paperclaw/multiagent/global_verify.py`
 - `tests/unit/test_global_verify.py`
-- `Plan/PaperClaw_v0.03.2_Global_Verify_Gate_SOP.md`
-- `docs/handoff/PaperClaw_v0.03.2_Global_Verify_HANDOFF.md`
+- legacy path `Plan/PaperClaw_v0.03.2_Global_Verify_Gate_SOP.md`
+- legacy path `docs/handoff/PaperClaw_v0.03.2_Global_Verify_HANDOFF.md`
 
-所有文件均为新增文件。没有修改 v0.07–v0.07.6 堆叠分支涉及的 CLI、Trace、Provider、Replay、Eval、Exporter 或 Harness 路径。
+文件路径保留原编号是为了维持现有 PR 历史；文档正文与 PR 元数据中的正式版本统一为 `v0.07.7`。
 
 ## 关键架构决定
 
@@ -61,30 +62,29 @@ GitHub Actions run `29450607810` / run #122：
 
 - 不需要真实 Provider 测试：该模块不调用模型或网络服务。
 - 不需要真实工具/文件系统 E2E：该模块只消费已有 `WorkerResult` 和调用方提供的结构化 evidence。
-- 尚未做 CLI/team-plan JSON 接线，因为这会触碰正在合并的 v0.07.x 热点路径，且 evidence 生产合同仍需真实使用验证。
+- 尚未做 CLI/team-plan JSON 接线，因为 evidence 生产合同仍需真实使用验证。
 
 ## 当前已知限制
 
 - Evidence 当前由调用方单独提供，尚未成为 `WorkerResult` 的冻结字段。
 - 只支持 `ALL_PRESENT` 与 `ALL_EQUAL`；不接受任意可执行 predicate。
 - Global Verify event 尚未进入 v0.07 durable Trace projection。
-- Draft PR 基于 v0.07.x 合并前的 `main`，合并前应更新 base 并重新运行最终 CI。
+- 当前分支仍基于旧 `main`，合并前必须更新 base 并重新运行最终 CI。
 
 ## 尚未完成事项
 
-- 等待本文档与 SOP 状态更新后的最终 HEAD CI；
-- v0.07.x 全部合并后更新 PR base；
-- 在没有内容冲突的前提下复跑全量 Windows pytest 与 Ruff；
+- 更新到最新 `main`；
+- 检查 diff 仍只包含本 Handoff 所列新增文件；
+- 复跑全量 Windows pytest 与 Ruff；
 - 后续单独评估 team-plan JSON / CLI opt-in 接线，不应与本 PR 混合。
 
 ## 下一位开发者接手步骤
 
 1. 确认 PR #14 仍为 Draft；
-2. 等 v0.07–v0.07.6 合并到 `main`；
-3. 将分支更新到最新 `main`，不得覆写 v0.07.x 实现；
-4. 检查 diff 仍只包含本 Handoff 所列新增文件；
-5. 运行下列验证命令；
-6. 只有最终 HEAD CI 通过后，才考虑将 Draft 标为 Ready。
+2. 将分支更新到最新 `main`，不得覆写既有 v0.07.x 实现；
+3. 检查 diff 仍只包含本 Handoff 所列新增文件；
+4. 运行下列验证命令；
+5. 只有最终 HEAD CI 通过后，才考虑将 Draft 标为 Ready。
 
 ## 建议验证命令
 
@@ -94,8 +94,12 @@ python -m pytest -q -m "not real_llm" --basetemp=tmp/pytest
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
 
+## 编号说明
+
+本功能原先以 `v0.03.2` 开发，现正式调整为 `v0.07.7`。旧 branch ref 与文件路径仅作为历史兼容标识。
+
 ## 最终判定
 
 当前切片实现状态：`GO`。
 
-PR 状态：`DRAFT / WAITING FINAL HEAD CI AND POST-v0.07.x BASE UPDATE`。
+PR 状态：`DRAFT / WAITING CURRENT-MAIN UPDATE AND FINAL CI`。
