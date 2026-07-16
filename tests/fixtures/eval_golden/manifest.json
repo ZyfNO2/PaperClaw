@@ -1,0 +1,105 @@
+{
+  "scenarios": [
+    {
+      "expected": {
+        "failed_checks": [],
+        "metrics": {
+          "error_count": 0,
+          "provider_retries": 0,
+          "recorded_replay_faithful": true,
+          "terminal_completed": true,
+          "tool_failure_rate": 0.0,
+          "total_tokens": 15
+        },
+        "overall_passed": true,
+        "terminal_event": "run.completed"
+      },
+      "name": "success",
+      "require_terminal": true,
+      "thresholds": {
+        "max_errors": 0,
+        "max_retries": 0,
+        "max_tool_failure_rate": 0.0,
+        "require_completed": true,
+        "require_replay_faithful": true
+      },
+      "trace": "success.trace.jsonl"
+    },
+    {
+      "expected": {
+        "failed_checks": [
+          "provider_retries"
+        ],
+        "metrics": {
+          "error_count": 0,
+          "provider_retries": 2,
+          "recorded_replay_faithful": true,
+          "terminal_completed": true,
+          "total_tokens": 27
+        },
+        "overall_passed": false,
+        "terminal_event": "run.completed"
+      },
+      "name": "provider_retry",
+      "require_terminal": true,
+      "thresholds": {
+        "max_errors": 0,
+        "max_retries": 1,
+        "require_completed": true,
+        "require_replay_faithful": true
+      },
+      "trace": "provider_retry.trace.jsonl"
+    },
+    {
+      "expected": {
+        "failed_checks": [
+          "terminal_completed",
+          "tool_failure_rate",
+          "error_count"
+        ],
+        "metrics": {
+          "error_count": 2,
+          "provider_retries": 0,
+          "recorded_replay_faithful": true,
+          "terminal_completed": false,
+          "tool_failure_rate": 1.0,
+          "total_tokens": 0
+        },
+        "overall_passed": false,
+        "terminal_event": "run.failed"
+      },
+      "name": "tool_failure",
+      "require_terminal": true,
+      "thresholds": {
+        "max_errors": 0,
+        "max_retries": 0,
+        "max_tool_failure_rate": 0.0,
+        "require_completed": true,
+        "require_replay_faithful": true
+      },
+      "trace": "tool_failure.trace.jsonl"
+    },
+    {
+      "expected": {
+        "failed_checks": [],
+        "metrics": {
+          "error_count": 0,
+          "provider_retries": 0,
+          "recorded_replay_faithful": true,
+          "terminal_completed": false,
+          "total_tokens": 0
+        },
+        "overall_passed": true,
+        "terminal_event": null
+      },
+      "name": "partial",
+      "require_terminal": false,
+      "thresholds": {
+        "require_completed": false,
+        "require_replay_faithful": false
+      },
+      "trace": "partial.trace.jsonl"
+    }
+  ],
+  "schema_version": 1
+}
