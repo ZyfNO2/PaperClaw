@@ -206,8 +206,20 @@ class SQLiteBM25Retriever:
                 filtered_duplicates=0,
             )
 
+        match_filter = "chunk_fts MATCH ?"
+        match_params: list[Any] = [match_query]
+        if request.document_ids:
+            placeholders = ",".join("?" for _ in request.document_ids)
+            match_filter += f" AND document_id IN ({placeholders})"
+            match_params.extend(request.document_ids)
+        total_matches = int(
+            self._conn.execute(
+                f"SELECT COUNT(*) AS count FROM chunk_fts WHERE {match_filter}",
+                match_params,
+            ).fetchone()["count"]
+        )
         rows = self._conn.execute(
-            """
+            f"""
             WITH matches AS (
                 SELECT rowid AS fts_rowid,
                        chunk_id AS fts_chunk_id,
@@ -217,7 +229,7 @@ class SQLiteBM25Retriever:
                        text AS fts_text,
                        bm25(chunk_fts, 0.0, 0.0, 0.0, 2.0, 1.0) AS raw_rank
                 FROM chunk_fts
-                WHERE chunk_fts MATCH ?
+                WHERE {match_filter}
                 ORDER BY raw_rank, fts_chunk_id, fts_rowid
                 LIMIT ?
             )
@@ -242,7 +254,7 @@ class SQLiteBM25Retriever:
             LEFT JOIN documents AS d ON d.document_id = c.document_id
             ORDER BY m.raw_rank, m.fts_chunk_id, m.fts_rowid
             """,
-            (match_query, request.candidate_pool_size),
+            (*match_params, request.candidate_pool_size),
         ).fetchall()
 
         filtered_stale = 0
@@ -250,13 +262,10 @@ class SQLiteBM25Retriever:
         seen_chunks: set[str] = set()
         seen_content: set[str] = set()
         accepted: list[tuple[sqlite3.Row, float]] = []
-        allowed_documents = set(request.document_ids)
 
         for row in rows:
             if not _row_is_active(row):
                 filtered_stale += 1
-                continue
-            if allowed_documents and row["document_id"] not in allowed_documents:
                 continue
             if row["chunk_id"] in seen_chunks:
                 filtered_duplicates += 1
@@ -279,7 +288,7 @@ class SQLiteBM25Retriever:
             manifest_id=manifest.manifest_id,
             corpus_hash=manifest.corpus_hash,
             candidates=candidates,
-            total_matches=len(rows),
+            total_matches=total_matches,
             filtered_stale=filtered_stale,
             filtered_duplicates=filtered_duplicates,
         )
