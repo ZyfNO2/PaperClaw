@@ -520,10 +520,29 @@ class SQLiteDocumentRegistry:
             )
 
     def _insert_manifest_after_count_check(self, manifest: IndexManifest) -> None:
+        if manifest.schema_version != SCHEMA_VERSION:
+            raise ValueError("manifest schema_version does not match registry schema")
         actual = self.active_counts()
         expected = (manifest.document_count, manifest.version_count, manifest.chunk_count)
         if actual != expected:
             raise ValueError(f"manifest counts {expected} do not match active registry counts {actual}")
+        actual_fts_count = self.fts_row_count()
+        if actual_fts_count != manifest.chunk_count:
+            raise ValueError(
+                f"FTS row count {actual_fts_count} does not match active chunk count {manifest.chunk_count}"
+            )
+        active_config_hashes = tuple(
+            row["chunk_config_hash"]
+            for row in self._conn.execute(
+                "SELECT DISTINCT chunk_config_hash FROM chunks "
+                "WHERE is_active = 1 ORDER BY chunk_config_hash"
+            ).fetchall()
+        )
+        if active_config_hashes and active_config_hashes != (manifest.chunk_config_hash,):
+            raise ValueError(
+                f"manifest chunk_config_hash {manifest.chunk_config_hash} does not match "
+                f"active chunk configs {active_config_hashes}"
+            )
         actual_parser_versions = tuple(
             row["parser_version"]
             for row in self._conn.execute(
