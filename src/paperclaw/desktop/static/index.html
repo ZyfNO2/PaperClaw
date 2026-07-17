@@ -61,7 +61,7 @@
           <button class="btn" id="export-button" type="button">⇩ EXPORT TRACE</button>
           <button class="btn" id="select-workspace" type="button">▣ WORKSPACE</button>
         </div>
-        <span class="tiny" id="provider-summary">LLM · ENV NOT CHECKED</span>
+        <span class="tiny" id="provider-summary">LLM · CONFIG NOT CHECKED</span>
       </div>
 
       <section class="content">
@@ -78,7 +78,7 @@
           <div class="log-messages" id="mission-log" aria-live="polite">
             <article class="msg msg-system" data-log-type="system">
               <div class="msg-head"><span class="msg-marker sys"></span><span>SYSTEM</span><span class="msg-meta push-right">READY</span></div>
-              <div class="msg-body">PaperClaw v0.11 desktop bridge is initializing. LLM configuration is loaded from environment variables at run time.</div>
+              <div class="msg-body">PaperClaw v0.11 desktop bridge is initializing. Model configuration can come from the ENV dialog or environment variables.</div>
             </article>
           </div>
 
@@ -139,15 +139,31 @@
 
   <section class="settings-panel" id="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
     <div class="settings-card">
-      <div class="panel-head"><h2 class="panel-title" id="settings-title">ENVIRONMENT MODEL CONFIG</h2><button class="icon-btn" id="close-settings" type="button" aria-label="关闭设置">×</button></div>
+      <div class="panel-head"><h2 class="panel-title" id="settings-title">MODEL CONNECTION CONFIG</h2><button class="icon-btn" id="close-settings" type="button" aria-label="关闭设置">×</button></div>
+
+      <div class="budget-grid">
+        <label>PROVIDER<input id="provider-input" type="text" value="openai-compatible" maxlength="128" autocomplete="off" spellcheck="false"></label>
+        <label>BASE URL<input id="provider-base-url" type="url" placeholder="https://api.example.com/v1" maxlength="2000" autocomplete="off" spellcheck="false"></label>
+        <label>API KEY<input id="provider-api-key" type="password" placeholder="输入 API Key" maxlength="20000" autocomplete="off" spellcheck="false"></label>
+      </div>
+      <div class="toolbar-group">
+        <button class="btn" id="toggle-api-key" type="button" aria-pressed="false">SHOW KEY</button>
+        <button class="btn primary" id="connect-provider" type="button">CONNECT &amp; LOAD MODELS</button>
+        <span class="tiny" id="connection-status" aria-live="polite">NOT CONNECTED</span>
+      </div>
+      <label class="verify-toggle" for="provider-model">AVAILABLE MODEL</label>
+      <select id="provider-model" disabled aria-label="选择可用模型">
+        <option value="">Connect provider first</option>
+      </select>
+
       <dl class="config-list">
-        <div><dt>Source</dt><dd>Environment variables</dd></div>
+        <div><dt>Source</dt><dd id="config-source">Environment variables</dd></div>
         <div><dt>Provider</dt><dd id="config-provider">—</dd></div>
         <div><dt>Base URL</dt><dd id="config-base-url">—</dd></div>
         <div><dt>Model</dt><dd id="config-model">—</dd></div>
         <div><dt>Credential</dt><dd id="config-credential">Not checked</dd></div>
       </dl>
-      <p class="settings-note">API Key 永远不会发送到 JavaScript。运行开始时由 Python 桥接层从 <code>PAPERCLAW_API_KEY</code> 读取。</p>
+      <p class="settings-note">手动输入的 API Key 只发送到 Python 桥接层，并仅保存在当前应用进程内；不会写入 Trace、导出文件或浏览器存储。未手动连接时继续回退到环境变量。</p>
       <div class="budget-grid">
         <label>MAX STEPS<input id="max-steps" type="number" min="1" max="200" value="12"></label>
         <label>MODEL CALLS<input id="max-model-calls" type="number" min="1" max="100" value="10"></label>
