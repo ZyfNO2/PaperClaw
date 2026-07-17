@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from threading import Event
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
 import time
 
 from paperclaw.durability import SQLiteDurableServiceStore
 from paperclaw.harness import ExecutionReport, QueryEngine
 from paperclaw.service import DurableRunApplicationService, ServiceRunRequest
 from paperclaw.service.resilience import TimeoutPolicy
+
+ROOT = Path(__file__).parents[3]
 
 
 class ImmediateExecutor:
@@ -178,3 +185,86 @@ def test_queue_timeout_has_layer_specific_error_code(tmp_path):
         }
     finally:
         service.shutdown()
+
+
+def test_process_restart_reconciles_expired_lease_and_replays_events(tmp_path):
+    database = tmp_path / "restart.sqlite3"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get(
+        "PYTHONPATH", ""
+    )
+    create_script = f"""
+import sqlite3
+from paperclaw.durability import SQLiteDurableServiceStore
+from paperclaw.service import ServiceRunRequest
+
+path = {str(database)!r}
+workspace = {str(tmp_path)!r}
+store = SQLiteDurableServiceStore(path)
+request = ServiceRunRequest(task="restart", workspace=workspace)
+store.create_run(
+    "svc-restart",
+    request.digest(),
+    metadata={{
+        "service_request": request.to_metadata(),
+        "runtime_run_id": None,
+        "stop_reason": None,
+        "model_calls": 0,
+        "tool_calls": 0,
+        "output": None,
+        "error": None,
+    }},
+)
+store.append_event(
+    "svc-restart",
+    "service.run.accepted",
+    {{"source": "first-process"}},
+)
+store.claim_next("dead-worker", lease_seconds=60.0)
+connection = sqlite3.connect(path)
+connection.execute(
+    "UPDATE durable_worker_leases SET expires_at = 0 WHERE run_id = ?",
+    ("svc-restart",),
+)
+connection.commit()
+connection.close()
+"""
+    subprocess.run(
+        [sys.executable, "-c", create_script],
+        cwd=ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    recover_script = f"""
+import json
+from paperclaw.durability import RecoveryCoordinator, SQLiteDurableServiceStore
+
+store = SQLiteDurableServiceStore({str(database)!r})
+items = RecoveryCoordinator(store.run_store).reconcile()
+run = store.get_run("svc-restart")
+events = store.list_events("svc-restart")
+print(json.dumps({{
+    "state": run.state,
+    "applied": [item.applied for item in items],
+    "next_states": [item.next_state for item in items],
+    "event_types": [event.event_type for event in events],
+}}))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", recover_script],
+        cwd=ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(completed.stdout.strip())
+    assert payload == {
+        "state": "queued",
+        "applied": [True],
+        "next_states": ["queued"],
+        "event_types": ["service.run.accepted"],
+    }
