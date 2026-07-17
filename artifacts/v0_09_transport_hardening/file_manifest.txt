@@ -1,0 +1,8 @@
+Plan/PaperClaw_v0.09_MCP_Transport_Hardening_SOP.md
+artifacts/v0_09_transport_hardening/file_manifest.txt
+artifacts/v0_09_transport_hardening/implementation_summary.md
+artifacts/v0_09_transport_hardening/known_limitations.md
+artifacts/v0_09_transport_hardening/test_report.md
+docs/handoff/PaperClaw_v0.09_MCP_Transport_Hardening_HANDOFF.md
+tests/fixtures/fake_mcp_hardening_server.py
+tests/unit/test_mcp_transport_hardening.py
