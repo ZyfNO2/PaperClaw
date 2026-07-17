@@ -20,22 +20,28 @@ SourceKind = Literal["retrieval", "tool_selection", "memory", "custom"]
 
 
 class ContextSourceRegistryError(RuntimeError):
-    pass
+    """Base error for source registration or collection failures."""
 
 
 class ContextSourceRegistryFrozen(ContextSourceRegistryError):
-    pass
+    """Raised when runtime construction has frozen the registry."""
 
 
 class ContextSourceCollectionError(ContextSourceRegistryError):
+    """Bounded source failure that identifies the failing registration."""
+
     def __init__(self, source_id: str, cause: BaseException) -> None:
         self.source_id = source_id
         self.cause_type = type(cause).__name__
-        super().__init__(f"context source {source_id!r} failed with {self.cause_type}")
+        super().__init__(
+            f"context source {source_id!r} failed with {self.cause_type}"
+        )
 
 
 @dataclass(frozen=True)
 class ContextSourceDescriptor:
+    """Serializable registration metadata; the source object is not persisted."""
+
     source_id: str
     kind: SourceKind
     priority: int = 0
@@ -44,7 +50,9 @@ class ContextSourceDescriptor:
 
     def __post_init__(self) -> None:
         if not _SOURCE_ID.fullmatch(self.source_id):
-            raise ValueError("source_id must be 1-128 characters from [A-Za-z0-9_.-]")
+            raise ValueError(
+                "source_id must be 1-128 characters from [A-Za-z0-9_.-]"
+            )
         if self.kind not in {"retrieval", "tool_selection", "memory", "custom"}:
             raise ValueError(f"unsupported ContextSource kind: {self.kind}")
         if not -10_000 <= self.priority <= 10_000:
@@ -62,6 +70,8 @@ class ContextSourceDescriptor:
 
 @dataclass(frozen=True)
 class ContextSourceRegistrySnapshot:
+    """Stable registration snapshot used by Trace and tests."""
+
     descriptors: tuple[ContextSourceDescriptor, ...]
     fingerprint: str
 
@@ -79,6 +89,12 @@ class _Registration:
 
 
 class ContextSourceRegistry(ContextCandidateSource):
+    """Composite ContextCandidateSource with deterministic registration order.
+
+    The registry only collects structured candidates. It has no Prompt rendering,
+    token allocation, trust promotion, or Context selection authority.
+    """
+
     def __init__(self) -> None:
         self._registrations: dict[str, _Registration] = {}
         self._lock = threading.RLock()
@@ -101,13 +117,11 @@ class ContextSourceRegistry(ContextCandidateSource):
             scopes=tuple(scopes),
             enabled=enabled,
         )
-        if not callable(getattr(source, "collect", None)):
+        collect = getattr(source, "collect", None)
+        if not callable(collect):
             raise TypeError("source must implement collect(ContextRequest)")
         with self._lock:
-            if self._frozen:
-                raise ContextSourceRegistryFrozen(
-                    "ContextSourceRegistry is frozen for runtime use"
-                )
+            self._assert_mutable()
             if source_id in self._registrations:
                 raise ValueError(f"ContextSource already registered: {source_id}")
             self._registrations[source_id] = _Registration(descriptor, source)
@@ -161,7 +175,10 @@ class ContextSourceRegistry(ContextCandidateSource):
                 if owner is not None:
                     raise ContextSourceCollectionError(
                         source_id,
-                        ValueError(f"candidate_id collision with source {owner!r}"),
+                        ValueError(
+                            f"candidate_id collision with source {owner!r}: "
+                            f"{candidate.candidate_id}"
+                        ),
                     )
                 owners[candidate.candidate_id] = source_id
                 candidates.append(candidate)
@@ -176,9 +193,18 @@ class ContextSourceRegistry(ContextCandidateSource):
         return tuple(
             sorted(
                 registrations,
-                key=lambda item: (-item.descriptor.priority, item.descriptor.source_id),
+                key=lambda item: (
+                    -item.descriptor.priority,
+                    item.descriptor.source_id,
+                ),
             )
         )
+
+    def _assert_mutable(self) -> None:
+        if self._frozen:
+            raise ContextSourceRegistryFrozen(
+                "ContextSourceRegistry is frozen for runtime use"
+            )
 
 
 __all__ = [
