@@ -1,0 +1,59 @@
+name: Desktop Playwright
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/paperclaw/desktop/**"
+      - "tests/e2e/desktop/**"
+      - "tests/unit/desktop/**"
+      - "pyproject.toml"
+      - ".github/workflows/desktop-playwright.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-playwright-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  chromium-interactions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PAPERCLAW_RUN_PLAYWRIGHT: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install project and Playwright
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m playwright install --with-deps chromium
+
+      - name: Run desktop Playwright interactions
+        run: |
+          mkdir -p tmp/playwright
+          python -m pytest -q tests/e2e/desktop \
+            --basetemp=tmp/playwright/pytest \
+            --junitxml=tmp/playwright/junit.xml
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-playwright-${{ github.run_id }}
+          path: tmp/playwright
+          retention-days: 30
+          if-no-files-found: warn

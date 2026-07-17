@@ -4,6 +4,17 @@
   const ACTIVE_STATUSES = new Set(["starting", "running", "stopping"]);
   const MAX_TIMELINE_ROWS = 300;
   const POLL_INTERVAL_MS = 250;
+  const THEME_STORAGE_KEY = "paperclaw.theme.v1";
+  const THEMES = new Map([
+    ["neo-brutalist", "Neo Brutalist"],
+    ["soft-minimal", "Soft Minimal"],
+    ["terminal-dark", "Terminal Dark"],
+    ["clean-mono", "Clean Mono"],
+    ["paper-light", "Paper Light"]
+  ]);
+  const bootstrap = readBrowserBootstrap();
+  const bridgeClientId = createClientId();
+  const httpApi = bootstrap.token ? createHttpApi(bootstrap.token) : null;
   const ui = {};
   const trace = [];
   let domReady = false;
@@ -16,6 +27,8 @@
   let currentRunId = null;
   let lastFinalResult = "";
   let toastTimer = null;
+  let currentTheme = resolveInitialTheme(bootstrap.theme);
+  document.documentElement.dataset.theme = currentTheme;
 
   function byId(id) {
     return document.getElementById(id);
@@ -34,7 +47,8 @@
       "verification-summary", "progress-label", "progress-bar", "timeline-filters", "timeline",
       "settings-panel", "close-settings", "config-provider", "config-base-url", "config-model",
       "config-credential", "max-steps", "max-model-calls", "max-tool-calls",
-      "verification-enabled", "toast", "toast-message", "close-toast"
+      "verification-enabled", "theme-select", "open-browser", "toast", "toast-message",
+      "close-toast"
     ]) ui[toCamel(id)] = byId(id);
 
     ui.sidebarToggle.addEventListener("click", toggleSidebar);
@@ -45,6 +59,8 @@
     ui.cancelButton.addEventListener("click", cancelRun);
     ui.exportButton.addEventListener("click", exportTrace);
     ui.newRunButton.addEventListener("click", resetForNewRun);
+    ui.themeSelect.addEventListener("change", () => applyTheme(ui.themeSelect.value, true));
+    ui.openBrowser.addEventListener("click", openInBrowser);
     ui.clearTask.addEventListener("click", clearTask);
     ui.task.addEventListener("input", updateTaskInput);
     ui.task.addEventListener("keydown", onTaskKeydown);
@@ -66,6 +82,13 @@
     bindFilterGroup(ui.timelineFilters, "data-tl-filter", applyTimelineFilter);
     bindNavigation();
     bindToolChips();
+    ui.themeSelect.value = currentTheme;
+    if (httpApi) {
+      bridgeReady = true;
+      ui.openBrowser.disabled = true;
+      ui.openBrowser.textContent = "◎ BROWSER MODE";
+      ui.openBrowser.title = "当前已在系统浏览器中运行";
+    }
     updateTaskInput();
     maybeInitialize();
   }
@@ -75,7 +98,12 @@
   }
 
   function backendApi() {
-    return window.pywebview && window.pywebview.api ? window.pywebview.api : null;
+    if (window.pywebview && window.pywebview.api) return window.pywebview.api;
+    return httpApi;
+  }
+
+  function backendMode() {
+    return httpApi && !(window.pywebview && window.pywebview.api) ? "browser" : "desktop";
   }
 
   function markBridgeReady() {
@@ -95,7 +123,7 @@
   async function loadDefaults() {
     const api = backendApi();
     if (!api || typeof api.get_defaults !== "function") {
-      showError("gui_dependency_missing", "Desktop bridge does not expose environment defaults.");
+      showError("gui_dependency_missing", "PaperClaw bridge does not expose environment defaults.");
       return;
     }
     try {
@@ -116,6 +144,9 @@
         : `LLM · ENV INCOMPLETE · ${(response.missing || []).join(", ")}`);
       ui.envBadge.textContent = response.configured ? "ENV✓" : "ENV!";
       ui.envBadge.dataset.configured = response.configured ? "true" : "false";
+      if (!THEMES.has(bootstrap.theme) && response.theme && THEMES.has(response.theme)) {
+        applyTheme(response.theme, false);
+      }
     } catch (_error) {
       showError("runtime_error", "Environment defaults could not be loaded.");
     }
@@ -139,7 +170,7 @@
     if (!api) return;
     pollInFlight = true;
     try {
-      const response = await api.poll_events(200);
+      const response = await api.poll_events(200, bridgeClientId);
       if (!response || !response.ok) {
         renderBackendError(response);
         return;
@@ -186,7 +217,7 @@
     try {
       const api = backendApi();
       if (!api) {
-        showError("gui_dependency_missing", "Desktop bridge is not available.");
+        showError("gui_dependency_missing", "PaperClaw bridge is not available.");
         updateControls("idle");
         return;
       }
@@ -212,7 +243,7 @@
   async function cancelRun() {
     const api = backendApi();
     if (!api) {
-      showError("gui_dependency_missing", "Desktop bridge is not available.");
+      showError("gui_dependency_missing", "PaperClaw bridge is not available.");
       return;
     }
     ui.cancelButton.disabled = true;
@@ -232,7 +263,7 @@
   async function selectWorkspace() {
     const api = backendApi();
     if (!api) {
-      showError("gui_dependency_missing", "Desktop bridge is not available.");
+      showError("gui_dependency_missing", "PaperClaw bridge is not available.");
       return;
     }
     try {
@@ -249,6 +280,118 @@
     } catch (_error) {
       showError("runtime_error", "Workspace picker could not be opened.");
     }
+  }
+
+  async function openInBrowser() {
+    if (backendMode() === "browser") {
+      showToast("当前已在系统浏览器中运行。");
+      return;
+    }
+    const api = backendApi();
+    if (!api || typeof api.open_in_browser !== "function") {
+      showError("gui_dependency_missing", "Desktop bridge does not expose browser mode.");
+      return;
+    }
+    ui.openBrowser.disabled = true;
+    try {
+      const response = await api.open_in_browser(currentTheme);
+      if (!response || !response.ok) {
+        renderBackendError(response);
+        return;
+      }
+      showToast("Browser mode opened on a protected localhost URL.");
+    } catch (_error) {
+      showError("runtime_error", "Browser mode could not be opened.");
+    } finally {
+      ui.openBrowser.disabled = false;
+    }
+  }
+
+  function applyTheme(theme, persist) {
+    const normalized = THEMES.has(theme) ? theme : "neo-brutalist";
+    currentTheme = normalized;
+    document.documentElement.dataset.theme = normalized;
+    if (ui.themeSelect) ui.themeSelect.value = normalized;
+    if (persist) {
+      try {
+        window.localStorage.setItem(THEME_STORAGE_KEY, normalized);
+      } catch (_error) {
+        // The Python preference store remains authoritative when storage is restricted.
+      }
+      const api = backendApi();
+      if (api && typeof api.set_theme === "function") {
+        Promise.resolve(api.set_theme(normalized)).catch(() => undefined);
+      }
+      showToast(`Theme: ${THEMES.get(normalized)}`);
+    }
+  }
+
+  function resolveInitialTheme(fragmentTheme) {
+    if (THEMES.has(fragmentTheme)) return fragmentTheme;
+    try {
+      const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (THEMES.has(stored)) return stored;
+    } catch (_error) {
+      // Continue with the built-in default when storage is unavailable.
+    }
+    return "neo-brutalist";
+  }
+
+  function readBrowserBootstrap() {
+    const result = {token: "", theme: ""};
+    if (!window.location.hash) return result;
+    try {
+      const values = new URLSearchParams(window.location.hash.slice(1));
+      result.token = values.get("token") || "";
+      result.theme = values.get("theme") || "";
+      if (result.token || result.theme) {
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+      }
+    } catch (_error) {
+      return {token: "", theme: ""};
+    }
+    return result;
+  }
+
+  function createClientId() {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return `ui-${window.crypto.randomUUID()}`;
+      }
+    } catch (_error) {
+      // Fall back to a per-document identifier below.
+    }
+    return `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function createHttpApi(token) {
+    async function invoke(method, args) {
+      const response = await window.fetch(`/api/${method}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-PaperClaw-Token": token
+        },
+        body: JSON.stringify({args})
+      });
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (_error) {
+        payload = null;
+      }
+      if (!payload) throw new Error("PaperClaw browser bridge returned invalid JSON.");
+      return payload;
+    }
+    return {
+      get_defaults: () => invoke("get_defaults", []),
+      get_state: () => invoke("get_state", []),
+      start_run: (request) => invoke("start_run", [request]),
+      cancel_run: () => invoke("cancel_run", []),
+      poll_events: (limit, clientId) => invoke("poll_events", [limit, clientId]),
+      select_workspace: () => invoke("select_workspace", []),
+      set_theme: (theme) => invoke("set_theme", [theme])
+    };
   }
 
   function renderWorkspace(value) {
