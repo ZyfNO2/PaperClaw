@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>PaperClaw Desktop</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="app-shell" aria-labelledby="app-title">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Local agent runtime</p>
+        <h1 id="app-title">PaperClaw Desktop</h1>
+      </div>
+      <div class="status-pill" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="run-status">idle</span>
+      </div>
+    </header>
+
+    <section class="workspace-grid">
+      <aside class="panel config-panel" aria-labelledby="runtime-config-title">
+        <div class="panel-heading">
+          <h2 id="runtime-config-title">Runtime configuration</h2>
+          <p>Values remain in this process only.</p>
+        </div>
+
+        <label for="provider">Provider ID</label>
+        <input id="provider" name="provider" type="text" value="openai-compatible" autocomplete="off" maxlength="128">
+
+        <label for="base-url">Base URL</label>
+        <input id="base-url" name="base_url" type="url" value="https://api.openai.com/v1" autocomplete="off" spellcheck="false">
+
+        <label for="api-key">API key</label>
+        <div class="inline-field">
+          <input id="api-key" name="api_key" type="password" autocomplete="off" spellcheck="false" aria-describedby="key-note">
+          <button id="toggle-key" class="secondary compact" type="button" aria-pressed="false">Show</button>
+        </div>
+        <p id="key-note" class="field-note">The key is cleared from the form after a run starts.</p>
+
+        <label for="model">Model ID</label>
+        <input id="model" name="model" type="text" autocomplete="off" spellcheck="false" maxlength="256">
+
+        <label for="workspace">Workspace</label>
+        <div class="inline-field workspace-field">
+          <input id="workspace" name="workspace" type="text" autocomplete="off" spellcheck="false">
+          <button id="select-workspace" class="secondary compact" type="button">Browse</button>
+        </div>
+
+        <label class="check-row" for="verification-enabled">
+          <input id="verification-enabled" type="checkbox" checked>
+          <span>Enable verification gate</span>
+        </label>
+      </aside>
+
+      <section class="content-column">
+        <section class="panel task-panel" aria-labelledby="task-title">
+          <div class="panel-heading">
+            <h2 id="task-title">Task</h2>
+            <p>One active run per window.</p>
+          </div>
+          <label class="sr-only" for="task">Task instructions</label>
+          <textarea id="task" rows="8" placeholder="Describe the coding or research task..."></textarea>
+          <div class="action-row">
+            <button id="run-button" class="primary" type="button">Run</button>
+            <button id="cancel-button" class="danger" type="button" disabled>Cancel</button>
+          </div>
+          <div id="public-error" class="error-box" role="alert" hidden></div>
+        </section>
+
+        <section class="metric-grid" aria-label="Run metrics">
+          <article class="metric-card">
+            <span>Model calls</span>
+            <strong id="model-calls">0</strong>
+          </article>
+          <article class="metric-card">
+            <span>Tool calls</span>
+            <strong id="tool-calls">0</strong>
+          </article>
+          <article class="metric-card">
+            <span>Last event</span>
+            <strong id="last-sequence">0</strong>
+          </article>
+        </section>
+      </section>
+    </section>
+
+    <section class="lower-grid">
+      <section class="panel" aria-labelledby="verification-title">
+        <div class="panel-heading">
+          <h2 id="verification-title">Verification</h2>
+          <span id="verification-status" class="tag">not run</span>
+        </div>
+        <p id="verification-summary" class="empty-copy">No verification summary yet.</p>
+      </section>
+
+      <section class="panel timeline-panel" aria-labelledby="timeline-title">
+        <div class="panel-heading">
+          <h2 id="timeline-title">Tool timeline</h2>
+          <button id="clear-timeline" class="secondary compact" type="button">Clear</button>
+        </div>
+        <ol id="timeline" class="timeline" aria-live="polite"></ol>
+      </section>
+    </section>
+
+    <section class="panel result-panel" aria-labelledby="result-title">
+      <div class="panel-heading">
+        <h2 id="result-title">Result</h2>
+      </div>
+      <pre id="final-result" tabindex="0">No result yet.</pre>
+    </section>
+  </main>
+</body>
+</html>
