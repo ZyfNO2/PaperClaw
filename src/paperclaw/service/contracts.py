@@ -10,9 +10,21 @@ from typing import Any, Mapping
 
 from paperclaw.harness import RunLimits
 
-ACTIVE_SERVICE_STATUSES = frozenset({"accepted", "running", "cancelling"})
+ACTIVE_SERVICE_STATUSES = frozenset(
+    {"accepted", "queued", "running", "cancelling"}
+)
 TERMINAL_SERVICE_STATUSES = frozenset(
-    {"completed", "failed", "blocked", "stopped", "budget_exhausted"}
+    {
+        "completed",
+        "failed",
+        "blocked",
+        "stopped",
+        "budget_exhausted",
+        "recovery_required",
+    }
+)
+DISCONNECT_POLICIES = frozenset(
+    {"detach_on_disconnect", "cancel_on_disconnect"}
 )
 _SECRET_KEYS = frozenset(
     {
@@ -69,6 +81,7 @@ class ServiceRunRequest:
     conversation_id: str | None = None
     client_id: str | None = None
     enable_verification_gate: bool = True
+    disconnect_policy: str = "detach_on_disconnect"
 
     def __post_init__(self) -> None:
         task = self.task.strip()
@@ -82,28 +95,69 @@ class ServiceRunRequest:
         normalized_workspace = str(Path(workspace).expanduser())
         conversation = _optional_identifier(self.conversation_id, "conversation_id")
         client = _optional_identifier(self.client_id, "client_id")
+        disconnect_policy = self.disconnect_policy.strip()
+        if disconnect_policy not in DISCONNECT_POLICIES:
+            raise ValueError(
+                "disconnect_policy must be detach_on_disconnect or "
+                "cancel_on_disconnect"
+            )
         object.__setattr__(self, "task", task)
         object.__setattr__(self, "workspace", normalized_workspace)
         object.__setattr__(self, "conversation_id", conversation)
         object.__setattr__(self, "client_id", client)
+        object.__setattr__(self, "disconnect_policy", disconnect_policy)
 
     def digest(self) -> str:
-        payload = {
+        encoded = json.dumps(
+            self.to_metadata(),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def to_metadata(self) -> dict[str, Any]:
+        return {
             "task": self.task,
             "workspace": self.workspace,
             "conversation_id": self.conversation_id,
             "client_id": self.client_id,
             "enable_verification_gate": self.enable_verification_gate,
+            "disconnect_policy": self.disconnect_policy,
             "limits": {
                 "max_steps": self.limits.max_steps,
                 "max_model_calls": self.limits.max_model_calls,
                 "max_tool_calls": self.limits.max_tool_calls,
             },
         }
-        encoded = json.dumps(
-            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        ).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
+
+    @classmethod
+    def from_metadata(cls, value: Mapping[str, Any]) -> "ServiceRunRequest":
+        limits = value.get("limits")
+        if not isinstance(limits, Mapping):
+            raise ValueError("request metadata is missing limits")
+        return cls(
+            task=_required_text(value.get("task"), "task"),
+            workspace=_required_text(value.get("workspace"), "workspace"),
+            conversation_id=_optional_text(value.get("conversation_id")),
+            client_id=_optional_text(value.get("client_id")),
+            enable_verification_gate=bool(
+                value.get("enable_verification_gate", True)
+            ),
+            disconnect_policy=_required_text(
+                value.get("disconnect_policy", "detach_on_disconnect"),
+                "disconnect_policy",
+            ),
+            limits=RunLimits(
+                max_steps=_positive_int(limits.get("max_steps"), "max_steps"),
+                max_model_calls=_positive_int(
+                    limits.get("max_model_calls"), "max_model_calls"
+                ),
+                max_tool_calls=_positive_int(
+                    limits.get("max_tool_calls"), "max_tool_calls"
+                ),
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -189,7 +243,10 @@ def sanitize_public(value: Any, *, depth: int = 0) -> Any:
             sanitized[key[:100]] = sanitize_public(raw_value, depth=depth + 1)
         return sanitized
     if isinstance(value, (list, tuple, set, frozenset)):
-        return [sanitize_public(item, depth=depth + 1) for item in list(value)[:100]]
+        return [
+            sanitize_public(item, depth=depth + 1)
+            for item in list(value)[:100]
+        ]
     return _bounded_text(str(value))
 
 
@@ -210,3 +267,19 @@ def _bounded_text(value: str | None, limit: int = 20_000) -> str | None:
     if value is None:
         return None
     return value if len(value) <= limit else value[:limit] + "...<truncated>"
+
+
+def _required_text(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be non-empty text")
+    return value.strip()
+
+
+def _optional_text(value: Any) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _positive_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
