@@ -29,6 +29,8 @@ def load_app(page: Page) -> None:
 
 @pytest.fixture(scope="session")
 def browser() -> Browser:
+    if os.getenv("PAPERCLAW_RUN_PLAYWRIGHT") != "1":
+        pytest.skip("Playwright desktop tests run only in the dedicated browser gate.")
     with sync_playwright() as playwright:
         executable = os.getenv("PLAYWRIGHT_CHROMIUM_EXECUTABLE")
         browser = playwright.chromium.launch(
