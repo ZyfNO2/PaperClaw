@@ -54,6 +54,9 @@ def test_app_main_returns_typed_error_and_records_unexpected_host_failure(
     monkeypatch.setattr(app, "record_exception", capture)
     assert app.main([]) == 1
     output = json.loads(capsys.readouterr().err)
-    assert output["error_code"] == "runtime_error"
-    assert "host failed" not in output["error_message"]
+    assert output == {
+        "ok": False,
+        "error_code": "runtime_error",
+        "error_message": "Desktop host failed. See the local desktop diagnostic log.",
+    }
     assert captured == [("desktop_host_error", "RuntimeError")]
