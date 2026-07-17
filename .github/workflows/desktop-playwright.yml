@@ -22,6 +22,8 @@ jobs:
   chromium-interactions:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      PAPERCLAW_RUN_PLAYWRIGHT: "1"
 
     steps:
       - name: Checkout
