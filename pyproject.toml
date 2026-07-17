@@ -11,7 +11,7 @@ dependencies = []
 
 [project.scripts]
 paperclaw = "paperclaw.entrypoint:main"
-paperclaw-gui = "paperclaw.desktop.app:main"
+paperclaw-gui = "paperclaw.desktop.bootstrap:main"
 
 [project.optional-dependencies]
 tui = [
