@@ -59,7 +59,8 @@ def test_run_request_rejects_invalid_fields(
     with pytest.raises(DesktopPublicError) as raised:
         DesktopRunRequest.from_mapping(payload)
     assert raised.value.code == expected_code
-    assert payload["api_key"] not in str(raised.value)
+    if payload["api_key"]:
+        assert payload["api_key"] not in str(raised.value)
 
 
 def test_run_request_rejects_missing_workspace_and_unknown_fields(tmp_path) -> None:
