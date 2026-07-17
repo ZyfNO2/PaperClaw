@@ -141,14 +141,18 @@
     <div class="settings-card">
       <div class="panel-head"><h2 class="panel-title" id="settings-title">MODEL CONNECTION CONFIG</h2><button class="icon-btn" id="close-settings" type="button" aria-label="关闭设置">×</button></div>
 
+      <p class="settings-note">上方输入框为待连接配置；只有连接成功后才会替换下方的 ACTIVE CONFIGURATION。连接失败时，之前可用的配置继续生效。</p>
       <div class="budget-grid">
         <label>PROVIDER<input id="provider-input" type="text" value="openai-compatible" maxlength="128" autocomplete="off" spellcheck="false"></label>
         <label>BASE URL<input id="provider-base-url" type="url" placeholder="https://api.example.com/v1" maxlength="2000" autocomplete="off" spellcheck="false"></label>
         <label>API KEY<input id="provider-api-key" type="password" placeholder="输入 API Key" maxlength="20000" autocomplete="off" spellcheck="false"></label>
+        <label>MANUAL MODEL（可选）<input id="provider-manual-model" type="text" placeholder="模型列表不可用时填写" maxlength="256" autocomplete="off" spellcheck="false"></label>
       </div>
       <div class="toolbar-group">
         <button class="btn" id="toggle-api-key" type="button" aria-pressed="false">SHOW KEY</button>
         <button class="btn primary" id="connect-provider" type="button">CONNECT &amp; LOAD MODELS</button>
+        <button class="btn" id="use-manual-model" type="button">USE MANUAL MODEL</button>
+        <button class="btn destructive" id="disconnect-provider" type="button" disabled>USE ENV / DISCONNECT</button>
         <span class="tiny" id="connection-status" aria-live="polite">NOT CONNECTED</span>
       </div>
       <label class="verify-toggle" for="provider-model">AVAILABLE MODEL</label>
@@ -156,6 +160,7 @@
         <option value="">Connect provider first</option>
       </select>
 
+      <div class="settings-note" id="active-config-status" aria-live="polite">ACTIVE · NOT CHECKED</div>
       <dl class="config-list">
         <div><dt>Source</dt><dd id="config-source">Environment variables</dd></div>
         <div><dt>Provider</dt><dd id="config-provider">—</dd></div>
@@ -163,7 +168,7 @@
         <div><dt>Model</dt><dd id="config-model">—</dd></div>
         <div><dt>Credential</dt><dd id="config-credential">Not checked</dd></div>
       </dl>
-      <p class="settings-note">手动输入的 API Key 只发送到 Python 桥接层，并仅保存在当前应用进程内；不会写入 Trace、导出文件或浏览器存储。未手动连接时继续回退到环境变量。</p>
+      <p class="settings-note">手动输入的 API Key 只发送到 Python 桥接层，并仅保存在当前应用进程内；不会写入 Trace、导出文件或浏览器存储。断开后，新 Run 会重新使用环境变量。</p>
       <div class="budget-grid">
         <label>MAX STEPS<input id="max-steps" type="number" min="1" max="200" value="12"></label>
         <label>MODEL CALLS<input id="max-model-calls" type="number" min="1" max="100" value="10"></label>
