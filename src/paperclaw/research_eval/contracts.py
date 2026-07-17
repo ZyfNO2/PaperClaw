@@ -171,24 +171,25 @@ def load_dataset(path: str | Path) -> tuple[tuple[EvalCase, ...], str]:
                 source_id=item["source_id"],
                 required_terms=tuple(item.get("required_terms", ())),
             )
-            for item in _sequence(row.get("expected_evidence", ()), "expected_evidence")
+            for item in _object_list(
+                row.get("expected_evidence", []), "expected_evidence"
+            )
         )
         case = EvalCase(
             case_id=row["case_id"],
             question=row["question"],
             workspace_fixture=row["workspace_fixture"],
             expected_evidence=expectations,
-            required_claims=tuple(row.get("required_claims", ())),
-            forbidden_claims=tuple(row.get("forbidden_claims", ())),
-            tags=tuple(row.get("tags", ())),
+            required_claims=tuple(_string_list(row.get("required_claims", []), "required_claims")),
+            forbidden_claims=tuple(_string_list(row.get("forbidden_claims", []), "forbidden_claims")),
+            tags=tuple(_string_list(row.get("tags", []), "tags")),
         )
         if case.case_id in seen:
             raise ValueError(f"duplicate case_id: {case.case_id}")
         seen.add(case.case_id)
         cases.append(case)
         canonical_rows.append(case_to_dict(case))
-    digest = canonical_digest(canonical_rows)
-    return tuple(cases), digest
+    return tuple(cases), canonical_digest(canonical_rows)
 
 
 def load_recorded_results(
@@ -209,14 +210,16 @@ def load_recorded_results(
                 excerpt=item.get("excerpt"),
                 metadata=item.get("metadata", {}),
             )
-            for item in _sequence(row.get("hits", ()), "hits")
+            for item in _object_list(row.get("hits", []), "hits")
         )
         claims = tuple(
             EvaluatedClaim(
                 text=item["text"],
-                source_ids=tuple(item.get("source_ids", ())),
+                source_ids=tuple(
+                    _string_list(item.get("source_ids", []), "source_ids")
+                ),
             )
-            for item in _sequence(row.get("claims", ()), "claims")
+            for item in _object_list(row.get("claims", []), "claims")
         )
         result = CaseResult(
             case_id=row["case_id"],
@@ -317,11 +320,17 @@ def _load_jsonl(path: str | Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _sequence(value: Any, name: str) -> Sequence[Mapping[str, Any]]:
+def _object_list(value: Any, name: str) -> Sequence[Mapping[str, Any]]:
     if not isinstance(value, list):
         raise ValueError(f"{name} must be a list")
     if not all(isinstance(item, dict) for item in value):
         raise ValueError(f"{name} items must be objects")
+    return value
+
+
+def _string_list(value: Any, name: str) -> Sequence[str]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{name} must be a list of strings")
     return value
 
 
