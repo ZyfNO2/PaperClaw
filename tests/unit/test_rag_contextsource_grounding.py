@@ -112,6 +112,37 @@ def test_unanswerable_query_returns_pinned_local_abstention_candidate(
     assert "Explicitly abstain" in assembly.prompt
 
 
+def test_chinese_natural_query_recalls_relevant_doc_without_common_prefix_false_positive(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "rag.db"
+    with IncrementalIndexer(db, chunk_config=CONFIG) as indexer:
+        indexer.index_bytes(
+            canonical_uri="file:///fixture/project.md",
+            display_name="project.md",
+            media_type="text/markdown",
+            content=(
+                "# 简介\n\n"
+                "本项目用于研究自动化论文写作，系统支持本地文档检索。"
+            ).encode("utf-8"),
+        )
+
+    retriever = SQLiteBM25Retriever(db)
+    source = RetrievalContextSource(retriever)
+    try:
+        positive = source.collect(_request("这个项目的用途是什么？"))
+        assert positive
+        assert source.last_decision is not None and source.last_decision.answerable
+        assert source.last_anchors[0].canonical_uri == "file:///fixture/project.md"
+
+        negative = source.collect(_request("这个火星土豆的价格是什么？"))
+        assert len(negative) == 1
+        assert source.last_decision is not None and not source.last_decision.answerable
+        assert not source.last_anchors
+    finally:
+        retriever.close()
+
+
 def test_duplicate_and_stale_results_do_not_create_citation_anchors(tmp_path: Path) -> None:
     db = tmp_path / "rag.db"
     duplicate = "# Shared\n\nduplicatecomet exact evidence text"

@@ -568,7 +568,14 @@ class SQLiteDocumentRegistry:
                 raise ValueError(
                     f"manifest_id collision: {manifest.manifest_id} exists with different content"
                 )
-            return
+            # A corpus can legitimately return to an earlier snapshot after a
+            # delete.  Manifests are content-addressed, so reusing that state
+            # reuses its primary key.  Move the existing row to the append tail
+            # so rowid-based readers observe the reactivated snapshot as current.
+            self._conn.execute(
+                "DELETE FROM index_manifests WHERE manifest_id = ?",
+                (manifest.manifest_id,),
+            )
         self._conn.execute(
             "INSERT INTO index_manifests(manifest_id, schema_version, index_version, created_at, chunk_config_hash, "
             "parser_versions_json, document_count, version_count, chunk_count, state, corpus_hash, content_hash) "

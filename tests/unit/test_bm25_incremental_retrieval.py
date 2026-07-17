@@ -129,6 +129,47 @@ def test_incremental_add_noop_update_delete_and_snapshot_invalidation(tmp_path: 
         ).candidates
 
 
+def test_delete_reactivates_historical_manifest_as_current(tmp_path: Path) -> None:
+    db = tmp_path / "rag.db"
+    with IncrementalIndexer(db, chunk_config=CONFIG) as indexer:
+        first = _index(indexer, "file:///docs/a.md", "# A\n\nalpha historical state")
+        historical = indexer.registry.latest_manifest()
+        assert historical is not None
+        legacy = sqlite3.connect(db)
+        legacy.execute(
+            "CREATE UNIQUE INDEX legacy_manifest_content_hash_unique "
+            "ON index_manifests(content_hash)"
+        )
+        legacy.commit()
+        legacy.close()
+        second = _index(indexer, "file:///docs/b.md", "# B\n\nbeta temporary state")
+
+        deleted = indexer.delete_document(second.document_id)
+        current = indexer.registry.latest_manifest()
+
+        assert deleted.manifest_id == historical.manifest_id
+        assert current is not None and current.manifest_id == deleted.manifest_id
+        assert current.corpus_hash == historical.corpus_hash
+        assert indexer.registry.get_active_version(first.document_id) is not None
+
+    with SQLiteIndexMaintainer(db, chunk_config=CONFIG) as maintainer:
+        assert not maintainer.inspect().is_broken
+    with SQLiteBM25Retriever(db) as retriever:
+        assert retriever.query(RetrievalRequest(query="alpha")).candidates
+        assert not retriever.query(RetrievalRequest(query="beta")).candidates
+
+
+def test_english_prefix_query_remains_supported(tmp_path: Path) -> None:
+    db = tmp_path / "rag.db"
+    with IncrementalIndexer(db, chunk_config=CONFIG) as indexer:
+        _index(indexer, "file:///docs/automation.md", "# Runtime\n\nautomation workflow")
+    with SQLiteBM25Retriever(db) as retriever:
+        result = retriever.query(RetrievalRequest(query="automat"))
+    assert [candidate.canonical_uri for candidate in result.candidates] == [
+        "file:///docs/automation.md"
+    ]
+
+
 def test_duplicate_content_is_filtered_after_bm25_ranking(tmp_path: Path) -> None:
     db = tmp_path / "rag.db"
     text = "# Shared\n\nquasarduplicate exact shared retrieval payload"

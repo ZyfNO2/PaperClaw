@@ -206,8 +206,23 @@ class SQLiteBM25Retriever:
                 filtered_duplicates=0,
             )
 
-        match_filter = "chunk_fts MATCH ?"
-        match_params: list[Any] = [match_query]
+        cjk_terms = _cjk_query_terms(request.normalized_query)
+        rank_params: list[Any] = []
+        if cjk_terms:
+            term_filters = []
+            rank_parts = []
+            match_params = []
+            for term in cjk_terms:
+                term_filters.append("(instr(heading, ?) > 0 OR instr(text, ?) > 0)")
+                match_params.extend((term, term))
+                rank_parts.append("(instr(heading, ?) > 0 OR instr(text, ?) > 0)")
+                rank_params.extend((term, term))
+            match_filter = "(" + " OR ".join(term_filters) + ")"
+            raw_rank = "-1.0 * (" + " + ".join(rank_parts) + ")"
+        else:
+            match_filter = "chunk_fts MATCH ?"
+            match_params = [match_query]
+            raw_rank = "bm25(chunk_fts, 0.0, 0.0, 0.0, 2.0, 1.0)"
         if request.document_ids:
             placeholders = ",".join("?" for _ in request.document_ids)
             match_filter += f" AND document_id IN ({placeholders})"
@@ -227,7 +242,7 @@ class SQLiteBM25Retriever:
                        version_id AS fts_version_id,
                        heading AS fts_heading,
                        text AS fts_text,
-                       bm25(chunk_fts, 0.0, 0.0, 0.0, 2.0, 1.0) AS raw_rank
+                       {raw_rank} AS raw_rank
                 FROM chunk_fts
                 WHERE {match_filter}
                 ORDER BY raw_rank, fts_chunk_id, fts_rowid
@@ -254,7 +269,7 @@ class SQLiteBM25Retriever:
             LEFT JOIN documents AS d ON d.document_id = c.document_id
             ORDER BY m.raw_rank, m.fts_chunk_id, m.fts_rowid
             """,
-            (*match_params, request.candidate_pool_size),
+            (*rank_params, *match_params, request.candidate_pool_size),
         ).fetchall()
 
         filtered_stale = 0
@@ -266,6 +281,8 @@ class SQLiteBM25Retriever:
         for row in rows:
             if not _row_is_active(row):
                 filtered_stale += 1
+                continue
+            if not _cjk_query_coverage_is_sufficient(request.normalized_query, row):
                 continue
             if row["chunk_id"] in seen_chunks:
                 filtered_duplicates += 1
@@ -350,11 +367,32 @@ def _build_match_query(query: str) -> str:
             continue
         seen.add(token)
         escaped = token.replace('"', '""')
-        # Prefix matching improves recall for CJK text (where unicode61 indexes
-        # whole phrases as single tokens) and for English stems. It only matches
-        # token prefixes, not arbitrary substrings.
         tokens.append(f'"{escaped}"*')
     return " OR ".join(tokens)
+
+
+def _is_cjk(value: str) -> bool:
+    return all("\u3400" <= char <= "\u4dbf" or "\u4e00" <= char <= "\u9fff" for char in value)
+
+
+def _cjk_query_coverage_is_sufficient(query: str, row: sqlite3.Row) -> bool:
+    cjk_terms = set(_cjk_query_terms(query))
+    if not cjk_terms:
+        return True
+    searchable = f"{row['fts_heading']}\n{row['fts_text']}"
+    matched = sum(term in searchable for term in cjk_terms)
+    required = max(2, (len(cjk_terms) + 1) // 2)
+    return matched >= required
+
+
+def _cjk_query_terms(query: str) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            token
+            for token in _QUERY_TOKEN.findall(query)
+            if len(token) == 1 and _is_cjk(token)
+        )
+    )
 
 
 def _row_is_active(row: sqlite3.Row) -> bool:

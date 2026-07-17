@@ -71,3 +71,27 @@ artifact digest: sha256:f757df67df136d1e269118f53aafcad832b28b5e3e9ad0ff00606605
 ```
 
 The test-case count is derived only from `when == "call"` records in `pytest_reportlog.jsonl`; setup and teardown lifecycle records are not counted as additional tests.
+
+## Post-acceptance repair validation (2026-07-17)
+
+Manual D1–D5 acceptance exposed two defects: returning to a historical corpus
+left the wrong Manifest at the read head, and natural Chinese questions had no
+usable lexical candidate path. The repaired Gate adds explicit regressions for:
+
+- historical Manifest reactivation, including a legacy
+  `UNIQUE(content_hash)` index;
+- retained-document retrieval and deleted-document absence after reactivation;
+- Chinese natural-query recall when the keyword is not at the FTS token prefix;
+- abstention for a lexically similar but unsupported Chinese question;
+- existing English prefix retrieval.
+
+Final local evidence:
+
+```text
+targeted repair suite: 18 passed
+full non-live suite:   640 passed, 1 skipped, 4 deselected
+Ruff E9/F63/F7/F82:    PASS
+manual D1-D5 script:   PASS
+```
+
+The single skip is the Windows symlink privilege case and is unrelated to RAG.

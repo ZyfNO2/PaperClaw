@@ -26,6 +26,7 @@ from paperclaw.retrieval.query import (
 _TASK_SECTION = re.compile(r"\[Task\]\s*(.*?)(?:\n\[History\]|\Z)", re.DOTALL)
 _WORD = re.compile(r"[^\W_]+(?:['’-][^\W_]+)*", re.UNICODE)
 _CJK = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
+_CJK_STOP_CHARS = frozenset("这那个的是了么吗呢和与及或在有为什")
 _STOPWORDS = frozenset(
     {
         "a",
@@ -299,10 +300,18 @@ def extract_retrieval_query(raw_prompt: str) -> str:
     for token in _WORD.findall(task.casefold()):
         for part in _expand_token(token):
             is_cjk = bool(_CJK.fullmatch(part))
-            if part in _STOPWORDS or (not is_cjk and len(part) < 2) or part in seen:
+            if (
+                part in _STOPWORDS
+                or (is_cjk and part in _CJK_STOP_CHARS)
+                or (not is_cjk and len(part) < 2)
+                or part in seen
+            ):
                 continue
             seen.add(part)
             tokens.append(part)
+    cjk_count = sum(bool(_CJK.fullmatch(token)) for token in tokens)
+    if cjk_count == 1 and len(tokens) == 1:
+        return "no_retrieval_query_terms"
     if not tokens:
         return "no_retrieval_query_terms"
     return " ".join(tokens)[:2_000]

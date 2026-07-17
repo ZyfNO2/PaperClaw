@@ -35,6 +35,11 @@ RankedResult
 
 `SQLiteIndexMaintainer` is an explicit maintenance boundary. It never trusts current FTS content during rebuild; active immutable Chunk rows are the source of truth.
 
+Post-acceptance hardening reactivates a content-addressed historical Manifest by
+moving its row to the append tail inside the same Registry transaction. CJK
+queries use bounded substring candidate scoring plus a deterministic coverage
+Gate; English terms retain FTS5 prefix matching.
+
 ## Main files
 
 - `src/paperclaw/retrieval/query.py`

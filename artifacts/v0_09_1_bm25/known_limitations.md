@@ -12,3 +12,7 @@
 - no ContextSource, CitationAnchor, answer grounding, no-answer policy, or Prompt integration;
 - no online source refresh, filesystem watcher, scheduled compaction, or automatic garbage collection of inactive versions;
 - rebuild trusts active Chunk rows as authoritative; corruption of those immutable rows requires external restore rather than FTS rebuild.
+- Chinese natural-query retrieval uses deterministic character coverage rather
+  than a language-specific segmenter. It requires at least two distinct matched
+  CJK characters and at least 50% query-character coverage; mixed-language or
+  semantically related queries without lexical overlap remain out of scope.
