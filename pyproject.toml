@@ -10,11 +10,19 @@ requires-python = ">=3.12"
 dependencies = []
 
 [project.scripts]
-paperclaw = "paperclaw.cli:main"
+paperclaw = "paperclaw.entrypoint:main"
+paperclaw-gui = "paperclaw.desktop.app:main"
 
 [project.optional-dependencies]
 tui = [
     "textual>=1.0,<8",
+]
+gui = [
+    "pywebview>=5,<7",
+]
+build = [
+    "pyinstaller>=6,<7",
+    "pywebview>=5,<7",
 ]
 dev = [
     "pytest>=8.3",
@@ -27,6 +35,9 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["paperclaw*", "pocketflow*"]
+
+[tool.setuptools.package-data]
+"paperclaw.desktop" = ["static/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
