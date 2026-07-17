@@ -2,16 +2,19 @@
 
 ## Status
 
-**Status: `IMPLEMENTED / CI PENDING / NATIVE WINDOWS ACCEPTANCE PENDING`**
+**Status: `AUTOMATED GATES PASS / NATIVE WINDOWS ACCEPTANCE PENDING`**
 
-This amendment replaces the original v0.11 visual shell with the user-provided Neo-Brutalist console design and changes the default desktop provider path back to environment-backed configuration.
+This amendment replaces the original v0.11 visual shell with the user-provided Neo-Brutalist console design and restores environment-backed LLM configuration as the desktop default.
 
-## Baseline
+## Delivery references
 
 - Repository: `ZyfNO2/PaperClaw`
 - Baseline branch: `main`
 - Baseline SHA at amendment start: `5ae85c31a148ed0c8dd7ecd2a70a4c63c41c0f74`
-- Scope: v0.11 desktop frontend, Python bridge provider defaults, browser interaction tests, and CI only.
+- Development branch: `amend/v0.11-frontend-playwright`
+- Draft PR: `#34`
+- Verified implementation head before this documentation-only update: `883076324263fe0c4c69604bcf7aa8ebcbf81ae7`
+- Scope: v0.11 desktop frontend, Python bridge provider defaults, browser interaction tests, CI, and Windows package smoke.
 
 ## Implemented changes
 
@@ -58,16 +61,50 @@ Covered interactions:
 15. Trace JSON download.
 16. New Run reset.
 
-Local cloud-container result before commit:
+The Playwright suite is enabled only when `PAPERCLAW_RUN_PLAYWRIGHT=1`, so the normal Windows regression can collect the repository without requiring a browser installation. The dedicated GitHub workflow sets this flag and installs Playwright Chromium.
 
-```text
-PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium \
-  pytest -q tests/e2e/desktop
+The system Chromium in the development container blocked direct `file://` and localhost navigation through administrator policy. The test harness therefore uses Playwright `page.set_content()` with the exact committed HTML/CSS/JavaScript inlined for test execution.
 
-4 passed
-```
+## Automated verification
 
-The system Chromium in the development container blocked direct `file://` and localhost navigation through administrator policy. The test harness therefore uses Playwright `page.set_content()` with the exact committed HTML/CSS/JavaScript inlined for test execution. GitHub Actions installs Playwright Chromium and runs the same interaction suite.
+All results below were verified for implementation head `883076324263fe0c4c69604bcf7aa8ebcbf81ae7`.
+
+### Chromium Playwright
+
+- Workflow: `Desktop Playwright`
+- Run: `29607089692`
+- Result: `4 passed`, `0 failed`, `0 skipped`
+- JUnit time: `3.469s`
+- Artifact: `desktop-playwright-29607089692`
+- Artifact ID: `8417291647`
+- Digest: `sha256:cbf12749a73bc2f5ca8f99d6688ef100cabcfc0a4303f7a1a4baf4dede50e254`
+
+### Focused desktop tests and Windows package smoke
+
+- Workflow: `Desktop package smoke`
+- Run: `29607089668`
+- Focused result: `44 passed`
+- PyInstaller `onedir`: success
+- Executable/static asset verification: success
+- Test artifact: `desktop-pytest-results-29607089668`
+- Test artifact ID: `8417291918`
+- Package artifact: `PaperClaw-Windows-onedir-29607089668`
+- Package artifact ID: `8417299655`
+- Package size: `16,190,864` bytes
+- Package digest: `sha256:80b6dae739af40769eab46895959c576c9c863ad23ffb149a450814bbcbf3dd5`
+
+### Full non-live regression and Ruff
+
+- Workflow: `CI`
+- Run: `29607089678`
+- Pytest result: `689 passed`
+- Playwright cases are intentionally skipped in this generic workflow and run in the dedicated browser workflow above.
+- Ruff high-signal gate: success
+- Report artifact: `pytest-results-29607089678`
+- Artifact ID: `8417341750`
+- Digest: `sha256:5ba6782aeefeb0ec8b8210192a207ec08083fe4eaff11a1302a9110b572fa9dc`
+
+These automated results prove offline browser interactions, Python bridge contracts, repository regressions, and Windows artifact production. They do not prove native WebView2 usability or a real Provider request.
 
 ## Files changed
 
@@ -81,6 +118,7 @@ The system Chromium in the development container blocked direct `file://` and lo
 - `tests/e2e/desktop/test_console.py`
 - `.github/workflows/desktop-playwright.yml`
 - `pyproject.toml`
+- `docs/handoff/PaperClaw_v0.11_FRONTEND_PLAYWRIGHT_AMENDMENT.md`
 
 ## Verification boundaries
 
@@ -88,14 +126,14 @@ The system Chromium in the development container blocked direct `file://` and lo
 
 - Browser interaction logic with Playwright and a deterministic pywebview bridge double.
 - JavaScript run payload excludes provider credentials and model endpoint fields.
-- Environment hydration and non-secret defaults are covered by Python unit tests in CI.
+- Environment hydration and non-secret defaults are covered by Python unit tests.
 - Static frontend contains only local resources and preserves the supplied design language.
+- Full Windows non-live regression, focused desktop tests, Ruff, and Windows PyInstaller production pass.
 
-### Pending
+### Pending real acceptance
 
-- GitHub Actions result on the amendment commit.
 - Native pywebview rendering on Windows/WebView2.
-- Packaged Windows executable launch after the frontend replacement.
+- Launching and using the downloaded packaged executable on a real Windows desktop.
 - Real Provider execution using a disposable environment-backed credential.
 - Real cancellation while a Provider/tool call is active.
 - Credential search across UI, logs, trace, SQLite, stdout, and stderr after a real run.
