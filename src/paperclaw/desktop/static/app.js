@@ -3,6 +3,7 @@
 
   const MAX_TIMELINE_ROWS = 300;
   const POLL_INTERVAL_MS = 300;
+  const TOAST_DURATION_MS = 3200;
   const ACTIVE_STATUSES = new Set(["starting", "running", "stopping"]);
 
   const ui = {};
@@ -10,6 +11,7 @@
   let bridgeReady = false;
   let pollInFlight = false;
   let pollTimer = null;
+  let toastTimer = null;
   let frontendSubmitting = false;
 
   function byId(id) {
@@ -29,10 +31,16 @@
     ui.workspace = byId("workspace");
     ui.selectWorkspace = byId("select-workspace");
     ui.verificationEnabled = byId("verification-enabled");
+    ui.maxSteps = byId("max-steps");
+    ui.maxModelCalls = byId("max-model-calls");
+    ui.maxToolCalls = byId("max-tool-calls");
     ui.task = byId("task");
+    ui.taskCount = byId("task-count");
+    ui.clearTask = byId("clear-task");
     ui.runButton = byId("run-button");
     ui.cancelButton = byId("cancel-button");
     ui.runStatus = byId("run-status");
+    ui.summaryStatus = byId("summary-status");
     ui.modelCalls = byId("model-calls");
     ui.toolCalls = byId("tool-calls");
     ui.lastSequence = byId("last-sequence");
@@ -42,14 +50,87 @@
     ui.clearTimeline = byId("clear-timeline");
     ui.finalResult = byId("final-result");
     ui.publicError = byId("public-error");
+    ui.runIdLabel = byId("run-id-label");
+    ui.workspaceLabel = byId("workspace-label");
+    ui.providerLabel = byId("provider-label");
+    ui.modelLabel = byId("model-label");
+    ui.underDevelopToast = byId("under-develop-toast");
+    ui.underDevelopMessage = byId("under-develop-message");
+    ui.closeToast = byId("close-toast");
+    ui.statusDot = document.querySelector(".run-control-panel .status-dot");
 
     ui.toggleKey.addEventListener("click", toggleKeyVisibility);
     ui.runButton.addEventListener("click", startRun);
     ui.cancelButton.addEventListener("click", cancelRun);
     ui.selectWorkspace.addEventListener("click", selectWorkspace);
     ui.clearTimeline.addEventListener("click", () => ui.timeline.replaceChildren());
+    ui.clearTask.addEventListener("click", clearTask);
+    ui.closeToast.addEventListener("click", hideUnderDevelop);
+    ui.task.addEventListener("input", updateTaskCount);
+    ui.provider.addEventListener("input", updateFooterLabels);
+    ui.model.addEventListener("input", updateFooterLabels);
+    ui.workspace.addEventListener("input", updateFooterLabels);
 
+    bindPlannedControls();
+    updateTaskCount();
+    updateFooterLabels();
     maybeInitialize();
+  }
+
+  function bindPlannedControls() {
+    for (const element of document.querySelectorAll("[data-under-develop]")) {
+      const featureName = element.getAttribute("data-under-develop") || "This feature";
+      element.addEventListener("click", (event) => {
+        event.preventDefault();
+        showUnderDevelop(featureName);
+      });
+      if (element.getAttribute("role") === "button" && element.tagName !== "BUTTON") {
+        element.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            showUnderDevelop(featureName);
+          }
+        });
+      }
+    }
+  }
+
+  function showUnderDevelop(featureName) {
+    if (!ui.underDevelopToast || !ui.underDevelopMessage) {
+      return;
+    }
+    setText(ui.underDevelopMessage, `${featureName} is Under Develop and will be enabled in a later release.`);
+    ui.underDevelopToast.hidden = false;
+    if (toastTimer !== null) {
+      window.clearTimeout(toastTimer);
+    }
+    toastTimer = window.setTimeout(hideUnderDevelop, TOAST_DURATION_MS);
+  }
+
+  function hideUnderDevelop() {
+    if (toastTimer !== null) {
+      window.clearTimeout(toastTimer);
+      toastTimer = null;
+    }
+    if (ui.underDevelopToast) {
+      ui.underDevelopToast.hidden = true;
+    }
+  }
+
+  function clearTask() {
+    ui.task.value = "";
+    updateTaskCount();
+    ui.task.focus();
+  }
+
+  function updateTaskCount() {
+    setText(ui.taskCount, `${ui.task.value.length} / 100000`);
+  }
+
+  function updateFooterLabels() {
+    setText(ui.workspaceLabel, stringValue(ui.workspace.value, "not selected"));
+    setText(ui.providerLabel, stringValue(ui.provider.value, "not selected"));
+    setText(ui.modelLabel, stringValue(ui.model.value, "not selected"));
   }
 
   function markBridgeReady() {
@@ -136,7 +217,10 @@
       model: ui.model.value,
       workspace: ui.workspace.value,
       task: ui.task.value,
-      enable_verification_gate: ui.verificationEnabled.checked
+      enable_verification_gate: ui.verificationEnabled.checked,
+      max_steps: boundedInteger(ui.maxSteps.value, 12),
+      max_model_calls: boundedInteger(ui.maxModelCalls.value, 10),
+      max_tool_calls: boundedInteger(ui.maxToolCalls.value, 20)
     };
 
     try {
@@ -203,6 +287,7 @@
       }
       if (response.workspace) {
         ui.workspace.value = response.workspace;
+        updateFooterLabels();
       }
     } catch (error) {
       showError("runtime_error", "Workspace picker could not be opened.");
@@ -219,6 +304,7 @@
   function renderSnapshot(snapshot) {
     const status = stringValue(snapshot.status, "unknown");
     setText(ui.runStatus, status);
+    setText(ui.summaryStatus, titleCase(status));
     setText(ui.modelCalls, numberValue(snapshot.model_calls));
     setText(ui.toolCalls, numberValue(snapshot.tool_calls));
     setText(ui.lastSequence, numberValue(snapshot.last_sequence));
@@ -227,6 +313,8 @@
       ui.verificationSummary,
       stringValue(snapshot.verification_summary, "No verification summary yet.")
     );
+    setText(ui.runIdLabel, stringValue(snapshot.run_id, "not started"));
+    updateStatusDot(status);
     if (snapshot.final_result) {
       setText(ui.finalResult, snapshot.final_result);
     } else if (snapshot.terminal && status !== "completed") {
@@ -241,6 +329,16 @@
       clearError();
     }
     updateControls(status);
+  }
+
+  function updateStatusDot(status) {
+    if (!ui.statusDot) {
+      return;
+    }
+    ui.statusDot.classList.remove("connected");
+    if (status === "completed" || status === "running") {
+      ui.statusDot.classList.add("connected");
+    }
   }
 
   function appendTimelineRow(row) {
@@ -268,10 +366,14 @@
       ui.model,
       ui.workspace,
       ui.verificationEnabled,
+      ui.maxSteps,
+      ui.maxModelCalls,
+      ui.maxToolCalls,
       ui.selectWorkspace
     ]) {
       field.disabled = active;
     }
+    setText(ui.summaryStatus, titleCase(status));
   }
 
   function renderBackendError(response) {
@@ -310,6 +412,19 @@
   function numberValue(value) {
     const number = Number(value);
     return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+  }
+
+  function boundedInteger(value, fallback) {
+    const number = Number(value);
+    if (!Number.isInteger(number) || number < 1 || number > 1000) {
+      return fallback;
+    }
+    return number;
+  }
+
+  function titleCase(value) {
+    const text = stringValue(value, "idle");
+    return text.charAt(0).toUpperCase() + text.slice(1);
   }
 
   document.addEventListener("DOMContentLoaded", bindDom, { once: true });
