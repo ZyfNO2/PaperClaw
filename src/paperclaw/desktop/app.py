@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 from importlib.resources import as_file, files
 from importlib.util import find_spec
 import json
 import os
 from pathlib import Path
+import platform
+import socket
 import sys
+from threading import RLock
 from typing import Any, Mapping
+import urllib.error
+import urllib.request
+from urllib.parse import urlsplit
 
 from .contracts import DesktopPublicError
 from .controller import DesktopController
@@ -21,21 +28,33 @@ _REQUIRED_ENV = (
     "PAPERCLAW_BASE_URL",
     "PAPERCLAW_MODEL",
 )
+_MAX_DISCOVERED_MODELS = 1_000
 
 
 class DesktopAPI:
     """Allow-listed methods exposed through ``window.pywebview.api``."""
 
-    def __init__(self, controller: DesktopController) -> None:
+    def __init__(
+        self,
+        controller: DesktopController,
+        *,
+        provider_urlopen: Any | None = None,
+        provider_timeout: float = 20.0,
+    ) -> None:
         self._controller = controller
         self._window: Any | None = None
+        self._provider_urlopen = provider_urlopen or urllib.request.urlopen
+        self._provider_timeout = max(1.0, float(provider_timeout))
+        self._provider_lock = RLock()
+        self._manual_provider: dict[str, str] | None = None
+        self._available_models: tuple[str, ...] = ()
 
     def bind_window(self, window: Any) -> None:
         self._window = window
 
     def start_run(self, request: Mapping[str, Any]) -> dict[str, object]:
         try:
-            hydrated = _hydrate_environment_provider(request)
+            hydrated = self._hydrate_provider(request)
         except DesktopPublicError as exc:
             return exc.to_public_dict()
         return self._controller.start_run(hydrated)
@@ -53,17 +72,98 @@ class DesktopAPI:
         """Return non-secret desktop defaults for the initial UI projection."""
 
         workspace = Path.cwd().expanduser().resolve()
+        with self._provider_lock:
+            manual_provider = dict(self._manual_provider) if self._manual_provider else None
+            models = list(self._available_models)
+        if manual_provider is not None:
+            return {
+                "ok": True,
+                "workspace": str(workspace),
+                "provider_source": "manual",
+                "provider": manual_provider["provider"],
+                "base_url": manual_provider["base_url"],
+                "model": manual_provider["model"],
+                "models": models,
+                "configured": True,
+                "missing": [],
+            }
+
         _load_dotenv(workspace / ".env")
         missing = [name for name in _REQUIRED_ENV if not os.getenv(name)]
+        model = os.getenv("PAPERCLAW_MODEL") or None
         return {
             "ok": True,
             "workspace": str(workspace),
             "provider_source": "env",
             "provider": os.getenv("PAPERCLAW_PROVIDER", "openai-compatible"),
             "base_url": os.getenv("PAPERCLAW_BASE_URL") or None,
-            "model": os.getenv("PAPERCLAW_MODEL") or None,
+            "model": model,
+            "models": [model] if model else [],
             "configured": not missing,
             "missing": missing,
+        }
+
+    def connect_provider(self, request: Mapping[str, Any]) -> dict[str, object]:
+        """Validate one manual provider and discover its available models.
+
+        The credential is retained only in this Python process. The response sent
+        to JavaScript contains connection metadata and model IDs, never the key.
+        """
+
+        try:
+            provider_config = _validate_provider_connection_request(request)
+            models = _discover_provider_models(
+                provider_config,
+                urlopen=self._provider_urlopen,
+                timeout=self._provider_timeout,
+            )
+        except DesktopPublicError as exc:
+            return exc.to_public_dict()
+
+        selected_model = models[0]
+        with self._provider_lock:
+            self._manual_provider = {
+                **provider_config,
+                "model": selected_model,
+            }
+            self._available_models = tuple(models)
+        return {
+            "ok": True,
+            "provider_source": "manual",
+            "provider": provider_config["provider"],
+            "base_url": provider_config["base_url"],
+            "models": list(models),
+            "selected_model": selected_model,
+            "configured": True,
+        }
+
+    def select_provider_model(self, model: str) -> dict[str, object]:
+        """Select a discovered model for subsequent runs."""
+
+        try:
+            selected = _required_provider_text(model, "Model", limit=256)
+        except DesktopPublicError as exc:
+            return exc.to_public_dict()
+        with self._provider_lock:
+            if self._manual_provider is None:
+                return DesktopPublicError(
+                    "provider_configuration_error",
+                    "Connect a provider before selecting a model.",
+                ).to_public_dict()
+            if selected not in self._available_models:
+                return DesktopPublicError(
+                    "provider_configuration_error",
+                    "Selected model is not available from the connected provider.",
+                ).to_public_dict()
+            self._manual_provider = {**self._manual_provider, "model": selected}
+            provider = self._manual_provider["provider"]
+            base_url = self._manual_provider["base_url"]
+        return {
+            "ok": True,
+            "provider_source": "manual",
+            "provider": provider,
+            "base_url": base_url,
+            "model": selected,
         }
 
     def select_workspace(self) -> dict[str, object]:
@@ -99,6 +199,22 @@ class DesktopAPI:
             ).to_public_dict()
         return {"ok": True, "workspace": str(workspace)}
 
+    def _hydrate_provider(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        if not isinstance(request, Mapping):
+            raise DesktopPublicError("validation_error", "Run request must be an object.")
+        hydrated = dict(request)
+        explicit_fields = {
+            name for name in _PROVIDER_FIELDS if hydrated.get(name) not in (None, "")
+        }
+        if explicit_fields:
+            return hydrated
+        with self._provider_lock:
+            manual_provider = dict(self._manual_provider) if self._manual_provider else None
+        if manual_provider is not None:
+            hydrated.update(manual_provider)
+            return hydrated
+        return _hydrate_environment_provider(hydrated)
+
 
 def _hydrate_environment_provider(request: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(request, Mapping):
@@ -130,6 +246,145 @@ def _hydrate_environment_provider(request: Mapping[str, Any]) -> dict[str, Any]:
         }
     )
     return hydrated
+
+
+def _validate_provider_connection_request(request: Mapping[str, Any]) -> dict[str, str]:
+    if not isinstance(request, Mapping):
+        raise DesktopPublicError(
+            "validation_error",
+            "Provider connection request must be an object.",
+        )
+    allowed_fields = {"base_url", "api_key", "provider"}
+    unknown = sorted(str(key) for key in request if key not in allowed_fields)
+    if unknown:
+        raise DesktopPublicError(
+            "validation_error",
+            f"Unknown provider fields: {', '.join(unknown[:10])}.",
+        )
+    base_url = _required_provider_text(request.get("base_url"), "Base URL", limit=2_000)
+    parsed = urlsplit(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise DesktopPublicError(
+            "provider_configuration_error",
+            "Base URL must be an absolute HTTP or HTTPS URL.",
+        )
+    if parsed.username or parsed.password:
+        raise DesktopPublicError(
+            "provider_configuration_error",
+            "Base URL must not contain embedded credentials.",
+        )
+    api_key = _required_provider_text(request.get("api_key"), "API key", limit=20_000)
+    provider = _required_provider_text(
+        request.get("provider", "openai-compatible"),
+        "Provider",
+        limit=128,
+    )
+    return {
+        "base_url": base_url.rstrip("/"),
+        "api_key": api_key,
+        "provider": provider,
+    }
+
+
+def _discover_provider_models(
+    provider_config: Mapping[str, str],
+    *,
+    urlopen: Any,
+    timeout: float,
+) -> list[str]:
+    base_url = provider_config["base_url"]
+    api_key = provider_config["api_key"]
+    request = urllib.request.Request(
+        f"{base_url}/models",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+            "User-Agent": (
+                f"PaperClaw/0.0.1 ({platform.system()} {platform.release()})"
+            ),
+        },
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise DesktopPublicError(
+                "provider_authentication_error",
+                "Provider rejected the supplied API key or permission.",
+            ) from exc
+        if exc.code == 404:
+            raise DesktopPublicError(
+                "provider_configuration_error",
+                "Provider model-list endpoint was not found at Base URL /models.",
+            ) from exc
+        raise DesktopPublicError(
+            "provider_connection_error",
+            f"Provider model discovery failed with HTTP {exc.code}.",
+        ) from exc
+    except (
+        urllib.error.URLError,
+        http.client.RemoteDisconnected,
+        ConnectionError,
+        TimeoutError,
+        socket.timeout,
+    ) as exc:
+        raise DesktopPublicError(
+            "provider_network_error",
+            "Provider could not be reached or the connection timed out.",
+        ) from exc
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise DesktopPublicError(
+            "provider_invalid_response",
+            "Provider returned invalid JSON for the model list.",
+        ) from exc
+
+    models = _extract_model_ids(payload)
+    if not models:
+        raise DesktopPublicError(
+            "provider_invalid_response",
+            "Provider returned no selectable model IDs.",
+        )
+    return models
+
+
+def _extract_model_ids(payload: Any) -> list[str]:
+    if not isinstance(payload, Mapping):
+        return []
+    raw_models = payload.get("data")
+    if not isinstance(raw_models, list):
+        raw_models = payload.get("models")
+    if not isinstance(raw_models, list):
+        return []
+
+    models: list[str] = []
+    seen: set[str] = set()
+    for item in raw_models:
+        candidate: Any = item
+        if isinstance(item, Mapping):
+            candidate = item.get("id") or item.get("model") or item.get("name")
+        if not isinstance(candidate, str):
+            continue
+        model_id = candidate.strip()
+        if not model_id or len(model_id) > 256 or model_id in seen:
+            continue
+        seen.add(model_id)
+        models.append(model_id)
+        if len(models) >= _MAX_DISCOVERED_MODELS:
+            break
+    return models
+
+
+def _required_provider_text(value: Any, label: str, *, limit: int) -> str:
+    if not isinstance(value, str):
+        raise DesktopPublicError("validation_error", f"{label} must be text.")
+    normalized = value.strip()
+    if not normalized:
+        raise DesktopPublicError("validation_error", f"{label} must not be empty.")
+    if len(normalized) > limit:
+        raise DesktopPublicError("validation_error", f"{label} is too long.")
+    return normalized
 
 
 def _load_dotenv(dotenv_path: Path) -> None:
