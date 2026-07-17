@@ -18,65 +18,50 @@ run `29493895061`：503 passed，Ruff PASS。
 
 ## 你需要完成的人工验收
 
-### A. 单 Agent Trace 使用体验 —— 已完成 ✅
+### A. 单 Agent Trace 使用体验
 
-执行 Run：`run-7677999f51d5`（OpenCode / `deepseek-v4-flash`）
+1. 在 Windows Terminal 使用正常 TUI 和 OpenCode 完成一个真实任务。
+2. 找到该 Run 的 `run_id`，依次执行：
 
 ```powershell
-paperclaw trace inspect --database tmp/v0_07_mistral_trace_smoke/paperclaw.db --run-id run-7677999f51d5
-paperclaw trace export --database tmp/v0_07_mistral_trace_smoke/paperclaw.db --run-id run-7677999f51d5 --output tmp/v0_07_manual_acceptance/trace.jsonl
-paperclaw trace replay --database tmp/v0_07_mistral_trace_smoke/paperclaw.db --run-id run-7677999f51d5 --strict
-paperclaw trace eval --database tmp/v0_07_mistral_trace_smoke/paperclaw.db --run-id run-7677999f51d5 --require-completed
+paperclaw trace inspect --database <db> --run-id <run_id>
+paperclaw trace export --database <db> --run-id <run_id> --output trace.jsonl
+paperclaw trace replay --database <db> --run-id <run_id> --strict
+paperclaw trace eval --database <db> --run-id <run_id> --require-completed
 ```
 
-- [x] Inspector/Eval 信息清晰，错误提示可指导下一步
-- [x] JSONL 中无 API key、完整 prompt、hidden reasoning、完整文件正文、完整工具输出或 stdout/stderr 正文
+3. 主观确认 Inspector/Eval 信息容易理解，错误提示能够指导下一步。
+4. 打开 JSONL，确认没有 API key、Prompt 全文、hidden reasoning、完整文件正文、
+   完整工具输出、stdout 或 stderr 正文。
 
-### B. MultiAgent TUI 物理终端 —— 已完成 ✅
+### B. MultiAgent TUI 物理终端
 
-执行 Run：`team-b2701a28c650`（OpenCode / `deepseek-v4-flash`，plan 位于 `tmp/v0_07_manual_acceptance/team-plan.json`）
+准备一个至少包含两个独立 task 的 plan 和一次性 workspace，然后运行：
 
 ```powershell
 python -m paperclaw.tui.team_runner `
-  --plan .\tmp\v0_07_manual_acceptance\team-plan.json `
-  --workspace .\tmp\v0_07_manual_acceptance\safe-workspace
+  --plan .\team-plan.json `
+  --workspace .\safe-workspace
 ```
 
 逐项检查：
 
-- [x] 宽终端时左右 panel 正常显示；
-- [x] 缩窄至 87 列或更少时自动上下堆叠，无重叠、截断失控或崩溃；
-- [x] 两个 Worker 的状态随真实 Provider 事件更新；
-- [x] Reviewer verdict、fix round 和最终 stop reason 与实际结果一致；
-- [x] active run 按 `R` 不会启动第二个 team；
-- [x] active run 按 `Q` 不会强制退出（提示 `Cannot quit while the Coordinator is active`）；
-- [x] terminal 后按 `Q` 可以正常退出；
-- [x] 面板不显示 goal/objective、acceptance criteria、完整文件名、工具输出、
+- [ ] 宽终端时左右 panel 正常显示；
+- [ ] 缩窄至 87 列或更少时自动上下堆叠，无重叠、截断失控或崩溃；
+- [ ] 两个 Worker 的状态随真实 Provider 事件更新；
+- [ ] Reviewer verdict、fix round 和最终 stop reason 与实际结果一致；
+- [ ] active run 按 `R` 不会启动第二个 team；
+- [ ] active run 按 `Q` 不会强制退出；
+- [ ] terminal 后按 `Q` 可以正常退出；
+- [ ] 面板不显示 goal/objective、acceptance criteria、完整文件名、工具输出、
       review reasoning、异常正文或 API key；
-- [x] 整个过程没有重复运行、状态倒退、画面损坏或无法退出。
+- [ ] 整个过程没有重复运行、状态倒退、画面损坏或无法退出。
 
-### C. 可选外部系统验收 —— 已完成 ✅
+### C. 可选外部系统验收
 
-使用本地临时 HTTPS collector（自签名证书，脚本位于 `tmp/local_https_collector.py`）：
-
-```powershell
-python tmp/local_https_collector.py --cert-dir tmp/collector-certs
-$env:SSL_CERT_FILE = (Resolve-Path tmp/collector-certs/localhost.crt).Path
-$env:PAPERCLAW_EXPORT_TOKEN = "test-token-acceptance"
-paperclaw trace push `
-  --database tmp/v0_07_mistral_trace_smoke/paperclaw.db `
-  --run-id run-7677999f51d5 `
-  --endpoint https://localhost:<port>/v1/traces `
-  --allow-host localhost `
-  --enable-external-export
-```
-
-验收结果：
-
-- [x] HTTPS POST 成功，服务端返回 200
-- [x] `Authorization: Bearer <token>` 认证头正确携带
-- [x] 4 个事件完整接收：`run.started` → `model.started` → `model.completed` → `run.completed`
-- [x] payload 中无 API key、完整 prompt、工具输出等敏感信息
+只有你已经有安全的真实 collector 时才执行 `paperclaw trace push`，检查认证、
+超时和服务端接收结果。没有 collector 时可以跳过；Codex 已完成真实 HTTPS
+loopback POST 验收。
 
 ## 当前不要求你测试
 
@@ -89,11 +74,5 @@ paperclaw trace push `
 
 ## 完成判定
 
-- [x] A. 单 Agent Trace 使用体验 —— 通过
-- [x] B. MultiAgent TUI 物理终端 —— 通过
-- [x] C. 可选外部系统验收 —— 通过
-
-**结论：v0.07 真实用户验收通过。**
-
-验收日期：2026-07-16
-验收执行者：用户 + ALLMIND
+A、B 全部通过即可把 v0.07 标记为“真实用户验收通过”。C 为可选项。若失败，
+请记录命令、终端宽度、截图、Run ID 和可脱敏的错误信息，不要记录 API key。

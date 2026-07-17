@@ -1,0 +1,7 @@
+Plan/PaperClaw_v0.08_Context_Combined_Hardening_SOP.md
+artifacts/v0_08_context_hardening/file_manifest.txt
+artifacts/v0_08_context_hardening/implementation_summary.md
+artifacts/v0_08_context_hardening/known_limitations.md
+artifacts/v0_08_context_hardening/test_report.md
+docs/handoff/PaperClaw_v0.08_Context_Combined_Hardening_HANDOFF.md
+tests/property/test_context_combined_hardening.py
