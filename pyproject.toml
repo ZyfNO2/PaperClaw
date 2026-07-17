@@ -18,6 +18,7 @@ tui = [
 ]
 dev = [
     "pytest>=8.3",
+    "pytest-reportlog>=0.4,<1",
     "hypothesis>=6.100,<7",
     "ruff>=0.7",
     "textual>=1.0,<8",
@@ -43,8 +44,3 @@ extend-exclude = ["src/pocketflow"]
 # Ruff gate and still contains a large unused-import/style backlog; those are
 # cleanup debt, not reasons to disable syntax/undefined-name protection.
 select = ["E9", "F63", "F7", "F82"]
-
-[tool.ruff.lint.per-file-ignores]
-# Postponed annotations make this local test-only CoordinatorResult reference
-# runtime-safe. Keep the exception narrow rather than disabling F821 globally.
-"tests/unit/test_multiagent_coordinator.py" = ["F821"]

@@ -10,7 +10,7 @@ import pytest
 
 from paperclaw.models.base import ModelTurn
 from paperclaw.multiagent.contracts import AgentTask, TeamBudget, TeamStopReason
-from paperclaw.multiagent.coordinator import Coordinator
+from paperclaw.multiagent.coordinator import Coordinator, CoordinatorResult
 
 
 class FakeModel:
