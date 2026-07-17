@@ -9,6 +9,7 @@ on:
       - "tests/unit/desktop/**"
       - "scripts/build_desktop.py"
       - "scripts/paperclaw_desktop_entry.py"
+      - "docs/handoff/**"
       - "pyproject.toml"
       - ".github/workflows/desktop-package.yml"
   workflow_dispatch:
