@@ -13,4 +13,6 @@
 
 The exact count was parsed from `pytest_reportlog.jsonl` using only call-phase `TestReport` records.
 
-The current branch contains documentation-only artifact commits after the validated implementation head; final branch CI must remain green before merge.
+## Final integration gate
+
+The v0.09 MCP Runtime, capability selection, BM25 retrieval, storage hardening, ContextSource, Citation and Grounding PRs are now merged into `main`. This documentation update triggers a final repository-wide CI run against that complete mainline before the isolated v0.10 static Model Policy foundation is merged.
