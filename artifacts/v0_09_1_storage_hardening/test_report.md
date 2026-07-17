@@ -15,4 +15,4 @@
 
 The exact count was parsed from `pytest_reportlog.jsonl` using only call-phase `TestReport` records.
 
-This validates the complete #24 + #30 stacked tree. It does not claim that #30 is independently runnable without #24. The PR base has been restored to #24 after validation.
+This validates the complete #24 + #30 stacked tree. PR #24 has now merged into `main`, and PR #30 has been retargeted to `main`. This documentation commit triggers final head verification against the merged dependency chain before PR #30 is merged.
