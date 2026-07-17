@@ -7,9 +7,13 @@ from .contracts import (
     ServiceRunRequest,
     SubmitOutcome,
 )
+from .durable_application import DurableRunApplicationService
 from .plugins import ServicePlugin, ServicePluginRegistry
+from .resilience import LayerTimeoutError, TimeoutPolicy
 
 __all__ = [
+    "DurableRunApplicationService",
+    "LayerTimeoutError",
     "PublicRunEvent",
     "PublicRunView",
     "RunApplicationService",
@@ -17,4 +21,5 @@ __all__ = [
     "ServicePluginRegistry",
     "ServiceRunRequest",
     "SubmitOutcome",
+    "TimeoutPolicy",
 ]
