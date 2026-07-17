@@ -201,6 +201,151 @@ class SQLiteDurableServiceStore:
             )
         return self.get_run(run_id)
 
+    def request_cancellation(
+        self,
+        run_id: str,
+        *,
+        reason: str,
+        actor: str = "service:cancel",
+    ) -> tuple[DurableRun, tuple[DurableRunEvent, ...]]:
+        """Atomically persist cancellation state, reason and public events."""
+
+        normalized_reason = reason.strip()
+        normalized_actor = actor.strip()
+        if not normalized_reason:
+            raise ValueError("reason must not be empty")
+        if not normalized_actor:
+            raise ValueError("actor must not be empty")
+        now = self._clock()
+        stored_events: list[DurableRunEvent] = []
+
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT state, version, metadata_json FROM durable_runs "
+                "WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                raise DurableRunNotFoundError(f"unknown durable run: {run_id}")
+            current_state = str(row["state"])
+            if current_state in TERMINAL_STATES:
+                raise InvalidTransitionError(
+                    f"run cannot be cancelled from state={current_state}"
+                )
+            if current_state == "cancelling":
+                pass
+            elif current_state in {"queued", "running"}:
+                next_state = "stopped" if current_state == "queued" else "cancelling"
+                metadata = json.loads(row["metadata_json"])
+                metadata["stop_reason"] = normalized_reason
+                version = int(row["version"])
+                next_version = version + 1
+                terminal_reason = (
+                    normalized_reason if next_state in TERMINAL_STATES else None
+                )
+                connection.execute(
+                    "UPDATE durable_runs SET state = ?, version = ?, "
+                    "updated_at = ?, terminal_reason = ?, metadata_json = ? "
+                    "WHERE run_id = ?",
+                    (
+                        next_state,
+                        next_version,
+                        now,
+                        terminal_reason,
+                        json.dumps(
+                            metadata,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=False,
+                        ),
+                        run_id,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO durable_run_transitions (
+                        run_id, from_state, to_state, version, reason, actor,
+                        timestamp, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, '{}')
+                    """,
+                    (
+                        run_id,
+                        current_state,
+                        next_state,
+                        next_version,
+                        normalized_reason,
+                        normalized_actor,
+                        now,
+                    ),
+                )
+
+                event_specs = [
+                    (
+                        "service.run.cancel_requested",
+                        {"reason": normalized_reason},
+                        False,
+                    )
+                ]
+                if next_state == "stopped":
+                    event_specs.append(
+                        (
+                            "service.run.stopped",
+                            {"reason": normalized_reason, "phase": "queued"},
+                            True,
+                        )
+                    )
+                sequence_row = connection.execute(
+                    "SELECT COALESCE(MAX(sequence), 0) AS sequence "
+                    "FROM durable_run_events WHERE run_id = ?",
+                    (run_id,),
+                ).fetchone()
+                sequence = int(sequence_row["sequence"])
+                for event_type, event_payload, terminal in event_specs:
+                    sequence += 1
+                    encoded = json.dumps(
+                        _sanitize(event_payload),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO durable_run_events (
+                            run_id, sequence, event_type, payload_json, terminal,
+                            timestamp
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            run_id,
+                            sequence,
+                            event_type,
+                            encoded,
+                            1 if terminal else 0,
+                            now,
+                        ),
+                    )
+                    stored_events.append(
+                        DurableRunEvent(
+                            run_id=run_id,
+                            sequence=sequence,
+                            event_type=event_type,
+                            payload=json.loads(encoded),
+                            terminal=terminal,
+                            timestamp=now,
+                        )
+                    )
+                if next_state == "stopped":
+                    connection.execute(
+                        "DELETE FROM durable_worker_leases WHERE run_id = ?",
+                        (run_id,),
+                    )
+            else:
+                raise InvalidTransitionError(
+                    f"run cannot be cancelled from state={current_state}"
+                )
+
+        return self.get_run(run_id), tuple(stored_events)
+
     def finalize_run(
         self,
         run_id: str,
@@ -441,15 +586,19 @@ def _sanitize(value: Any, *, depth: int = 0) -> Any:
         for raw_key, raw_value in list(value.items())[:200]:
             key = str(raw_key)[:120]
             normalized = key.casefold().replace("-", "_")
-            if any(
-                marker in normalized
-                for marker in (
-                    "api_key",
-                    "authorization",
-                    "password",
-                    "secret",
-                    "credential",
+            if (
+                any(
+                    marker in normalized
+                    for marker in (
+                        "api_key",
+                        "authorization",
+                        "password",
+                        "secret",
+                        "credential",
+                    )
                 )
+                or normalized.endswith("_token")
+                or normalized.startswith("token_")
             ):
                 continue
             output[key] = _sanitize(raw_value, depth=depth + 1)

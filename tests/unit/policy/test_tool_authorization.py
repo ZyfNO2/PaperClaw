@@ -116,3 +116,17 @@ def test_authorized_tool_executes_only_after_policy_allows(tmp_path):
     )
     assert result.ok is True
     assert tool.executed is True
+
+
+def test_url_credentials_and_ambiguous_loopback_hosts_are_denied(tmp_path):
+    policy = DefaultToolAuthorizationPolicy()
+    cases = {
+        "http://user:pass@example.com/data": "url_credentials_not_allowed",
+        "http://api.localhost/data": "private_network_url",
+        "http://2130706433/data": "private_network_url",
+        "http://0x7f.0.0.1/data": "private_network_url",
+    }
+    for url, reason in cases.items():
+        decision = policy.authorize("http_fetch", {"url": url}, tmp_path)
+        assert decision.allowed is False
+        assert decision.reason == reason

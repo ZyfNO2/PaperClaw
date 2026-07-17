@@ -237,70 +237,32 @@ class DurableRunApplicationService:
         normalized_reason = reason.strip()
         if not normalized_reason:
             raise ValueError("cancel reason must not be empty")
-        while True:
-            run = self._require(service_run_id)
-            if run.state in TERMINAL_SERVICE_STATUSES:
-                raise RunNotCancellableError("run is already terminal")
-            try:
-                if run.state == "queued":
-                    self._store.transition(
-                        run.run_id,
-                        expected_state="queued",
-                        expected_version=run.version,
-                        next_state="stopped",
-                        reason=normalized_reason,
-                        actor="service:cancel",
-                    )
-                    self._store.merge_metadata(
-                        run.run_id,
-                        {"stop_reason": normalized_reason},
-                    )
-                    self._append_event(
-                        run.run_id,
-                        "service.run.cancel_requested",
-                        {"reason": normalized_reason},
-                        terminal=False,
-                    )
-                    terminal_event = self._append_event(
-                        run.run_id,
-                        "service.run.stopped",
-                        {"reason": normalized_reason, "phase": "queued"},
-                        terminal=True,
-                    )
-                    self._plugins.event(terminal_event)
-                    view = self.get_run(run.run_id)
-                    self._plugins.run_terminal(view)
-                    return view
-                if run.state == "running":
-                    self._store.transition(
-                        run.run_id,
-                        expected_state="running",
-                        expected_version=run.version,
-                        next_state="cancelling",
-                        reason=normalized_reason,
-                        actor="service:cancel",
-                    )
-                    self._store.merge_metadata(
-                        run.run_id,
-                        {"stop_reason": normalized_reason},
-                    )
-                    self._append_event(
-                        run.run_id,
-                        "service.run.cancel_requested",
-                        {"reason": normalized_reason},
-                        terminal=False,
-                    )
-                    break
-                if run.state == "cancelling":
-                    persisted_reason = run.metadata.get("stop_reason")
-                    if isinstance(persisted_reason, str) and persisted_reason.strip():
-                        normalized_reason = persisted_reason.strip()
-                    break
-                raise RunNotCancellableError(
-                    f"run cannot be cancelled from state={run.state}"
-                )
-            except CompareAndSwapError:
-                continue
+        try:
+            run, durable_events = self._store.request_cancellation(
+                service_run_id,
+                reason=normalized_reason,
+            )
+        except DurableRunNotFoundError as exc:
+            raise RunNotFoundError(
+                f"unknown service run: {service_run_id}"
+            ) from exc
+        except InvalidTransitionError as exc:
+            raise RunNotCancellableError(str(exc)) from exc
+
+        for durable_event in durable_events:
+            public_event = self._public_event(durable_event)
+            with self._event_condition:
+                self._event_condition.notify_all()
+            self._plugins.event(public_event)
+
+        persisted_reason = run.metadata.get("stop_reason")
+        if isinstance(persisted_reason, str) and persisted_reason.strip():
+            normalized_reason = persisted_reason.strip()
+        view = self._view(run)
+        if view.terminal:
+            self._plugins.run_terminal(view)
+            return view
+
         with self._lock:
             active = self._active.get(service_run_id)
             if active is not None:

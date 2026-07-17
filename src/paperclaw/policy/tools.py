@@ -215,11 +215,31 @@ def _validate_urls(arguments: Mapping[str, Any]) -> str | None:
         host = (parsed.hostname or "").casefold()
         if not host:
             return "missing_url_host"
-        if host in {"localhost", "localhost.localdomain", "metadata.google.internal"}:
+        if parsed.username or parsed.password:
+            return "url_credentials_not_allowed"
+        if (
+            host in {
+                "localhost",
+                "localhost.localdomain",
+                "metadata.google.internal",
+                "metadata.azure.internal",
+                "instance-data",
+            }
+            or host.endswith(".localhost")
+        ):
             return "private_network_url"
         try:
             address = ipaddress.ip_address(host)
         except ValueError:
+            labels = host.split(".")
+            if host.isdigit() or (
+                labels
+                and all(
+                    label.isdigit() or label.startswith("0x")
+                    for label in labels
+                )
+            ):
+                return "private_network_url"
             continue
         if (
             address.is_private

@@ -235,9 +235,19 @@ def sanitize_public(value: Any, *, depth: int = 0) -> Any:
         for raw_key, raw_value in list(value.items())[:100]:
             key = str(raw_key)
             normalized = key.lower().replace("-", "_")
-            if normalized in _SECRET_KEYS or any(
-                marker in normalized
-                for marker in ("password", "secret", "api_key", "authorization")
+            if (
+                normalized in _SECRET_KEYS
+                or any(
+                    marker in normalized
+                    for marker in (
+                        "password",
+                        "secret",
+                        "api_key",
+                        "authorization",
+                    )
+                )
+                or normalized.endswith("_token")
+                or normalized.startswith("token_")
             ):
                 continue
             sanitized[key[:100]] = sanitize_public(raw_value, depth=depth + 1)
