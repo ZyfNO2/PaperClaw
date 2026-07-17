@@ -21,6 +21,7 @@ from urllib.parse import urlsplit
 from .contracts import DesktopPublicError
 
 _CONNECT_TIMEOUT_SECONDS = 15.0
+_MAX_DISCOVERED_MODELS = 1_000
 _PROVIDER_STATE_ATTRIBUTE = "_paperclaw_manual_provider_state"
 _INSTALLED_ATTRIBUTE = "_paperclaw_provider_extension_installed"
 _PROVIDER_FIELDS = frozenset({"base_url", "api_key", "model", "provider"})
@@ -408,4 +409,6 @@ def _extract_models(payload: Any) -> tuple[str, ...]:
             continue
         seen.add(normalized)
         result.append(normalized)
+        if len(result) >= _MAX_DISCOVERED_MODELS:
+            break
     return tuple(result)

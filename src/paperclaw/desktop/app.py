@@ -158,15 +158,17 @@ class DesktopAPI:
         """Return non-secret desktop defaults for the initial UI projection."""
 
         workspace = Path.cwd().expanduser().resolve()
-        _load_dotenv(workspace / ".env")
-        missing = [name for name in _REQUIRED_ENV if not os.getenv(name)]
+        values = _resolve_provider_environment(workspace)
+        missing = [name for name in _REQUIRED_ENV if not values.get(name)]
         return {
             "ok": True,
             "workspace": str(workspace),
             "provider_source": "env",
-            "provider": os.getenv("PAPERCLAW_PROVIDER", "openai-compatible"),
-            "base_url": os.getenv("PAPERCLAW_BASE_URL") or None,
-            "model": os.getenv("PAPERCLAW_MODEL") or None,
+            "provider": values.get(
+                "PAPERCLAW_PROVIDER", "openai-compatible"
+            ),
+            "base_url": values.get("PAPERCLAW_BASE_URL") or None,
+            "model": values.get("PAPERCLAW_MODEL") or None,
             "configured": not missing,
             "missing": missing,
             "theme": _load_theme_preference(),
@@ -497,13 +499,13 @@ def _hydrate_environment_provider(request: Mapping[str, Any]) -> dict[str, Any]:
         return hydrated
 
     workspace_value = hydrated.get("workspace")
-    if isinstance(workspace_value, str) and workspace_value.strip():
-        workspace = Path(workspace_value).expanduser()
-        _load_dotenv(workspace / ".env")
-    _load_dotenv(Path.cwd() / ".env")
-
-    values = {name: os.getenv(name) for name in _REQUIRED_ENV}
-    missing = [name for name, value in values.items() if not value]
+    workspace = (
+        Path(workspace_value).expanduser()
+        if isinstance(workspace_value, str) and workspace_value.strip()
+        else None
+    )
+    values = _resolve_provider_environment(workspace)
+    missing = [name for name in _REQUIRED_ENV if not values.get(name)]
     if missing:
         raise DesktopPublicError(
             "provider_configuration_error",
@@ -514,21 +516,52 @@ def _hydrate_environment_provider(request: Mapping[str, Any]) -> dict[str, Any]:
             "api_key": values["PAPERCLAW_API_KEY"],
             "base_url": values["PAPERCLAW_BASE_URL"],
             "model": values["PAPERCLAW_MODEL"],
-            "provider": os.getenv("PAPERCLAW_PROVIDER", "openai-compatible"),
+            "provider": values.get(
+                "PAPERCLAW_PROVIDER", "openai-compatible"
+            ),
         }
     )
     return hydrated
 
 
-def _load_dotenv(dotenv_path: Path) -> None:
-    """Load a local .env without replacing explicit process environment values."""
+def _resolve_provider_environment(
+    workspace: Path | None,
+) -> dict[str, str]:
+    """Resolve provider settings without mutating process environment state.
 
+    Explicit process environment values have highest priority. A selected
+    workspace ``.env`` is next, followed by the current-directory ``.env``.
+    Reading one workspace can therefore never leak its credentials into a later
+    run for another workspace.
+    """
+
+    names = (*_REQUIRED_ENV, "PAPERCLAW_PROVIDER")
+    values = {
+        name: value
+        for name in names
+        if (value := os.getenv(name)) not in (None, "")
+    }
+    paths: list[Path] = []
+    if workspace is not None:
+        paths.append(workspace / ".env")
+    cwd_path = Path.cwd() / ".env"
+    if not paths or cwd_path != paths[0]:
+        paths.append(cwd_path)
+    for dotenv_path in paths:
+        for name, value in _read_dotenv(dotenv_path).items():
+            if name in names and name not in values and value:
+                values[name] = value
+    return values
+
+
+def _read_dotenv(dotenv_path: Path) -> dict[str, str]:
     try:
         if not dotenv_path.is_file():
-            return
+            return {}
         lines = dotenv_path.read_text(encoding="utf-8").splitlines()
     except OSError:
-        return
+        return {}
+    values: dict[str, str] = {}
     for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -536,7 +569,8 @@ def _load_dotenv(dotenv_path: Path) -> None:
         key, value = line.split("=", 1)
         normalized_key = key.strip()
         if normalized_key:
-            os.environ.setdefault(normalized_key, value.strip())
+            values[normalized_key] = value.strip()
+    return values
 
 
 def _preference_path() -> Path:
