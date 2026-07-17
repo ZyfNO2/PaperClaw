@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="neo-brutalist">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>PaperClaw Console</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -60,6 +60,17 @@
           <button class="btn destructive" id="cancel-button" type="button" disabled>■ STOP</button>
           <button class="btn" id="export-button" type="button">⇩ EXPORT TRACE</button>
           <button class="btn" id="select-workspace" type="button">▣ WORKSPACE</button>
+          <label class="theme-picker" for="theme-select">
+            <span>THEME</span>
+            <select id="theme-select" aria-label="选择界面主题">
+              <option value="neo-brutalist">Neo Brutalist</option>
+              <option value="soft-minimal">Soft Minimal</option>
+              <option value="terminal-dark">Terminal Dark</option>
+              <option value="clean-mono">Clean Mono</option>
+              <option value="paper-light">Paper Light</option>
+            </select>
+          </label>
+          <button class="btn" id="open-browser" type="button">◎ OPEN IN BROWSER</button>
         </div>
         <span class="tiny" id="provider-summary">LLM · ENV NOT CHECKED</span>
       </div>

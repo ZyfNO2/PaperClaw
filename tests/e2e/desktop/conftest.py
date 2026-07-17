@@ -8,7 +8,9 @@ import pytest
 from playwright.sync_api import Browser, Page, sync_playwright
 
 
-ASSET_DIR = Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
+ASSET_DIR = (
+    Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
+)
 
 
 def load_app(page: Page) -> None:
@@ -21,8 +23,12 @@ def load_app(page: Page) -> None:
         html,
         flags=re.IGNORECASE,
     )
-    html = html.replace('<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>")
-    html = html.replace('<script src="app.js"></script>', f"<script>{javascript}</script>")
+    html = html.replace(
+        '<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>"
+    )
+    html = html.replace(
+        '<script src="app.js"></script>', f"<script>{javascript}</script>"
+    )
     page.set_content(html, wait_until="load")
     page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
 
@@ -44,7 +50,9 @@ def browser() -> Browser:
 
 @pytest.fixture
 def page(browser: Browser) -> Page:
-    page = browser.new_page(viewport={"width": 1440, "height": 900}, accept_downloads=True)
+    page = browser.new_page(
+        viewport={"width": 1440, "height": 900}, accept_downloads=True
+    )
     yield page
     page.close()
 
@@ -53,7 +61,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
     page.evaluate(
         f"""
         (() => {{
-          const calls = {{ start: [], cancel: 0, select: 0, polls: 0 }};
+          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
           let state = {{
             run_id: null, status: 'idle', model_calls: 0, tool_calls: 0,
             last_sequence: 0, terminal: false, verification_status: null,
@@ -61,6 +69,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             error_code: null, error_message: null
           }};
           let queue = [];
+          let theme = 'neo-brutalist';
           const autoComplete = {str(auto_complete).lower()};
           window.__bridgeCalls = calls;
           window.__mockState = () => state;
@@ -74,7 +83,8 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
                 base_url: 'https://provider.example/v1',
                 model: 'env-model',
                 configured: true,
-                missing: []
+                missing: [],
+                theme
               }};
             }},
             async get_state() {{ return {{ ok: true, state }}; }},
@@ -116,6 +126,14 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             async select_workspace() {{
               calls.select += 1;
               return {{ ok: true, workspace: '/tmp/selected-workspace' }};
+            }},
+            async set_theme(theme) {{
+              calls.themes.push(theme);
+              return {{ ok: true, theme }};
+            }},
+            async open_in_browser(theme) {{
+              calls.browser.push(theme);
+              return {{ ok: true, opened: true, mode: 'browser', origin: 'http://127.0.0.1:4455' }};
             }}
           }} }};
         }})();
