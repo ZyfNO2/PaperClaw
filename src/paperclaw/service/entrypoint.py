@@ -8,8 +8,8 @@ from typing import Sequence
 
 from paperclaw.durability import SQLiteDurableServiceStore
 
-from .durable_application import DurableRunApplicationService
 from .fastapi_app import create_app
+from .production_application import DurableRunApplicationService
 from .runtime_factory import ServiceRuntimeFactory
 
 
