@@ -11,7 +11,7 @@
     {
       "server_id": "fixture",
       "name": "add",
-      "description": "Add two integers and return the numeric total",
+      "description": "Add two integer values and return the numeric total",
       "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
       "required": ["a", "b"],
       "scopes": ["shared"]
