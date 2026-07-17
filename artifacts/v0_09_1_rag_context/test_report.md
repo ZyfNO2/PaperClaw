@@ -2,7 +2,14 @@
 
 ## Status
 
-`IMPLEMENTATION_COMPLETE / REPOSITORY_CI_PENDING`
+`IMPLEMENTATION_COMPLETE / MAIN_TARGET_CI_PENDING`
+
+## Dependency state
+
+- PR #24 BM25 / Incremental Retrieval: merged;
+- PR #25 ContextSource Registration Contract: merged;
+- PR #30 RAG Storage Hardening: merged;
+- shared ContextSource files synchronized to current `main`.
 
 ## Added coverage
 
@@ -32,4 +39,4 @@ injection_contained_in_untrusted_data = true
 
 ## Repository CI
 
-Exact run ID, pytest test-case count, failures/skips, Ruff result and artifact digest remain pending while the GitHub Actions connector returns upstream 502. No Repository GO claim is made from static review alone.
+This commit triggers final GitHub Actions verification against current `main`. Exact pytest call-phase count, Ruff result and artifact digest will be recorded in the PR before merge.
