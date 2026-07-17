@@ -6,8 +6,14 @@ from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
+from paperclaw.agent.flow import default_registry
 from paperclaw.harness import AgentRuntimeExecutor, QueryEngine
 from paperclaw.models.adapters import OpenAICompatibleModel
+from paperclaw.policy import (
+    DefaultToolAuthorizationPolicy,
+    ToolAuthorizationPolicy,
+    authorize_registry,
+)
 from paperclaw.tui.bridge import TUIEventBridge
 
 from .contracts import ServiceRunRequest
@@ -22,10 +28,12 @@ class ServiceRuntimeFactory:
         model_factory: Callable[[], Any] = OpenAICompatibleModel.from_env,
         executor_factory: Callable[..., Any] = AgentRuntimeExecutor,
         engine_factory: Callable[..., Any] = QueryEngine,
+        tool_policy: ToolAuthorizationPolicy | None = None,
     ) -> None:
         self._model_factory = model_factory
         self._executor_factory = executor_factory
         self._engine_factory = engine_factory
+        self._tool_policy = tool_policy or DefaultToolAuthorizationPolicy()
 
     def create(
         self,
@@ -34,9 +42,15 @@ class ServiceRuntimeFactory:
     ) -> QueryEngine:
         bridge = TUIEventBridge(event_handler)
         model = self._model_factory()
+        registry = authorize_registry(
+            default_registry(),
+            workspace=request.workspace,
+            policy=self._tool_policy,
+        )
         executor = self._executor_factory(
             model,
             request.workspace,
+            registry=registry,
             enable_verification_gate=request.enable_verification_gate,
             legacy_event_handler=bridge.handle_legacy_event,
         )
