@@ -1,136 +1,81 @@
 (() => {
   "use strict";
 
-  const MAX_TIMELINE_ROWS = 300;
-  const POLL_INTERVAL_MS = 300;
-  const TOAST_DURATION_MS = 3200;
   const ACTIVE_STATUSES = new Set(["starting", "running", "stopping"]);
-
+  const MAX_TIMELINE_ROWS = 300;
+  const POLL_INTERVAL_MS = 250;
   const ui = {};
+  const trace = [];
   let domReady = false;
   let bridgeReady = false;
-  let pollInFlight = false;
   let pollTimer = null;
-  let toastTimer = null;
+  let pollInFlight = false;
   let frontendSubmitting = false;
+  let workspace = "";
+  let currentStatus = "idle";
+  let currentRunId = null;
+  let lastFinalResult = "";
+  let toastTimer = null;
 
   function byId(id) {
     return document.getElementById(id);
   }
 
   function bindDom() {
-    if (domReady) {
-      return;
-    }
+    if (domReady) return;
     domReady = true;
-    ui.provider = byId("provider");
-    ui.baseUrl = byId("base-url");
-    ui.apiKey = byId("api-key");
-    ui.toggleKey = byId("toggle-key");
-    ui.model = byId("model");
-    ui.workspace = byId("workspace");
-    ui.selectWorkspace = byId("select-workspace");
-    ui.verificationEnabled = byId("verification-enabled");
-    ui.maxSteps = byId("max-steps");
-    ui.maxModelCalls = byId("max-model-calls");
-    ui.maxToolCalls = byId("max-tool-calls");
-    ui.task = byId("task");
-    ui.taskCount = byId("task-count");
-    ui.clearTask = byId("clear-task");
-    ui.runButton = byId("run-button");
-    ui.cancelButton = byId("cancel-button");
-    ui.runStatus = byId("run-status");
-    ui.summaryStatus = byId("summary-status");
-    ui.modelCalls = byId("model-calls");
-    ui.toolCalls = byId("tool-calls");
-    ui.lastSequence = byId("last-sequence");
-    ui.verificationStatus = byId("verification-status");
-    ui.verificationSummary = byId("verification-summary");
-    ui.timeline = byId("timeline");
-    ui.clearTimeline = byId("clear-timeline");
-    ui.finalResult = byId("final-result");
-    ui.publicError = byId("public-error");
-    ui.runIdLabel = byId("run-id-label");
-    ui.workspaceLabel = byId("workspace-label");
-    ui.providerLabel = byId("provider-label");
-    ui.modelLabel = byId("model-label");
-    ui.underDevelopToast = byId("under-develop-toast");
-    ui.underDevelopMessage = byId("under-develop-message");
-    ui.closeToast = byId("close-toast");
-    ui.statusDot = document.querySelector(".run-control-panel .status-dot");
+    for (const id of [
+      "app", "sidebar-toggle", "workspace-card", "workspace-name", "workspace-path",
+      "sidebar-nav", "trace-count", "env-badge", "new-run-button", "run-subtitle",
+      "global-search", "run-status", "run-button", "cancel-button", "export-button",
+      "select-workspace", "provider-summary", "mission-filters", "mission-log", "public-error",
+      "task", "send-button", "clear-task", "task-count", "summary-status", "model-calls",
+      "tool-calls", "last-sequence", "event-meta", "model-label", "verification-status",
+      "verification-summary", "progress-label", "progress-bar", "timeline-filters", "timeline",
+      "settings-panel", "close-settings", "config-provider", "config-base-url", "config-model",
+      "config-credential", "max-steps", "max-model-calls", "max-tool-calls",
+      "verification-enabled", "toast", "toast-message", "close-toast"
+    ]) ui[toCamel(id)] = byId(id);
 
-    ui.toggleKey.addEventListener("click", toggleKeyVisibility);
-    ui.runButton.addEventListener("click", startRun);
-    ui.cancelButton.addEventListener("click", cancelRun);
+    ui.sidebarToggle.addEventListener("click", toggleSidebar);
+    ui.workspaceCard.addEventListener("click", selectWorkspace);
     ui.selectWorkspace.addEventListener("click", selectWorkspace);
-    ui.clearTimeline.addEventListener("click", () => ui.timeline.replaceChildren());
+    ui.runButton.addEventListener("click", startRun);
+    ui.sendButton.addEventListener("click", startRun);
+    ui.cancelButton.addEventListener("click", cancelRun);
+    ui.exportButton.addEventListener("click", exportTrace);
+    ui.newRunButton.addEventListener("click", resetForNewRun);
     ui.clearTask.addEventListener("click", clearTask);
-    ui.closeToast.addEventListener("click", hideUnderDevelop);
-    ui.task.addEventListener("input", updateTaskCount);
-    ui.provider.addEventListener("input", updateFooterLabels);
-    ui.model.addEventListener("input", updateFooterLabels);
-    ui.workspace.addEventListener("input", updateFooterLabels);
-
-    bindPlannedControls();
-    updateTaskCount();
-    updateFooterLabels();
+    ui.task.addEventListener("input", updateTaskInput);
+    ui.task.addEventListener("keydown", onTaskKeydown);
+    ui.globalSearch.addEventListener("input", applyMissionSearch);
+    ui.globalSearch.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        ui.globalSearch.value = "";
+        applyMissionSearch();
+        ui.globalSearch.blur();
+      }
+    });
+    document.addEventListener("keydown", onGlobalKeydown);
+    ui.closeSettings.addEventListener("click", closeSettings);
+    ui.settingsPanel.addEventListener("click", (event) => {
+      if (event.target === ui.settingsPanel) closeSettings();
+    });
+    ui.closeToast.addEventListener("click", hideToast);
+    bindFilterGroup(ui.missionFilters, "data-log-filter", applyMissionFilter);
+    bindFilterGroup(ui.timelineFilters, "data-tl-filter", applyTimelineFilter);
+    bindNavigation();
+    bindToolChips();
+    updateTaskInput();
     maybeInitialize();
   }
 
-  function bindPlannedControls() {
-    for (const element of document.querySelectorAll("[data-under-develop]")) {
-      const featureName = element.getAttribute("data-under-develop") || "This feature";
-      element.addEventListener("click", (event) => {
-        event.preventDefault();
-        showUnderDevelop(featureName);
-      });
-      if (element.getAttribute("role") === "button" && element.tagName !== "BUTTON") {
-        element.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            showUnderDevelop(featureName);
-          }
-        });
-      }
-    }
+  function toCamel(value) {
+    return value.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
   }
 
-  function showUnderDevelop(featureName) {
-    if (!ui.underDevelopToast || !ui.underDevelopMessage) {
-      return;
-    }
-    setText(ui.underDevelopMessage, `${featureName} is Under Develop and will be enabled in a later release.`);
-    ui.underDevelopToast.hidden = false;
-    if (toastTimer !== null) {
-      window.clearTimeout(toastTimer);
-    }
-    toastTimer = window.setTimeout(hideUnderDevelop, TOAST_DURATION_MS);
-  }
-
-  function hideUnderDevelop() {
-    if (toastTimer !== null) {
-      window.clearTimeout(toastTimer);
-      toastTimer = null;
-    }
-    if (ui.underDevelopToast) {
-      ui.underDevelopToast.hidden = true;
-    }
-  }
-
-  function clearTask() {
-    ui.task.value = "";
-    updateTaskCount();
-    ui.task.focus();
-  }
-
-  function updateTaskCount() {
-    setText(ui.taskCount, `${ui.task.value.length} / 100000`);
-  }
-
-  function updateFooterLabels() {
-    setText(ui.workspaceLabel, stringValue(ui.workspace.value, "not selected"));
-    setText(ui.providerLabel, stringValue(ui.provider.value, "not selected"));
-    setText(ui.modelLabel, stringValue(ui.model.value, "not selected"));
+  function backendApi() {
+    return window.pywebview && window.pywebview.api ? window.pywebview.api : null;
   }
 
   function markBridgeReady() {
@@ -138,49 +83,60 @@
     maybeInitialize();
   }
 
-  function maybeInitialize() {
-    if (!domReady || !bridgeReady) {
-      return;
-    }
-    refreshState();
-    if (pollTimer === null) {
-      pollTimer = window.setInterval(pollBackend, POLL_INTERVAL_MS);
-    }
+  async function maybeInitialize() {
+    if (!domReady) return;
+    if (!bridgeReady && backendApi()) bridgeReady = true;
+    if (!bridgeReady) return;
+    await loadDefaults();
+    await refreshState();
+    if (pollTimer === null) pollTimer = window.setInterval(pollBackend, POLL_INTERVAL_MS);
   }
 
-  function backendApi() {
-    if (!window.pywebview || !window.pywebview.api) {
-      return null;
+  async function loadDefaults() {
+    const api = backendApi();
+    if (!api || typeof api.get_defaults !== "function") {
+      showError("gui_dependency_missing", "Desktop bridge does not expose environment defaults.");
+      return;
     }
-    return window.pywebview.api;
+    try {
+      const response = await api.get_defaults();
+      if (!response || !response.ok) {
+        renderBackendError(response);
+        return;
+      }
+      workspace = stringValue(response.workspace, "");
+      renderWorkspace(workspace);
+      setText(ui.configProvider, stringValue(response.provider, "openai-compatible"));
+      setText(ui.configBaseUrl, stringValue(response.base_url, "not configured"));
+      setText(ui.configModel, stringValue(response.model, "not configured"));
+      setText(ui.configCredential, response.configured ? "Configured (hidden)" : `Missing: ${(response.missing || []).join(", ")}`);
+      setText(ui.modelLabel, stringValue(response.model, "ENV"));
+      setText(ui.providerSummary, response.configured
+        ? `LLM · ENV · ${stringValue(response.provider, "openai-compatible")} / ${stringValue(response.model, "model")}`
+        : `LLM · ENV INCOMPLETE · ${(response.missing || []).join(", ")}`);
+      ui.envBadge.textContent = response.configured ? "ENV✓" : "ENV!";
+      ui.envBadge.dataset.configured = response.configured ? "true" : "false";
+    } catch (_error) {
+      showError("runtime_error", "Environment defaults could not be loaded.");
+    }
   }
 
   async function refreshState() {
     const api = backendApi();
-    if (!api) {
-      showError("gui_dependency_missing", "Desktop bridge is not available.");
-      return;
-    }
+    if (!api) return;
     try {
       const response = await api.get_state();
-      if (response && response.ok && response.state) {
-        renderSnapshot(response.state);
-      } else {
-        renderBackendError(response);
-      }
-    } catch (error) {
+      if (response && response.ok && response.state) renderSnapshot(response.state);
+      else renderBackendError(response);
+    } catch (_error) {
       showError("runtime_error", "Desktop state could not be loaded.");
     }
   }
 
   async function pollBackend() {
-    if (pollInFlight) {
-      return;
-    }
+    if (pollInFlight) return;
     const api = backendApi();
-    if (!api) {
-      return;
-    }
+    if (!api) return;
     pollInFlight = true;
     try {
       const response = await api.poll_events(200);
@@ -189,13 +145,11 @@
         return;
       }
       for (const item of response.items || []) {
-        if (item.kind === "event" && item.event) {
-          appendTimelineRow(item.event);
-        } else if (item.kind === "snapshot" && item.snapshot) {
-          renderSnapshot(item.snapshot);
-        }
+        if (item.kind === "event" && item.event) appendTimelineRow(item.event);
+        else if (item.kind === "snapshot" && item.snapshot) renderSnapshot(item.snapshot);
       }
-    } catch (error) {
+      setText(ui.eventMeta, `${numberValue(response.dropped_count)} dropped`);
+    } catch (_error) {
       showError("runtime_error", "Desktop event polling failed.");
     } finally {
       pollInFlight = false;
@@ -203,26 +157,32 @@
   }
 
   async function startRun() {
-    if (frontendSubmitting || ACTIVE_STATUSES.has(ui.runStatus.textContent)) {
+    if (frontendSubmitting || ACTIVE_STATUSES.has(currentStatus)) {
       showError("run_already_active", "A run is already active in this window.");
+      return;
+    }
+    const task = ui.task.value.trim();
+    if (!task) {
+      showError("validation_error", "请输入任务后再执行。");
+      ui.task.focus();
+      return;
+    }
+    if (!workspace) {
+      showError("workspace_not_found", "请先选择工作区。");
       return;
     }
     clearError();
     frontendSubmitting = true;
     updateControls("starting");
+    appendMissionMessage("user", "YOU", task);
     const payload = {
-      provider: ui.provider.value,
-      base_url: ui.baseUrl.value,
-      api_key: ui.apiKey.value,
-      model: ui.model.value,
-      workspace: ui.workspace.value,
-      task: ui.task.value,
+      task,
+      workspace,
       enable_verification_gate: ui.verificationEnabled.checked,
-      max_steps: boundedInteger(ui.maxSteps.value, 12),
-      max_model_calls: boundedInteger(ui.maxModelCalls.value, 10),
-      max_tool_calls: boundedInteger(ui.maxToolCalls.value, 20)
+      max_steps: boundedInteger(ui.maxSteps.value, 12, 200),
+      max_model_calls: boundedInteger(ui.maxModelCalls.value, 10, 100),
+      max_tool_calls: boundedInteger(ui.maxToolCalls.value, 20, 1000)
     };
-
     try {
       const api = backendApi();
       if (!api) {
@@ -231,29 +191,25 @@
         return;
       }
       const response = await api.start_run(payload);
-      payload.api_key = "";
       if (!response || !response.ok) {
         renderBackendError(response);
         updateControls("idle");
         return;
       }
-      ui.apiKey.value = "";
-      ui.apiKey.type = "password";
-      ui.toggleKey.textContent = "Show";
-      ui.toggleKey.setAttribute("aria-pressed", "false");
-      setText(ui.finalResult, "Run in progress...");
+      ui.task.value = "";
+      updateTaskInput();
+      appendMissionMessage("system", "SYSTEM", "Run accepted. Model configuration will be resolved from environment variables in Python.");
       updateControls(response.status || "starting");
-    } catch (error) {
+    } catch (_error) {
       showError("runtime_error", "Run could not be started.");
       updateControls("idle");
     } finally {
-      payload.api_key = "";
       frontendSubmitting = false;
+      updateControls(currentStatus);
     }
   }
 
   async function cancelRun() {
-    clearError();
     const api = backendApi();
     if (!api) {
       showError("gui_dependency_missing", "Desktop bridge is not available.");
@@ -266,14 +222,14 @@
         renderBackendError(response);
         return;
       }
+      appendMissionMessage("system", "SYSTEM", "Cancellation requested.");
       updateControls(response.status || "stopping");
-    } catch (error) {
+    } catch (_error) {
       showError("runtime_error", "Cancel request could not be sent.");
     }
   }
 
   async function selectWorkspace() {
-    clearError();
     const api = backendApi();
     if (!api) {
       showError("gui_dependency_missing", "Desktop bridge is not available.");
@@ -286,111 +242,287 @@
         return;
       }
       if (response.workspace) {
-        ui.workspace.value = response.workspace;
-        updateFooterLabels();
+        workspace = response.workspace;
+        renderWorkspace(workspace);
+        showToast("Workspace updated.");
       }
-    } catch (error) {
+    } catch (_error) {
       showError("runtime_error", "Workspace picker could not be opened.");
     }
   }
 
-  function toggleKeyVisibility() {
-    const visible = ui.apiKey.type === "text";
-    ui.apiKey.type = visible ? "password" : "text";
-    ui.toggleKey.textContent = visible ? "Show" : "Hide";
-    ui.toggleKey.setAttribute("aria-pressed", visible ? "false" : "true");
+  function renderWorkspace(value) {
+    const normalized = stringValue(value, "not selected");
+    const segments = normalized.split(/[\\/]/).filter(Boolean);
+    setText(ui.workspaceName, segments.length ? segments[segments.length - 1] : normalized);
+    setText(ui.workspacePath, normalized);
   }
 
   function renderSnapshot(snapshot) {
-    const status = stringValue(snapshot.status, "unknown");
-    setText(ui.runStatus, status);
-    setText(ui.summaryStatus, titleCase(status));
+    const previousStatus = currentStatus;
+    currentStatus = stringValue(snapshot.status, "idle").toLowerCase();
+    currentRunId = snapshot.run_id || currentRunId;
+    setStatus(ui.runStatus, currentStatus);
+    setStatus(ui.summaryStatus, currentStatus);
+    setText(ui.runSubtitle, `Agent runtime monitor · run=${stringValue(currentRunId, "not-started")}`);
     setText(ui.modelCalls, numberValue(snapshot.model_calls));
     setText(ui.toolCalls, numberValue(snapshot.tool_calls));
     setText(ui.lastSequence, numberValue(snapshot.last_sequence));
-    setText(ui.verificationStatus, stringValue(snapshot.verification_status, "not run"));
-    setText(
-      ui.verificationSummary,
-      stringValue(snapshot.verification_summary, "No verification summary yet.")
-    );
-    setText(ui.runIdLabel, stringValue(snapshot.run_id, "not started"));
-    updateStatusDot(status);
-    if (snapshot.final_result) {
-      setText(ui.finalResult, snapshot.final_result);
-    } else if (snapshot.terminal && status !== "completed") {
-      setText(ui.finalResult, "No final result was produced.");
+    setText(ui.traceCount, numberValue(snapshot.last_sequence));
+    setText(ui.verificationStatus, stringValue(snapshot.verification_status, "—").toUpperCase());
+    setText(ui.verificationSummary, stringValue(snapshot.verification_summary, "not run"));
+    updateProgress(currentStatus, snapshot.terminal);
+    if (snapshot.final_result && snapshot.final_result !== lastFinalResult) {
+      lastFinalResult = snapshot.final_result;
+      appendMissionMessage("agent", "PAPERCLAW", snapshot.final_result);
     }
     if (snapshot.error_code || snapshot.error_message) {
-      showError(
-        stringValue(snapshot.error_code, "runtime_error"),
-        stringValue(snapshot.error_message, "PaperClaw runtime failed.")
-      );
-    } else if (!ACTIVE_STATUSES.has(status)) {
+      const code = stringValue(snapshot.error_code, "runtime_error");
+      const message = stringValue(snapshot.error_message, "PaperClaw runtime failed.");
+      showError(code, message);
+      if (previousStatus !== "failed" || currentStatus === "failed") appendMissionMessage("error", "ERROR", `${code}: ${message}`);
+    } else if (!ACTIVE_STATUSES.has(currentStatus)) {
       clearError();
     }
-    updateControls(status);
-  }
-
-  function updateStatusDot(status) {
-    if (!ui.statusDot) {
-      return;
-    }
-    ui.statusDot.classList.remove("connected");
-    if (status === "completed" || status === "running") {
-      ui.statusDot.classList.add("connected");
-    }
+    updateControls(currentStatus);
   }
 
   function appendTimelineRow(row) {
-    const item = document.createElement("li");
+    const eventType = stringValue(row.event_type, "unknown.event");
+    const category = eventCategory(eventType);
+    const item = document.createElement("div");
+    item.className = "event-row";
+    item.dataset.type = category;
+    item.dataset.eventType = eventType;
+
     const sequence = document.createElement("span");
-    const label = document.createElement("span");
-    sequence.className = "timeline-sequence";
-    sequence.textContent = `#${numberValue(row.sequence)}`;
-    label.textContent = stringValue(row.label, stringValue(row.event_type, "event"));
-    item.append(sequence, label);
+    sequence.className = "event-num";
+    sequence.textContent = String(numberValue(row.sequence)).padStart(2, "0");
+
+    const main = document.createElement("div");
+    main.className = "event-main";
+    const title = document.createElement("div");
+    title.className = "event-title";
+    title.textContent = eventType;
+    const meta = document.createElement("div");
+    meta.className = "event-meta";
+    meta.textContent = stringValue(row.label, eventType);
+    main.append(title, meta);
+
+    const right = document.createElement("div");
+    right.className = "event-right";
+    const time = document.createElement("span");
+    time.className = "event-time";
+    time.textContent = new Date().toLocaleTimeString([], {hour12:false});
+    const dot = document.createElement("span");
+    dot.className = `event-dot${eventType.endsWith("failed") ? " failed" : eventType.endsWith("started") ? " running" : ""}`;
+    right.append(time, dot);
+
+    item.append(sequence, main, right);
     ui.timeline.append(item);
-    while (ui.timeline.children.length > MAX_TIMELINE_ROWS) {
-      ui.timeline.firstElementChild.remove();
-    }
+    while (ui.timeline.children.length > MAX_TIMELINE_ROWS) ui.timeline.firstElementChild.remove();
     ui.timeline.scrollTop = ui.timeline.scrollHeight;
+    trace.push({sequence:numberValue(row.sequence), event_type:eventType, label:stringValue(row.label, eventType), category, at:new Date().toISOString()});
+    if (trace.length > MAX_TIMELINE_ROWS) trace.shift();
+    applyTimelineFilter();
+  }
+
+  function appendMissionMessage(type, heading, body) {
+    const article = document.createElement("article");
+    article.className = `msg msg-${type}`;
+    article.dataset.logType = type;
+    const head = document.createElement("div");
+    head.className = "msg-head";
+    const marker = document.createElement("span");
+    marker.className = `msg-marker${type === "user" ? " user" : type === "system" ? " sys" : type === "error" ? " error" : ""}`;
+    const label = document.createElement("span");
+    label.textContent = heading;
+    const meta = document.createElement("span");
+    meta.className = "msg-meta push-right";
+    meta.textContent = new Date().toLocaleTimeString([], {hour12:false});
+    head.append(marker, label, meta);
+    const messageBody = document.createElement("div");
+    messageBody.className = "msg-body";
+    messageBody.textContent = stringValue(body, "");
+    article.append(head, messageBody);
+    ui.missionLog.append(article);
+    ui.missionLog.scrollTop = ui.missionLog.scrollHeight;
+    applyMissionFilter();
+    applyMissionSearch();
   }
 
   function updateControls(status) {
-    const active = ACTIVE_STATUSES.has(status) || frontendSubmitting;
+    currentStatus = stringValue(status, currentStatus).toLowerCase();
+    const active = ACTIVE_STATUSES.has(currentStatus) || frontendSubmitting;
     ui.runButton.disabled = active;
-    ui.cancelButton.disabled = !active || status === "stopping";
-    for (const field of [
-      ui.provider,
-      ui.baseUrl,
-      ui.model,
-      ui.workspace,
-      ui.verificationEnabled,
-      ui.maxSteps,
-      ui.maxModelCalls,
-      ui.maxToolCalls,
-      ui.selectWorkspace
-    ]) {
-      field.disabled = active;
+    ui.sendButton.disabled = active;
+    ui.cancelButton.disabled = !active || currentStatus === "stopping";
+    ui.selectWorkspace.disabled = active;
+    ui.workspaceCard.disabled = active;
+  }
+
+  function updateProgress(status, terminal) {
+    const map = {idle:0, starting:12, running:56, stopping:80, completed:100, failed:100, cancelled:100};
+    const progress = terminal ? 100 : (map[status] || 0);
+    ui.progressBar.style.width = `${progress}%`;
+    setText(ui.progressLabel, `${progress}%`);
+  }
+
+  function setStatus(element, status) {
+    const normalized = stringValue(status, "idle").toLowerCase();
+    element.dataset.status = normalized;
+    element.textContent = normalized.toUpperCase();
+  }
+
+  function bindNavigation() {
+    for (const button of ui.sidebarNav.querySelectorAll("[data-nav]")) {
+      button.addEventListener("click", () => {
+        for (const candidate of ui.sidebarNav.querySelectorAll("[data-nav]")) candidate.classList.remove("active");
+        button.classList.add("active");
+        const target = button.dataset.nav;
+        if (target === "settings") openSettings();
+        else if (target !== "console") showToast(`${button.textContent.trim()} is under development in v0.11.`);
+      });
     }
-    setText(ui.summaryStatus, titleCase(status));
+  }
+
+  function bindToolChips() {
+    for (const button of document.querySelectorAll("[data-insert]")) {
+      button.addEventListener("click", () => {
+        const insert = button.dataset.insert || "";
+        const start = ui.task.selectionStart;
+        const end = ui.task.selectionEnd;
+        ui.task.setRangeText(insert, start, end, "end");
+        updateTaskInput();
+        ui.task.focus();
+      });
+    }
+  }
+
+  function bindFilterGroup(container, attribute, callback) {
+    for (const chip of container.querySelectorAll(`[${attribute}]`)) {
+      chip.addEventListener("click", () => {
+        for (const candidate of container.querySelectorAll(`[${attribute}]`)) candidate.classList.remove("active");
+        chip.classList.add("active");
+        callback();
+      });
+    }
+  }
+
+  function applyMissionFilter() {
+    const active = ui.missionFilters.querySelector(".chip.active");
+    const filter = active ? active.dataset.logFilter : "all";
+    for (const row of ui.missionLog.querySelectorAll("[data-log-type]")) {
+      row.hidden = filter !== "all" && row.dataset.logType !== filter;
+    }
+  }
+
+  function applyTimelineFilter() {
+    const active = ui.timelineFilters.querySelector(".chip.active");
+    const filter = active ? active.dataset.tlFilter : "all";
+    for (const row of ui.timeline.querySelectorAll(".event-row")) row.hidden = filter !== "all" && row.dataset.type !== filter;
+  }
+
+  function applyMissionSearch() {
+    const query = ui.globalSearch.value.trim().toLowerCase();
+    for (const row of ui.missionLog.querySelectorAll("[data-log-type]")) {
+      row.style.display = !query || row.textContent.toLowerCase().includes(query) ? "" : "none";
+    }
+  }
+
+  function eventCategory(eventType) {
+    if (eventType.startsWith("model.")) return "model";
+    if (eventType.startsWith("tool.") || eventType === "permission.denied") return "tool";
+    if (eventType.startsWith("verification.")) return "verify";
+    return "system";
+  }
+
+  function toggleSidebar() {
+    const collapsed = ui.app.classList.toggle("sidebar-collapsed");
+    ui.sidebarToggle.textContent = collapsed ? "→" : "←";
+    ui.sidebarToggle.setAttribute("aria-label", collapsed ? "展开侧边栏" : "折叠侧边栏");
+  }
+
+  function openSettings() {
+    ui.settingsPanel.hidden = false;
+    ui.closeSettings.focus();
+  }
+
+  function closeSettings() {
+    ui.settingsPanel.hidden = true;
+  }
+
+  function resetForNewRun() {
+    if (ACTIVE_STATUSES.has(currentStatus)) {
+      showToast("Stop the active run before starting a new one.");
+      return;
+    }
+    ui.timeline.replaceChildren();
+    trace.length = 0;
+    currentRunId = null;
+    lastFinalResult = "";
+    setText(ui.runSubtitle, "Agent runtime monitor · run=not-started");
+    setText(ui.traceCount, 0);
+    setText(ui.lastSequence, 0);
+    setText(ui.modelCalls, 0);
+    setText(ui.toolCalls, 0);
+    setText(ui.verificationStatus, "—");
+    setText(ui.verificationSummary, "not run");
+    updateProgress("idle", false);
+    clearError();
+    appendMissionMessage("system", "SYSTEM", "New run workspace prepared. Environment-backed model configuration is unchanged.");
+    ui.task.focus();
+  }
+
+  function exportTrace() {
+    const payload = JSON.stringify({run_id:currentRunId, workspace, exported_at:new Date().toISOString(), events:trace}, null, 2);
+    const blob = new Blob([payload], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${currentRunId || "paperclaw-trace"}.json`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    showToast("Trace export prepared.");
+  }
+
+  function clearTask() {
+    ui.task.value = "";
+    updateTaskInput();
+    ui.task.focus();
+  }
+
+  function updateTaskInput() {
+    setText(ui.taskCount, `${ui.task.value.length} / 100000`);
+    ui.task.style.height = "auto";
+    ui.task.style.height = `${Math.min(ui.task.scrollHeight, 180)}px`;
+  }
+
+  function onTaskKeydown(event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      startRun();
+    }
+    if (event.key === "Escape") clearError();
+  }
+
+  function onGlobalKeydown(event) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      ui.globalSearch.focus();
+    }
+    if (event.key === "Escape" && !ui.settingsPanel.hidden) closeSettings();
   }
 
   function renderBackendError(response) {
-    showError(
-      response && response.error_code ? response.error_code : "runtime_error",
-      response && response.error_message
-        ? response.error_message
-        : "Desktop operation failed."
-    );
+    showError(response && response.error_code ? response.error_code : "runtime_error", response && response.error_message ? response.error_message : "Desktop operation failed.");
   }
 
   function showError(code, message) {
     ui.publicError.hidden = false;
-    ui.publicError.textContent = `${stringValue(code, "runtime_error")}: ${stringValue(
-      message,
-      "Desktop operation failed."
-    )}`;
+    ui.publicError.textContent = `${stringValue(code, "runtime_error")}: ${stringValue(message, "Desktop operation failed.")}`;
   }
 
   function clearError() {
@@ -398,14 +530,25 @@
     ui.publicError.textContent = "";
   }
 
+  function showToast(message) {
+    setText(ui.toastMessage, message);
+    ui.toast.hidden = false;
+    if (toastTimer !== null) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(hideToast, 3200);
+  }
+
+  function hideToast() {
+    if (toastTimer !== null) window.clearTimeout(toastTimer);
+    toastTimer = null;
+    ui.toast.hidden = true;
+  }
+
   function setText(element, value) {
     element.textContent = String(value);
   }
 
   function stringValue(value, fallback) {
-    if (value === null || value === undefined || String(value).trim() === "") {
-      return fallback;
-    }
+    if (value === null || value === undefined || String(value).trim() === "") return fallback;
     return String(value);
   }
 
@@ -414,19 +557,11 @@
     return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
   }
 
-  function boundedInteger(value, fallback) {
+  function boundedInteger(value, fallback, maximum) {
     const number = Number(value);
-    if (!Number.isInteger(number) || number < 1 || number > 1000) {
-      return fallback;
-    }
-    return number;
+    return Number.isInteger(number) && number >= 1 && number <= maximum ? number : fallback;
   }
 
-  function titleCase(value) {
-    const text = stringValue(value, "idle");
-    return text.charAt(0).toUpperCase() + text.slice(1);
-  }
-
-  document.addEventListener("DOMContentLoaded", bindDom, { once: true });
-  window.addEventListener("pywebviewready", markBridgeReady, { once: true });
+  document.addEventListener("DOMContentLoaded", bindDom, {once:true});
+  window.addEventListener("pywebviewready", markBridgeReady, {once:true});
 })();
