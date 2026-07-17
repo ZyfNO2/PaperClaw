@@ -12,6 +12,7 @@ from typing import Any, Mapping
 
 from .contracts import DesktopPublicError
 from .controller import DesktopController
+from .diagnostics import record_exception
 
 
 class DesktopAPI:
@@ -147,6 +148,14 @@ def main(argv: list[str] | None = None) -> int:
     except DesktopPublicError as exc:
         sys.stderr.write(json.dumps(exc.to_public_dict(), ensure_ascii=False) + "\n")
         return 2
+    except Exception as exc:
+        record_exception("desktop_host_error", exc)
+        public_error = DesktopPublicError(
+            "runtime_error",
+            "Desktop host failed. See the local desktop diagnostic log.",
+        )
+        sys.stderr.write(json.dumps(public_error.to_public_dict(), ensure_ascii=False) + "\n")
+        return 1
 
 
 if __name__ == "__main__":
