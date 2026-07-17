@@ -1,5 +1,13 @@
 # PaperClaw v0.11.1 Manual Provider Configuration Handoff
 
+## Status
+
+- Repository: `ZyfNO2/PaperClaw`
+- Development branch: `agent/manual-provider-and-gate-control`
+- Draft PR: `#36`
+- Intended base after CI: `amend/v0.11-frontend-playwright` (follow-up to PR #34)
+- Current state: implementation complete; automated GitHub validation pending
+
 ## Scope
 
 This change adds two desktop controls requested after the v0.11 UI acceptance:
@@ -32,7 +40,14 @@ This change adds two desktop controls requested after the v0.11 UI acceptance:
 
 ## Verification
 
-Automated verification is expected to include:
+Local offline checks completed before the PR was opened:
+
+- Python syntax compilation for the new Python modules and tests;
+- `node --check` for `provider-config.js`;
+- isolated provider-extension smoke test;
+- HTML parser smoke test.
+
+GitHub validation is expected to include:
 
 ```bash
 python -m pytest -q tests/unit/desktop/test_provider_config.py
