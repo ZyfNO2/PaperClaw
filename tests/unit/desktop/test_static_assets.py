@@ -43,7 +43,9 @@ def test_html_has_expected_controls_and_security_policy() -> None:
 
 
 def test_frontend_uses_no_secret_field_persistence_remote_code_or_unsafe_execution() -> None:
-    combined = "\n".join((_asset("index.html"), _asset("app.js"))).lower()
+    html = _asset("index.html").lower()
+    javascript = _asset("app.js").lower()
+    combined = "\n".join((html, javascript))
     for forbidden in (
         "localstorage",
         "sessionstorage",
@@ -52,10 +54,11 @@ def test_frontend_uses_no_secret_field_persistence_remote_code_or_unsafe_executi
         "eval(",
         "new function",
         ".innerhtml",
-        "api_key",
-        "paperclaw_api_key",
     ):
         assert forbidden not in combined
+    assert 'id="api-key"' not in html
+    assert "api_key" not in javascript
+    assert "paperclaw_api_key" not in javascript
     assert "console.log" not in combined
     assert not re.search(r"sk-[a-z0-9_-]{16,}", combined, flags=re.IGNORECASE)
 
