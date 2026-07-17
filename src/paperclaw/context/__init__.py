@@ -1,4 +1,9 @@
-"""PaperClaw Context Engineering package."""
+"""PaperClaw Context Engineering package.
+
+The package owns structured Context contracts, persistence, deterministic
+selection/compaction, safe resume, and the opt-in v0.08 orchestration layer.
+It does not own QueryEngine lifecycle or Tool permissions.
+"""
 
 from paperclaw.context.builder import (
     ContextBudgetExhausted,
