@@ -6,6 +6,7 @@ import argparse
 from importlib.resources import as_file, files
 from importlib.util import find_spec
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Mapping
@@ -13,6 +14,13 @@ from typing import Any, Mapping
 from .contracts import DesktopPublicError
 from .controller import DesktopController
 from .diagnostics import record_exception
+
+_PROVIDER_FIELDS = frozenset({"base_url", "api_key", "model", "provider"})
+_REQUIRED_ENV = (
+    "PAPERCLAW_API_KEY",
+    "PAPERCLAW_BASE_URL",
+    "PAPERCLAW_MODEL",
+)
 
 
 class DesktopAPI:
@@ -26,7 +34,11 @@ class DesktopAPI:
         self._window = window
 
     def start_run(self, request: Mapping[str, Any]) -> dict[str, object]:
-        return self._controller.start_run(request)
+        try:
+            hydrated = _hydrate_environment_provider(request)
+        except DesktopPublicError as exc:
+            return exc.to_public_dict()
+        return self._controller.start_run(hydrated)
 
     def cancel_run(self) -> dict[str, object]:
         return self._controller.cancel_run()
@@ -36,6 +48,23 @@ class DesktopAPI:
 
     def get_state(self) -> dict[str, object]:
         return self._controller.get_state()
+
+    def get_defaults(self) -> dict[str, object]:
+        """Return non-secret desktop defaults for the initial UI projection."""
+
+        workspace = Path.cwd().expanduser().resolve()
+        _load_dotenv(workspace / ".env")
+        missing = [name for name in _REQUIRED_ENV if not os.getenv(name)]
+        return {
+            "ok": True,
+            "workspace": str(workspace),
+            "provider_source": "env",
+            "provider": os.getenv("PAPERCLAW_PROVIDER", "openai-compatible"),
+            "base_url": os.getenv("PAPERCLAW_BASE_URL") or None,
+            "model": os.getenv("PAPERCLAW_MODEL") or None,
+            "configured": not missing,
+            "missing": missing,
+        }
 
     def select_workspace(self) -> dict[str, object]:
         window = self._window
@@ -69,6 +98,57 @@ class DesktopAPI:
                 "Selected workspace is not a directory.",
             ).to_public_dict()
         return {"ok": True, "workspace": str(workspace)}
+
+
+def _hydrate_environment_provider(request: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(request, Mapping):
+        raise DesktopPublicError("validation_error", "Run request must be an object.")
+    hydrated = dict(request)
+    explicit_fields = {name for name in _PROVIDER_FIELDS if hydrated.get(name) not in (None, "")}
+    if explicit_fields:
+        return hydrated
+
+    workspace_value = hydrated.get("workspace")
+    if isinstance(workspace_value, str) and workspace_value.strip():
+        workspace = Path(workspace_value).expanduser()
+        _load_dotenv(workspace / ".env")
+    _load_dotenv(Path.cwd() / ".env")
+
+    values = {name: os.getenv(name) for name in _REQUIRED_ENV}
+    missing = [name for name, value in values.items() if not value]
+    if missing:
+        raise DesktopPublicError(
+            "provider_configuration_error",
+            f"Missing environment variables: {', '.join(missing)}.",
+        )
+    hydrated.update(
+        {
+            "api_key": values["PAPERCLAW_API_KEY"],
+            "base_url": values["PAPERCLAW_BASE_URL"],
+            "model": values["PAPERCLAW_MODEL"],
+            "provider": os.getenv("PAPERCLAW_PROVIDER", "openai-compatible"),
+        }
+    )
+    return hydrated
+
+
+def _load_dotenv(dotenv_path: Path) -> None:
+    """Load a local .env without replacing explicit process environment values."""
+
+    try:
+        if not dotenv_path.is_file():
+            return
+        lines = dotenv_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        normalized_key = key.strip()
+        if normalized_key:
+            os.environ.setdefault(normalized_key, value.strip())
 
 
 def _folder_dialog_type(webview_module: Any) -> Any:
@@ -121,9 +201,9 @@ def run_desktop(*, debug: bool = False) -> int:
                 "PaperClaw Desktop",
                 url=index_path.resolve().as_uri(),
                 js_api=api,
-                width=1180,
-                height=820,
-                min_size=(620, 640),
+                width=1440,
+                height=900,
+                min_size=(720, 640),
                 confirm_close=False,
                 text_select=True,
             )
