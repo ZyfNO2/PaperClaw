@@ -41,6 +41,7 @@
   }
 
   async function maybeLoadDefaults() {
+    if (!initialized) return;
     const api = backendApi();
     if (!api || typeof api.get_defaults !== "function") return;
     try {
