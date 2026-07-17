@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from typing import Sequence
 
-from .application import RunApplicationService
+from paperclaw.durability import SQLiteDurableServiceStore
+
+from .durable_application import DurableRunApplicationService
 from .fastapi_app import create_app
 from .runtime_factory import ServiceRuntimeFactory
 
@@ -15,6 +18,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--max-active-runs", type=int, default=4)
+    parser.add_argument(
+        "--database",
+        default=str(Path.home() / ".paperclaw" / "service.sqlite3"),
+        help="SQLite durable service database path",
+    )
     return parser
 
 
@@ -29,9 +37,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             'Uvicorn is missing; install "paperclaw[service]"'
         ) from exc
 
+    database_path = Path(args.database).expanduser()
+    database_path.parent.mkdir(parents=True, exist_ok=True)
     runtime_factory = ServiceRuntimeFactory()
-    service = RunApplicationService(
-        runtime_factory.create, max_active_runs=args.max_active_runs
+    store = SQLiteDurableServiceStore(database_path)
+    service = DurableRunApplicationService(
+        runtime_factory.create,
+        store,
+        max_active_runs=args.max_active_runs,
     )
     app = create_app(service)
     try:
