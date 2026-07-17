@@ -29,6 +29,15 @@ class FakeEngine:
         self.event_handler = event_handler
 
 
+def _factory() -> DesktopRuntimeFactory:
+    return DesktopRuntimeFactory(
+        model_factory=FakeModel,
+        executor_factory=FakeExecutor,
+        engine_factory=FakeEngine,
+        conversation_id_factory=lambda: "desktop-test",
+    )
+
+
 def test_runtime_factory_uses_explicit_values_without_mutating_environment(
     tmp_path,
     monkeypatch,
@@ -44,15 +53,12 @@ def test_runtime_factory_uses_explicit_values_without_mutating_environment(
             "provider": "provider-a",
         }
     )
-    factory = DesktopRuntimeFactory(
-        model_factory=FakeModel,
-        executor_factory=FakeExecutor,
-        engine_factory=FakeEngine,
-        conversation_id_factory=lambda: "desktop-test",
-    )
     observed: list[tuple[str, dict]] = []
 
-    engine = factory.create(request, lambda event, payload: observed.append((event, payload)))
+    engine = _factory().create(
+        request,
+        lambda event, payload: observed.append((event, payload)),
+    )
 
     assert engine.conversation_id == "desktop-test"
     assert engine.executor.workspace == str(tmp_path.resolve())
@@ -82,3 +88,21 @@ def test_runtime_factory_uses_explicit_values_without_mutating_environment(
     assert observed[1][0] == "verification.completed"
     assert observed[1][1]["result"]["summary"] == "safe summary"
     assert "checks" not in observed[1][1]["result"]
+
+
+def test_runtime_factory_forwards_disabled_verify_and_reflection_gate(tmp_path) -> None:
+    request = DesktopRunRequest.from_mapping(
+        {
+            "task": "hello",
+            "workspace": str(tmp_path),
+            "base_url": "https://provider.invalid/v1",
+            "api_key": "run-scoped-key",
+            "model": "model-a",
+            "provider": "provider-a",
+            "enable_verification_gate": False,
+        }
+    )
+
+    engine = _factory().create(request, lambda _event, _payload: None)
+
+    assert engine.executor.kwargs["enable_verification_gate"] is False
