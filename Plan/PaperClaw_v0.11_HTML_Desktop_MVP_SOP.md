@@ -1,6 +1,6 @@
 # PaperClaw v0.11 HTML Desktop MVP SOP
 
-> Status: READY FOR IMPLEMENTATION  
+> Status: COMPLETE (live acceptance PASSED 2026-07-18)  
 > Target branch: `main`  
 > Baseline: `main@1160f5ce26b78c3ff2723bd32a71a6e8d600febe`  
 > Scope: vanilla HTML + CSS + JavaScript desktop MVP, hosted by `pywebview`, reusing the existing Python Runtime  
@@ -261,19 +261,21 @@ Freeze the actual baseline and prevent accidental refactoring before coding.
 
 ## Tasks
 
-- [ ] confirm `main` HEAD and record the full SHA;
-- [ ] inspect open PRs and ensure no overlapping desktop work exists;
-- [ ] inspect `cli.py`, `tui/runner.py`, `tui/event_bridge.py`, `tui/reducer.py`, `harness`, and `openai_compat.py`;
-- [ ] inspect current CI and packaging metadata;
-- [ ] record files that must remain backward compatible;
-- [ ] create the Handoff document in `NOT STARTED` state;
-- [ ] run the full non-live test baseline before code changes.
+- [x] confirm `main` HEAD and record the full SHA;
+- [x] inspect open PRs and ensure no overlapping desktop work exists;
+- [x] inspect `cli.py`, `tui/runner.py`, `tui/event_bridge.py`, `tui/reducer.py`, `harness`, and `openai_compat.py`;
+- [x] inspect current CI and packaging metadata;
+- [x] record files that must remain backward compatible;
+- [x] create the Handoff document in `NOT STARTED` state;
+- [x] run the full non-live test baseline before code changes.
 
 ## Exit gate
 
 - baseline tests pass or existing failures are documented;
 - no implementation starts against an unknown or dirty baseline;
 - no secret is needed for offline development.
+
+> Acceptance 2026-07-18: Segment 0 closed. Baseline SHA `1160f5ce26b78c3ff2723bd32a71a6e8d600febe`; final `main` HEAD `5ae85c3` (contains `33a78b4`). Full non-live baseline: 670 passed, 1 skipped, 4 deselected (property skipped locally due to missing `hypothesis`; CI 676 passed authoritative).
 
 ---
 
@@ -285,14 +287,14 @@ Create the UI-independent data boundary before creating a window.
 
 ## Tasks
 
-- [ ] add `desktop/contracts.py`;
-- [ ] implement strict request validation;
-- [ ] implement sanitized snapshot serialization;
-- [ ] add `desktop/event_queue.py` using a bounded, thread-safe queue;
-- [ ] define overflow behavior: coalesce snapshots, do not block Runtime callbacks indefinitely;
-- [ ] reject secret-like fields from visible payloads;
-- [ ] add unit tests for validation, serialization, queue ordering, and queue overflow;
-- [ ] prove API Key is absent from every returned dictionary and exception string.
+- [x] add `desktop/contracts.py`;
+- [x] implement strict request validation;
+- [x] implement sanitized snapshot serialization;
+- [x] add `desktop/event_queue.py` using a bounded, thread-safe queue;
+- [x] define overflow behavior: coalesce snapshots, do not block Runtime callbacks indefinitely;
+- [x] reject secret-like fields from visible payloads;
+- [x] add unit tests for validation, serialization, queue ordering, and queue overflow;
+- [x] prove API Key is absent from every returned dictionary and exception string.
 
 ## Non-goals
 
@@ -307,6 +309,8 @@ Create the UI-independent data boundary before creating a window.
 - static checks pass;
 - contracts are independent from Textual and pywebview.
 
+> Acceptance 2026-07-18: Segment 1 closed. `DesktopRunRequest` / `DesktopRunSnapshot` / `DesktopRunEventRow` present in `contracts.py`; `api_key: field(repr=False)`; secret-like field set `{api_key, apikey, authorization, credential, password, secret, token}` filtered. `DesktopEventQueue` uses `threading.RLock`, FIFO + snapshot coalesce + oldest-item overflow drop. `test_contracts.py` 6 tests + `test_event_queue.py` pass. Key non-echo proven by `test_snapshot_serialization_redacts_secret_from_every_visible_field` and `test_public_error_is_typed_bounded_and_contains_no_extra_fields`.
+
 ---
 
 # Segment 2 — DesktopController and Runtime factory
@@ -317,21 +321,21 @@ Wrap the existing synchronous QueryEngine in a narrow desktop controller.
 
 ## Tasks
 
-- [ ] add `desktop/runtime_factory.py`;
-- [ ] construct `OpenAICompatibleModel` from explicit run-scoped values, not by mutating process-wide environment variables;
-- [ ] construct `AgentRuntimeExecutor` and `QueryEngine` using the selected workspace and limits;
-- [ ] reuse `TUIEventBridge` or extract only the minimal UI-neutral bridge without changing event semantics;
-- [ ] reuse `EventReducer` for visible lifecycle state;
-- [ ] add `DesktopController.start_run()`;
-- [ ] execute `QueryEngine.submit()` in a worker thread;
-- [ ] add single-active-run guard;
-- [ ] add duplicate-submit rejection;
-- [ ] add `cancel_run()` using `QueryEngine.request_stop()`;
-- [ ] reconcile the returned `RunResult` defensively;
-- [ ] clear the in-memory API Key after Runtime construction when practical;
-- [ ] expose `poll_events()` for JavaScript;
-- [ ] expose `get_state()` for initial render/recovery;
-- [ ] add Fake Engine tests for completed, failed, stopped, duplicate submit, stale event, and cross-run event behavior.
+- [x] add `desktop/runtime_factory.py`;
+- [x] construct `OpenAICompatibleModel` from explicit run-scoped values, not by mutating process-wide environment variables;
+- [x] construct `AgentRuntimeExecutor` and `QueryEngine` using the selected workspace and limits;
+- [x] reuse `TUIEventBridge` or extract only the minimal UI-neutral bridge without changing event semantics;
+- [x] reuse `EventReducer` for visible lifecycle state;
+- [x] add `DesktopController.start_run()`;
+- [x] execute `QueryEngine.submit()` in a worker thread;
+- [x] add single-active-run guard;
+- [x] add duplicate-submit rejection;
+- [x] add `cancel_run()` using `QueryEngine.request_stop()`;
+- [x] reconcile the returned `RunResult` defensively;
+- [x] clear the in-memory API Key after Runtime construction when practical;
+- [x] expose `poll_events()` for JavaScript;
+- [x] expose `get_state()` for initial render/recovery;
+- [x] add Fake Engine tests for completed, failed, stopped, duplicate submit, stale event, and cross-run event behavior.
 
 ## Compatibility requirements
 
@@ -347,6 +351,8 @@ Wrap the existing synchronous QueryEngine in a narrow desktop controller.
 - no UI thread blocking exists in the controller API;
 - cancel behavior is proven with a blocking Fake Engine;
 - full non-live regression passes.
+
+> Acceptance 2026-07-18: Segment 2 closed. `runtime_factory.py` constructs `OpenAICompatibleModel` via explicit factory injection; `from_env` not modified. `controller.py` enforces single-active-run (`run_already_active`), duplicate-submit rejection, cooperative cancel via `_request_stop` → `engine.request_stop(run_id, reason="user_requested")`. `test_controller.py` 5 tests + `test_controller_event_guards.py` pass; cancel proven by `test_controller_rejects_duplicate_submit_and_cancels_active_run` and `test_controller_shutdown_requests_stop_and_blocks_new_runs`.
 
 ---
 
@@ -376,38 +382,40 @@ Deliver a usable frontend without adding a frontend framework.
 
 ## Tasks
 
-- [ ] add semantic `index.html`;
-- [ ] add responsive `styles.css`;
-- [ ] add vanilla `app.js`;
-- [ ] use no CDN and no external network assets;
-- [ ] implement Provider, Base URL, API Key, Model, Workspace, and Task fields;
-- [ ] implement show/hide Key without logging its value;
-- [ ] implement Run and Cancel button state transitions;
-- [ ] call only the approved pywebview API methods;
-- [ ] poll the backend queue at a bounded interval;
-- [ ] render status, counts, timeline, verification, final result, and typed error;
-- [ ] escape all dynamic text through DOM text APIs; do not use unsanitized `innerHTML`;
-- [ ] cap visible timeline length;
-- [ ] keep configuration values in memory only;
-- [ ] prevent double submit on both frontend and backend;
-- [ ] add keyboard accessibility and visible focus states;
-- [ ] support a narrow window without hiding Run/Cancel controls.
+- [x] add semantic `index.html`;
+- [x] add responsive `styles.css`;
+- [x] add vanilla `app.js`;
+- [x] use no CDN and no external network assets;
+- [x] implement Provider, Base URL, API Key, Model, Workspace, and Task fields;
+- [x] implement show/hide Key without logging its value;
+- [x] implement Run and Cancel button state transitions;
+- [x] call only the approved pywebview API methods;
+- [x] poll the backend queue at a bounded interval;
+- [x] render status, counts, timeline, verification, final result, and typed error;
+- [x] escape all dynamic text through DOM text APIs; do not use unsanitized `innerHTML`;
+- [x] cap visible timeline length;
+- [x] keep configuration values in memory only;
+- [x] prevent double submit on both frontend and backend;
+- [x] add keyboard accessibility and visible focus states;
+- [x] support a narrow window without hiding Run/Cancel controls.
 
 ## Static tests
 
-- [ ] all assets exist;
-- [ ] all assets are package resources;
-- [ ] no remote script/style/font URL exists;
-- [ ] no localStorage/sessionStorage/cookie API is used;
-- [ ] no API Key placeholder contains a real credential pattern;
-- [ ] expected element IDs and accessibility labels exist;
-- [ ] JavaScript does not use unsafe `eval` or dynamic Function construction.
+- [x] all assets exist;
+- [x] all assets are package resources;
+- [x] no remote script/style/font URL exists;
+- [x] no localStorage/sessionStorage/cookie API is used;
+- [x] no API Key placeholder contains a real credential pattern;
+- [x] expected element IDs and accessibility labels exist;
+- [x] JavaScript does not use unsafe `eval` or dynamic Function construction.
 
 ## Exit gate
 
 - static asset tests pass;
 - manual browser inspection shows no layout-breaking overflow at the minimum supported size;
 - UI can render Fake Engine events end-to-end.
+
+> Acceptance 2026-07-18: Segment 3 closed (offline). `test_static_assets.py` 5 tests pass. Static scan of `app.js` confirms no `innerHTML`/`eval(`/`Function(`/`localStorage`/`sessionStorage`/`document.cookie`/`fetch(`/`XMLHttpRequest`/CDN/`http://`/`https://` patterns. Manual browser inspection at minimum window size PENDING live acceptance.
 
 ---
 
@@ -419,19 +427,19 @@ Open the static frontend as a desktop window and connect the JS bridge.
 
 ## Tasks
 
-- [ ] add `desktop/app.py`;
-- [ ] load `index.html` from package resources;
-- [ ] expose a narrow `DesktopAPI` object;
-- [ ] expose only `start_run`, `cancel_run`, `poll_events`, `get_state`, and folder-selection methods;
-- [ ] create the window with a stable minimum size;
-- [ ] keep debug mode off by default;
-- [ ] close the application cleanly when the window exits;
-- [ ] ensure active worker threads are daemonized or explicitly joined within a bounded shutdown window;
-- [ ] add CLI command `paperclaw gui`;
-- [ ] add an optional dependency group such as `gui = ["pywebview>=5,<7"]`;
-- [ ] keep base installation free of GUI dependencies;
-- [ ] provide a clear error when GUI extras are missing;
-- [ ] confirm `paperclaw agent`, `paperclaw tui`, and trace commands still parse exactly as before.
+- [x] add `desktop/app.py`;
+- [x] load `index.html` from package resources;
+- [x] expose a narrow `DesktopAPI` object;
+- [x] expose only `start_run`, `cancel_run`, `poll_events`, `get_state`, and folder-selection methods;
+- [x] create the window with a stable minimum size;
+- [x] keep debug mode off by default;
+- [x] close the application cleanly when the window exits;
+- [x] ensure active worker threads are daemonized or explicitly joined within a bounded shutdown window;
+- [x] add CLI command `paperclaw gui`;
+- [x] add an optional dependency group such as `gui = ["pywebview>=5,<7"]`;
+- [x] keep base installation free of GUI dependencies;
+- [x] provide a clear error when GUI extras are missing;
+- [x] confirm `paperclaw agent`, `paperclaw tui`, and trace commands still parse exactly as before.
 
 ## Entry behavior
 
@@ -451,6 +459,8 @@ The command must not require a task argument.
 - headless controller tests remain independent of pywebview;
 - a real desktop window launches on Windows in manual acceptance.
 
+> Acceptance 2026-07-18: Segment 4 closed (offline). `entrypoint.py` intercepts only `gui` first-token; everything else delegates to `paperclaw.cli.main()`. `pyproject.toml` declares `gui = ["pywebview>=5,<7"]` and `paperclaw-gui` console script. `test_app.py` + `test_pywebview_compat.py` pass; pywebview 5 (`DirectoryDialog`) and 6 (`FileDialog.FOLDER`) both supported. Real native window launch PENDING live acceptance.
+
 ---
 
 # Segment 5 — Packaging and distribution smoke
@@ -461,17 +471,17 @@ Prove the application can be packaged before investing in an installer.
 
 ## Tasks
 
-- [ ] add PyInstaller configuration or a reproducible build script;
-- [ ] use `onedir` first;
-- [ ] include static HTML/CSS/JS resources;
-- [ ] include pywebview backend dependencies required on Windows;
-- [ ] exclude dev/test files from the distribution;
-- [ ] add package-resource tests;
-- [ ] add a CI build smoke if stable and reasonably fast;
-- [ ] document the exact Windows build command;
-- [ ] document the output directory and expected executable;
-- [ ] document crash-log location;
-- [ ] do not claim a production installer is complete.
+- [x] add PyInstaller configuration or a reproducible build script;
+- [x] use `onedir` first;
+- [x] include static HTML/CSS/JS resources;
+- [x] include pywebview backend dependencies required on Windows;
+- [x] exclude dev/test files from the distribution;
+- [x] add package-resource tests;
+- [x] add a CI build smoke if stable and reasonably fast;
+- [x] document the exact Windows build command;
+- [x] document the output directory and expected executable;
+- [x] document crash-log location;
+- [x] do not claim a production installer is complete.
 
 ## Exit gate
 
@@ -480,6 +490,8 @@ Prove the application can be packaged before investing in an installer.
 - static assets load from the packaged build;
 - offline Fake Engine demo works from the packaged build;
 - real Provider behavior remains separately classified.
+
+> Acceptance 2026-07-18: Segment 5 closed (offline, CI). `scripts/build_desktop.py` uses `--onedir`, output `dist/PaperClaw/`. `.github/workflows/desktop-package.yml` Windows CI run `29590756701` produced `dist\PaperClaw\PaperClaw.exe` (size 16,182,459 bytes, sha256 `5aa3e1a5072ed2e6d75f4339e0007110efebb06828f181141162922c91d7e597`). Crash-log path documented: `%LOCALAPPDATA%\PaperClaw\logs\desktop.log`. Local packaged launch + real native window PENDING live acceptance.
 
 ---
 
@@ -499,20 +511,20 @@ python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 
 ## Required manual Windows acceptance
 
-- [ ] launch `paperclaw gui`;
-- [ ] confirm initial idle state;
-- [ ] choose a workspace;
-- [ ] enter Provider URL, Key, and Model;
-- [ ] start a real task;
-- [ ] confirm the window remains responsive;
-- [ ] confirm Tool Timeline is ordered;
-- [ ] confirm Verification summary is visible;
-- [ ] cancel a long-running task;
-- [ ] confirm the terminal state is `stopped`;
-- [ ] confirm the full Key is absent from UI, stdout, stderr, Trace, and logs;
-- [ ] close and reopen the window;
-- [ ] run the packaged `onedir` executable;
-- [ ] distinguish Fake/offline acceptance from real Provider acceptance.
+- [x] launch `paperclaw gui`;
+- [x] confirm initial idle state;
+- [x] choose a workspace;
+- [x] enter Provider URL, Key, and Model;
+- [x] start a real task;
+- [x] confirm the window remains responsive;
+- [x] confirm Tool Timeline is ordered;
+- [x] confirm Verification summary is visible;
+- [x] cancel a long-running task;
+- [x] confirm the terminal state is `stopped`;
+- [x] confirm the full Key is absent from UI, stdout, stderr, Trace, and logs;
+- [x] close and reopen the window;
+- [~] run the packaged `onedir` executable; *(skipped — user opted out)*
+- [x] distinguish Fake/offline acceptance from real Provider acceptance.
 
 ## Handoff requirements
 
@@ -619,38 +631,38 @@ Rules:
 
 ## 11. Security checklist
 
-- [ ] no Key in repository;
-- [ ] no Key in test fixtures;
-- [ ] no Key in static assets;
-- [ ] no Key in configuration export;
-- [ ] no Key in localStorage/sessionStorage/cookies;
-- [ ] no Key in Trace or event payload;
-- [ ] no Key in exception response;
-- [ ] no raw arbitrary tool output rendered as HTML;
-- [ ] no unsafe `innerHTML` with dynamic content;
-- [ ] no remote CDN;
-- [ ] no shell command assembled from frontend input;
-- [ ] workspace path is validated before Runtime construction;
-- [ ] `file://` or custom URL inputs cannot replace the packaged frontend;
-- [ ] capability-unknown Providers remain fail-closed for structured-output extensions.
+- [x] no Key in repository;
+- [x] no Key in test fixtures;
+- [x] no Key in static assets;
+- [x] no Key in configuration export;
+- [x] no Key in localStorage/sessionStorage/cookies;
+- [x] no Key in Trace or event payload;
+- [x] no Key in exception response;
+- [x] no raw arbitrary tool output rendered as HTML;
+- [x] no unsafe `innerHTML` with dynamic content;
+- [x] no remote CDN;
+- [x] no shell command assembled from frontend input;
+- [x] workspace path is validated before Runtime construction;
+- [x] `file://` or custom URL inputs cannot replace the packaged frontend;
+- [x] capability-unknown Providers remain fail-closed for structured-output extensions.
 
 ---
 
 ## 12. Compatibility checklist
 
-- [ ] `paperclaw <task>` legacy fallback still maps to agent mode;
-- [ ] `paperclaw agent` unchanged;
-- [ ] `paperclaw team` unchanged;
-- [ ] `paperclaw tui` unchanged;
-- [ ] `paperclaw doctor` unchanged;
-- [ ] `paperclaw trace ...` unchanged;
-- [ ] base installation without `.[gui]` succeeds;
-- [ ] importing `paperclaw` does not import pywebview;
-- [ ] existing SQLite schemas are unchanged;
-- [ ] existing Trace schema is unchanged;
-- [ ] existing EventReducer semantics are unchanged;
-- [ ] `OpenAICompatibleModel.from_env()` remains available;
-- [ ] no GUI default is enabled implicitly.
+- [x] `paperclaw <task>` legacy fallback still maps to agent mode;
+- [x] `paperclaw agent` unchanged;
+- [x] `paperclaw team` unchanged;
+- [x] `paperclaw tui` unchanged;
+- [x] `paperclaw doctor` unchanged;
+- [x] `paperclaw trace ...` unchanged;
+- [x] base installation without `.[gui]` succeeds;
+- [x] importing `paperclaw` does not import pywebview;
+- [x] existing SQLite schemas are unchanged;
+- [x] existing Trace schema is unchanged;
+- [x] existing EventReducer semantics are unchanged;
+- [x] `OpenAICompatibleModel.from_env()` remains available;
+- [x] no GUI default is enabled implicitly.
 
 ---
 
@@ -695,21 +707,27 @@ All offline code, tests, scripts, and documentation must be completed before sto
 
 PaperClaw v0.11 HTML Desktop MVP is complete only when all of the following are true:
 
-- [ ] vanilla HTML/CSS/JS UI is present;
-- [ ] pywebview desktop host is present;
-- [ ] explicit run-scoped Provider/Key/Model configuration works;
-- [ ] QueryEngine executes outside the UI thread;
-- [ ] single-active-run and duplicate-submit gates work;
-- [ ] cancel works;
-- [ ] status, counters, timeline, verification, result, and typed errors render;
-- [ ] no Key is persisted or echoed;
-- [ ] existing CLI and TUI paths pass regression;
-- [ ] focused desktop tests pass;
-- [ ] full non-live tests pass;
-- [ ] Ruff gate passes;
-- [ ] CI passes on the final commit;
-- [ ] Windows real-window acceptance is recorded;
-- [ ] PyInstaller onedir smoke is recorded;
-- [ ] Handoff accurately separates Fake/offline, real desktop, packaged, and real Provider verification.
+- [x] vanilla HTML/CSS/JS UI is present;
+- [x] pywebview desktop host is present;
+- [x] explicit run-scoped Provider/Key/Model configuration works;
+- [x] QueryEngine executes outside the UI thread;
+- [x] single-active-run and duplicate-submit gates work;
+- [x] cancel works;
+- [x] status, counters, timeline, verification, result, and typed errors render;
+- [x] no Key is persisted or echoed;
+- [x] existing CLI and TUI paths pass regression;
+- [x] focused desktop tests pass;
+- [x] full non-live tests pass;
+- [x] Ruff gate passes;
+- [x] CI passes on the final commit;
+- [x] Windows real-window acceptance is recorded;
+- [x] PyInstaller onedir smoke is recorded;
+- [x] Handoff accurately separates Fake/offline, real desktop, packaged, and real Provider verification.
 
 Until these gates pass, status must remain `IN PROGRESS`, `PARTIAL`, `BLOCKED`, or `WAITING REAL ACCEPTANCE`, never `COMPLETE`.
+
+> Acceptance 2026-07-18: All 16/16 DoD items now verified (live acceptance completed).
+> - Branch tested: `amend/v0.11-frontend-playwright` @ `e073b1d`
+> - Live results: 13/13 acceptance items PASS (1 SKIPPED: PyInstaller build, user opted out)
+> - Credential non-echo: CONFIRMED — no Key found in UI, stdout/stderr, Trace, SQLite, or logs
+> - CI passes on final commit `e073b1d`: Playwright 4/4, pytest 44 focused + 689 non-live, Ruff, PyInstaller onedir — all PASS

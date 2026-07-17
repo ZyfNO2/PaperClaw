@@ -11,6 +11,58 @@ This Handoff intentionally distinguishes:
 - **verified:** repository implementation, offline/Fake Engine behavior, static security checks, Windows CI regression, and `onedir` artifact production;
 - **not verified:** real native-window usability, real Provider behavior, packaged executable launch, and real-run credential inspection.
 
+### 1.1 Acceptance pass update — 2026-07-18 (Asia/Shanghai)
+
+An offline acceptance pass was completed on 2026-07-18 by the ALLMIND acceptance assistant. Findings:
+
+- `main` HEAD has advanced past the implementation SHA: `main` is now at `5ae85c3` (`Merge branch 'main' of https://github.com/ZyfNO2/PaperClaw`) and includes `33a78b4 feat(v0.11): ship HTML desktop MVP`. The "Merge state: not merged" note in §2 below is therefore stale with respect to the local `main` branch state — `main` does contain v0.11. The GitHub-side status of PR `#33` should be confirmed by the operator before claiming `release_accepted`.
+- Local desktop tests: `39 passed in 5.15s` (vs Handoff §6 CI's `38 passed`; the additional local test reflects post-Handoff commits).
+- Local full non-live regression: `670 passed, 1 skipped, 4 deselected in 88.54s` with `--ignore=tests/property` because the local environment is missing the `hypothesis` package. CI's `676 passed` (without `--ignore`) remains the authoritative non-live regression number.
+- Local Ruff: `All checks passed!`.
+- `artifacts/v0_11/` is now populated with `file_manifest.txt`, `implementation_summary.md`, `test_report.md`, and `known_limitations.md`.
+- SOP `Plan/PaperClaw_v0.11_HTML_Desktop_MVP_SOP.md` checkboxes for offline-verifiable items in §7 Segment 0–5 Tasks, §7 Segment 3 Static tests, §7 Segment 4 Tasks, §7 Segment 5 Tasks, §11 Security checklist, §12 Compatibility checklist, and §15 DoD (offline-only criteria) have been ticked. Manual Windows acceptance items in §7 Segment 6 and the live-only items in §15 DoD remain unticked and block `GO`.
+
+Status classification after this pass:
+
+- `implemented` — yes
+- `offline_validated` — yes (focused desktop tests, full non-live regression, Ruff, CI `onedir` smoke)
+- `live_validated` — **no** (real Windows window, real Provider, packaged local launch, credential non-echo during real run all PENDING)
+- `release_accepted` — **no**
+
+### 1.2 Live acceptance results — 2026-07-18
+
+- Operator: Raven (human)
+- Windows host: Windows 11 Pro
+- Provider: opencode.ai/zen/go (openai-compatible)
+- Model: deepseek-v4-flash
+- Branch tested: `amend/v0.11-frontend-playwright` @ `e073b1d`
+
+Results:
+
+| Item | Description | Result |
+|------|-------------|--------|
+| #1 | Native window launches | PASS |
+| #2 | Initial idle status | PASS |
+| #3 | Folder picker + workspace selection | PASS |
+| #4 | Provider accepts configuration | PASS |
+| #5 | Task executes (idle → running → completed) | PASS |
+| #6 | Window remains responsive during run | PASS |
+| #7 | Timeline appends events in order | PASS |
+| #8 | Verification summary renders | PASS |
+| #9 | Cancel stops task in reasonable time | PASS |
+| #10 | Terminal state shows `stopped` | PASS |
+| #11 | Duplicate submit rejected during active run | PASS |
+| #12 | Window reopens after close (idle state) | PASS |
+| #13 | Packaged exe build | SKIPPED (user opted out) |
+| Auth | Invalid key → `provider_authentication_error` | PASS |
+| Key leak | Key absent from UI, stdout/stderr, Trace, SQLite, logs | PASS |
+| Process | No residual paperclaw process after window close | PASS |
+
+Status classification after live acceptance:
+
+- `live_validated` — **yes** (12/13 live items PASS, 1 SKIPPED)
+- `release_accepted` — **pending user authorization for merge**
+
 ## 2. Repository and delivery references
 
 - Repository: `ZyfNO2/PaperClaw`
