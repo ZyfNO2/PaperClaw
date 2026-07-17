@@ -1,0 +1,74 @@
+name: Apply desktop env isolation review fix
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'feat/consolidated-v0.11-v0.15' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feat/consolidated-v0.11-v0.15
+
+      - name: Patch workspace environment resolution
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('src/paperclaw/desktop/app.py')
+          app = app_path.read_text(encoding='utf-8')
+          app = app.replace(
+              '''        workspace = Path.cwd().expanduser().resolve()\n        _load_dotenv(workspace / ".env")\n        missing = [name for name in _REQUIRED_ENV if not os.getenv(name)]\n        return {\n            "ok": True,\n            "workspace": str(workspace),\n            "provider_source": "env",\n            "provider": os.getenv("PAPERCLAW_PROVIDER", "openai-compatible"),\n            "base_url": os.getenv("PAPERCLAW_BASE_URL") or None,\n            "model": os.getenv("PAPERCLAW_MODEL") or None,\n            "configured": not missing,\n            "missing": missing,\n            "theme": _load_theme_preference(),\n        }\n''',
+              '''        workspace = Path.cwd().expanduser().resolve()\n        values = _resolve_provider_environment(workspace)\n        missing = [name for name in _REQUIRED_ENV if not values.get(name)]\n        return {\n            "ok": True,\n            "workspace": str(workspace),\n            "provider_source": "env",\n            "provider": values.get(\n                "PAPERCLAW_PROVIDER", "openai-compatible"\n            ),\n            "base_url": values.get("PAPERCLAW_BASE_URL") or None,\n            "model": values.get("PAPERCLAW_MODEL") or None,\n            "configured": not missing,\n            "missing": missing,\n            "theme": _load_theme_preference(),\n        }\n''',
+          )
+          app = app.replace(
+              '''    workspace_value = hydrated.get("workspace")\n    if isinstance(workspace_value, str) and workspace_value.strip():\n        workspace = Path(workspace_value).expanduser()\n        _load_dotenv(workspace / ".env")\n    _load_dotenv(Path.cwd() / ".env")\n\n    values = {name: os.getenv(name) for name in _REQUIRED_ENV}\n    missing = [name for name, value in values.items() if not value]\n''',
+              '''    workspace_value = hydrated.get("workspace")\n    workspace = (\n        Path(workspace_value).expanduser()\n        if isinstance(workspace_value, str) and workspace_value.strip()\n        else None\n    )\n    values = _resolve_provider_environment(workspace)\n    missing = [name for name in _REQUIRED_ENV if not values.get(name)]\n''',
+          )
+          app = app.replace(
+              '''            "provider": os.getenv("PAPERCLAW_PROVIDER", "openai-compatible"),\n''',
+              '''            "provider": values.get(\n                "PAPERCLAW_PROVIDER", "openai-compatible"\n            ),\n''',
+              1,
+          )
+          start = app.index('def _load_dotenv(dotenv_path: Path) -> None:\n')
+          end = app.index('\n\ndef _preference_path()', start)
+          replacement = '''def _resolve_provider_environment(\n    workspace: Path | None,\n) -> dict[str, str]:\n    """Resolve provider settings without mutating process environment state.\n\n    Explicit process environment values have highest priority. A selected\n    workspace ``.env`` is next, followed by the current-directory ``.env``.\n    Reading one workspace can therefore never leak its credentials into a later\n    run for another workspace.\n    """\n\n    names = (*_REQUIRED_ENV, "PAPERCLAW_PROVIDER")\n    values = {\n        name: value\n        for name in names\n        if (value := os.getenv(name)) not in (None, "")\n    }\n    paths: list[Path] = []\n    if workspace is not None:\n        paths.append(workspace / ".env")\n    cwd_path = Path.cwd() / ".env"\n    if not paths or cwd_path != paths[0]:\n        paths.append(cwd_path)\n    for dotenv_path in paths:\n        for name, value in _read_dotenv(dotenv_path).items():\n            if name in names and name not in values and value:\n                values[name] = value\n    return values\n\n\ndef _read_dotenv(dotenv_path: Path) -> dict[str, str]:\n    try:\n        if not dotenv_path.is_file():\n            return {}\n        lines = dotenv_path.read_text(encoding="utf-8").splitlines()\n    except OSError:\n        return {}\n    values: dict[str, str] = {}\n    for raw_line in lines:\n        line = raw_line.strip()\n        if not line or line.startswith("#") or "=" not in line:\n            continue\n        key, value = line.split("=", 1)\n        normalized_key = key.strip()\n        if normalized_key:\n            values[normalized_key] = value.strip()\n    return values\n'''
+          app = app[:start] + replacement + app[end:]
+          app_path.write_text(app, encoding='utf-8')
+
+          provider_path = Path('src/paperclaw/desktop/provider_config.py')
+          provider = provider_path.read_text(encoding='utf-8')
+          provider = provider.replace(
+              '_CONNECT_TIMEOUT_SECONDS = 15.0\n',
+              '_CONNECT_TIMEOUT_SECONDS = 15.0\n_MAX_DISCOVERED_MODELS = 1_000\n',
+          )
+          provider = provider.replace(
+              '''        seen.add(normalized)\n        result.append(normalized)\n    return tuple(result)\n''',
+              '''        seen.add(normalized)\n        result.append(normalized)\n        if len(result) >= _MAX_DISCOVERED_MODELS:\n            break\n    return tuple(result)\n''',
+          )
+          provider_path.write_text(provider, encoding='utf-8')
+
+          Path('tests/unit/desktop/test_workspace_env_isolation_review.py').write_text(
+              '''from __future__ import annotations\n\nimport os\n\nfrom paperclaw.desktop import app\n\n\nclass FakeController:\n    def __init__(self) -> None:\n        self.last_request = None\n\n    def start_run(self, request):\n        self.last_request = request\n        return {"ok": True}\n\n    def cancel_run(self):\n        return {"ok": True}\n\n    def poll_events(self, limit):\n        return {"ok": True, "items": [], "dropped_count": 0}\n\n    def get_state(self):\n        return {"ok": True, "state": {"status": "idle"}}\n\n\ndef _write_provider_env(path, suffix):\n    path.mkdir()\n    (path / ".env").write_text(\n        f"PAPERCLAW_API_KEY=secret-{suffix}\\n"\n        f"PAPERCLAW_BASE_URL=https://{suffix}.invalid/v1\\n"\n        f"PAPERCLAW_MODEL=model-{suffix}\\n",\n        encoding="utf-8",\n    )\n\n\ndef test_switching_workspaces_does_not_reuse_previous_dotenv_credentials(\n    tmp_path, monkeypatch\n):\n    for name in (*app._REQUIRED_ENV, "PAPERCLAW_PROVIDER"):\n        monkeypatch.delenv(name, raising=False)\n    monkeypatch.chdir(tmp_path)\n    first = tmp_path / "first"\n    second = tmp_path / "second"\n    _write_provider_env(first, "first")\n    _write_provider_env(second, "second")\n    controller = FakeController()\n    api = app.DesktopAPI(controller)\n\n    assert api.start_run({"task": "one", "workspace": str(first)})["ok"]\n    assert controller.last_request["api_key"] == "secret-first"\n    assert api.start_run({"task": "two", "workspace": str(second)})["ok"]\n    assert controller.last_request["api_key"] == "secret-second"\n    assert controller.last_request["base_url"] == "https://second.invalid/v1"\n    assert controller.last_request["model"] == "model-second"\n    for name in app._REQUIRED_ENV:\n        assert os.getenv(name) is None\n\n\ndef test_process_environment_still_overrides_workspace_dotenv(tmp_path, monkeypatch):\n    workspace = tmp_path / "workspace"\n    _write_provider_env(workspace, "file")\n    monkeypatch.setenv("PAPERCLAW_MODEL", "process-model")\n    monkeypatch.delenv("PAPERCLAW_API_KEY", raising=False)\n    monkeypatch.delenv("PAPERCLAW_BASE_URL", raising=False)\n\n    values = app._resolve_provider_environment(workspace)\n\n    assert values["PAPERCLAW_API_KEY"] == "secret-file"\n    assert values["PAPERCLAW_BASE_URL"] == "https://file.invalid/v1"\n    assert values["PAPERCLAW_MODEL"] == "process-model"\n''',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Commit and push review fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/paperclaw/desktop/app.py \
+                  src/paperclaw/desktop/provider_config.py \
+                  tests/unit/desktop/test_workspace_env_isolation_review.py
+          git rm .github/workflows/apply-desktop-env-review-fix.yml
+          git commit -m "fix(desktop): isolate workspace provider environment"
+          git push origin HEAD:feat/consolidated-v0.11-v0.15
