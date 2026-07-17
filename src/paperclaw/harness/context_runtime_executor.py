@@ -62,6 +62,7 @@ class _ContextAwareModel:
         self._model = model
         self._orchestrator = orchestrator
         self._source_snapshot = source_snapshot
+        # Preserve explicit provider identity used by AgentRuntimeExecutor Trace.
         for name in ("provider", "model", "api_key"):
             value = getattr(model, name, None)
             if value is not None:
@@ -78,6 +79,7 @@ class _ContextAwareModel:
     def complete(self, prompt: str) -> ModelTurn:
         context = _CURRENT_CONTEXT.get()
         if context is None:
+            # Defensive parity fallback for direct test usage outside an executor.
             return self._model.complete(prompt)
 
         context.call_index += 1
@@ -157,7 +159,11 @@ class _ContextAwareModel:
 
 
 class ContextOrchestratedAgentRuntimeExecutor:
-    """RunExecutor that opts the existing single-Agent Runtime into v0.08."""
+    """RunExecutor that opts the existing single-Agent Runtime into v0.08.
+
+    This is composition, not a QueryEngine fork. The old
+    ``AgentRuntimeExecutor`` remains available and behavior-compatible.
+    """
 
     def __init__(
         self,
@@ -231,6 +237,10 @@ class ContextOrchestratedAgentRuntimeExecutor:
             )
         self.last_state = self._delegate.last_state
         self.last_assemblies = tuple(bound.assemblies)
+
+        # AgentRuntimeExecutor deliberately classifies unknown model-boundary
+        # exceptions as failed. Reclassify only our explicit fail-closed budget
+        # error; all other persistence/runtime failures remain genuine failures.
         if bound.budget_error is not None and report.status == "failed":
             return ExecutionReport(
                 status="budget_exhausted",
