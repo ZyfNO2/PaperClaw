@@ -17,9 +17,10 @@
     for (const id of [
       "config-source", "config-provider", "config-base-url", "config-model",
       "config-credential", "provider-base-url", "provider-api-key",
-      "provider-key-toggle", "provider-connect", "provider-model",
-      "provider-reset", "provider-connect-status", "provider-summary",
-      "env-badge", "model-label", "verification-enabled", "gate-mode-status"
+      "provider-manual-model", "provider-key-toggle", "provider-connect",
+      "provider-model", "provider-reset", "provider-connect-status",
+      "provider-summary", "env-badge", "model-label", "verification-enabled",
+      "gate-mode-status"
     ]) ui[toCamel(id)] = byId(id);
 
     ui.providerKeyToggle.addEventListener("click", toggleKeyVisibility);
@@ -56,6 +57,7 @@
     if (connecting) return;
     const baseUrl = ui.providerBaseUrl.value.trim();
     const apiKey = ui.providerApiKey.value.trim();
+    const manualModel = ui.providerManualModel.value.trim();
     if (!baseUrl || !apiKey) {
       setStatus("Base URL 和 API Key 均不能为空。", "error");
       return;
@@ -72,11 +74,13 @@
     ui.providerModel.disabled = true;
     setStatus("正在连接并读取模型列表……", "pending");
     try {
-      const response = await api.connect_provider({
+      const payload = {
         base_url: baseUrl,
         api_key: apiKey,
         provider: "openai-compatible"
-      });
+      };
+      if (manualModel) payload.model = manualModel;
+      const response = await api.connect_provider(payload);
       if (!response || !response.ok) {
         renderError(response);
         return;
@@ -85,7 +89,11 @@
       ui.providerApiKey.type = "password";
       ui.providerKeyToggle.textContent = "显示";
       renderProviderState(response);
-      setStatus(`连接成功，可用模型 ${response.available_models.length} 个。`, "success");
+      if (response.discovery_warning) {
+        setStatus(response.discovery_warning, "warning");
+      } else {
+        setStatus(`连接成功，可用模型 ${response.available_models.length} 个。`, "success");
+      }
     } catch (_error) {
       setStatus("连接失败：桌面桥接未返回有效结果。", "error");
     } finally {
@@ -131,6 +139,7 @@
       }
       ui.providerModel.replaceChildren();
       ui.providerModel.disabled = true;
+      ui.providerManualModel.value = "";
       setStatus("已恢复为环境变量配置。", "success");
       await maybeLoadDefaults();
     } catch (_error) {
@@ -144,23 +153,28 @@
     const baseUrl = text(response.base_url, "not configured");
     const model = text(response.model, "not configured");
     const configured = Boolean(response.configured);
+    const verified = response.model_verified !== false;
 
     ui.configSource.textContent = source;
     ui.configProvider.textContent = provider;
     ui.configBaseUrl.textContent = baseUrl;
-    ui.configModel.textContent = model;
+    ui.configModel.textContent = verified ? model : `${model} (unverified)`;
     ui.configCredential.textContent = configured ? "Configured (hidden)" : `Missing: ${(response.missing || []).join(", ")}`;
     ui.providerBaseUrl.value = response.base_url || "";
+    if (response.provider_source === "manual" && response.model_source === "manual") {
+      ui.providerManualModel.value = response.model || "";
+    }
 
     if (Array.isArray(response.available_models)) {
       populateModels(response.available_models, response.model);
     }
 
     const prefix = response.provider_source === "manual" ? "MANUAL" : "ENV";
+    const modelDisplay = verified ? model : `${model} · UNVERIFIED`;
     ui.providerSummary.textContent = configured
-      ? `LLM · ${prefix} · ${provider} / ${model}`
+      ? `LLM · ${prefix} · ${provider} / ${modelDisplay}`
       : `LLM · ${prefix} INCOMPLETE · ${(response.missing || []).join(", ")}`;
-    ui.modelLabel.textContent = model;
+    ui.modelLabel.textContent = modelDisplay;
     ui.envBadge.textContent = response.provider_source === "manual" ? "API✓" : (configured ? "ENV✓" : "ENV!");
     ui.envBadge.dataset.configured = configured ? "true" : "false";
   }
@@ -198,6 +212,11 @@
   function renderError(response) {
     const code = response && response.error_code ? response.error_code : "runtime_error";
     const message = response && response.error_message ? response.error_message : "Provider connection failed.";
+    if (response && response.active_configuration_preserved) {
+      const source = text(response.active_provider_source, "previous").toUpperCase();
+      setStatus(`${code}: ${message} · ${source} CONFIG STILL ACTIVE`, "warning");
+      return;
+    }
     setStatus(`${code}: ${message}`, "error");
   }
 
@@ -225,13 +244,12 @@
         },
         body: JSON.stringify({args})
       });
-      const payload = await response.json();
-      return payload;
+      return response.json();
     }
     return {
       get_defaults: () => invoke("get_defaults", []),
       connect_provider: (request) => invoke("connect_provider", [request]),
-      select_provider_model: (model) => invoke("select_provider_model", [model]),
+      select_provider_model: (model, allowUnlisted = false) => invoke("select_provider_model", [model, allowUnlisted]),
       clear_provider_config: () => invoke("clear_provider_config", [])
     };
   }
