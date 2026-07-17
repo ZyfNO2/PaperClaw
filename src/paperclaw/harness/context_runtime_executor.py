@@ -1,4 +1,9 @@
-"""Opt-in AgentRuntime adapter for v0.08 Context Orchestration."""
+"""Opt-in AgentRuntime adapter for v0.08 Context Orchestration.
+
+The existing ``AgentRuntimeExecutor`` remains unchanged. This module composes it
+with a model-boundary adapter so QueryEngine stays a thin façade and every
+Provider call receives one deterministic ``PromptAssembly``.
+"""
 
 from __future__ import annotations
 
@@ -46,6 +51,8 @@ _CURRENT_CONTEXT: ContextVar[_BoundAssemblyContext | None] = ContextVar(
 
 
 class _ContextAwareModel:
+    """ChatModel wrapper that assembles Context immediately before Provider I/O."""
+
     def __init__(
         self,
         model: ChatModel,
@@ -55,6 +62,7 @@ class _ContextAwareModel:
         self._model = model
         self._orchestrator = orchestrator
         self._source_snapshot = source_snapshot
+        # Preserve explicit provider identity used by AgentRuntimeExecutor Trace.
         for name in ("provider", "model", "api_key"):
             value = getattr(model, name, None)
             if value is not None:
@@ -71,12 +79,16 @@ class _ContextAwareModel:
     def complete(self, prompt: str) -> ModelTurn:
         context = _CURRENT_CONTEXT.get()
         if context is None:
+            # Defensive parity fallback for direct test usage outside an executor.
             return self._model.complete(prompt)
+
         context.call_index += 1
         step_id = f"model-{context.call_index}"
         at_sequence = 0
         if context.repository is not None:
-            at_sequence = context.repository.last_committed_sequence(context.request.run_id)
+            at_sequence = context.repository.last_committed_sequence(
+                context.request.run_id
+            )
         request = ContextRequest(
             run_id=context.request.run_id,
             conversation_id=context.request.conversation_id,
@@ -103,23 +115,26 @@ class _ContextAwareModel:
                 },
             )
             raise
+
         context.assemblies.append(assembly)
-        self._emit(
-            context,
-            "context.assembly.completed",
-            {"step_id": step_id, **assembly.trace.to_event_payload(), **source_trace},
-        )
+        payload = {
+            "step_id": step_id,
+            **assembly.trace.to_event_payload(),
+            **source_trace,
+        }
+        self._emit(context, "context.assembly.completed", payload)
         return self._model.complete(assembly.prompt)
 
     def _source_trace_payload(self) -> dict[str, Any]:
-        if self._source_snapshot is None:
+        snapshot = self._source_snapshot
+        if snapshot is None:
             return {
                 "context_source_registry_fingerprint": None,
                 "context_source_count": 0,
             }
         return {
-            "context_source_registry_fingerprint": self._source_snapshot.fingerprint,
-            "context_source_count": len(self._source_snapshot.descriptors),
+            "context_source_registry_fingerprint": snapshot.fingerprint,
+            "context_source_count": len(snapshot.descriptors),
         }
 
     @staticmethod
@@ -137,10 +152,19 @@ class _ContextAwareModel:
             run_id=context.request.run_id,
             agent_id="context_orchestrator",
         )
-        session.emit(event_type, {**payload, "query_event_sequence": query_sequence})
+        session.emit(
+            event_type,
+            {**payload, "query_event_sequence": query_sequence},
+        )
 
 
 class ContextOrchestratedAgentRuntimeExecutor:
+    """RunExecutor that opts the existing single-Agent Runtime into v0.08.
+
+    This is composition, not a QueryEngine fork. The old
+    ``AgentRuntimeExecutor`` remains available and behavior-compatible.
+    """
+
     def __init__(
         self,
         model: ChatModel,
@@ -172,7 +196,10 @@ class ContextOrchestratedAgentRuntimeExecutor:
                 sources=(context_source_registry,),
             )
         else:
-            self._orchestrator = ContextOrchestrator(repository, policy=context_policy)
+            self._orchestrator = ContextOrchestrator(
+                repository,
+                policy=context_policy,
+            )
         self._model = _ContextAwareModel(
             model,
             self._orchestrator,
@@ -210,6 +237,10 @@ class ContextOrchestratedAgentRuntimeExecutor:
             )
         self.last_state = self._delegate.last_state
         self.last_assemblies = tuple(bound.assemblies)
+
+        # AgentRuntimeExecutor deliberately classifies unknown model-boundary
+        # exceptions as failed. Reclassify only our explicit fail-closed budget
+        # error; all other persistence/runtime failures remain genuine failures.
         if bound.budget_error is not None and report.status == "failed":
             return ExecutionReport(
                 status="budget_exhausted",
