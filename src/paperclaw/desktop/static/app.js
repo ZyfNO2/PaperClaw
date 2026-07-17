@@ -16,6 +16,7 @@
   let currentRunId = null;
   let lastFinalResult = "";
   let toastTimer = null;
+  let providerSource = "env";
 
   function byId(id) {
     return document.getElementById(id);
@@ -32,8 +33,10 @@
       "task", "send-button", "clear-task", "task-count", "summary-status", "model-calls",
       "tool-calls", "last-sequence", "event-meta", "model-label", "verification-status",
       "verification-summary", "progress-label", "progress-bar", "timeline-filters", "timeline",
-      "settings-panel", "close-settings", "config-provider", "config-base-url", "config-model",
-      "config-credential", "max-steps", "max-model-calls", "max-tool-calls",
+      "settings-panel", "close-settings", "config-source", "config-provider", "config-base-url",
+      "config-model", "config-credential", "provider-input", "provider-base-url",
+      "provider-api-key", "toggle-api-key", "connect-provider", "connection-status",
+      "provider-model", "max-steps", "max-model-calls", "max-tool-calls",
       "verification-enabled", "toast", "toast-message", "close-toast"
     ]) ui[toCamel(id)] = byId(id);
 
@@ -61,6 +64,9 @@
     ui.settingsPanel.addEventListener("click", (event) => {
       if (event.target === ui.settingsPanel) closeSettings();
     });
+    ui.toggleApiKey.addEventListener("click", toggleApiKeyVisibility);
+    ui.connectProvider.addEventListener("click", connectProvider);
+    ui.providerModel.addEventListener("change", selectProviderModel);
     ui.closeToast.addEventListener("click", hideToast);
     bindFilterGroup(ui.missionFilters, "data-log-filter", applyMissionFilter);
     bindFilterGroup(ui.timelineFilters, "data-tl-filter", applyTimelineFilter);
@@ -95,7 +101,7 @@
   async function loadDefaults() {
     const api = backendApi();
     if (!api || typeof api.get_defaults !== "function") {
-      showError("gui_dependency_missing", "Desktop bridge does not expose environment defaults.");
+      showError("gui_dependency_missing", "Desktop bridge does not expose model defaults.");
       return;
     }
     try {
@@ -106,19 +112,144 @@
       }
       workspace = stringValue(response.workspace, "");
       renderWorkspace(workspace);
-      setText(ui.configProvider, stringValue(response.provider, "openai-compatible"));
-      setText(ui.configBaseUrl, stringValue(response.base_url, "not configured"));
-      setText(ui.configModel, stringValue(response.model, "not configured"));
-      setText(ui.configCredential, response.configured ? "Configured (hidden)" : `Missing: ${(response.missing || []).join(", ")}`);
-      setText(ui.modelLabel, stringValue(response.model, "ENV"));
-      setText(ui.providerSummary, response.configured
-        ? `LLM · ENV · ${stringValue(response.provider, "openai-compatible")} / ${stringValue(response.model, "model")}`
-        : `LLM · ENV INCOMPLETE · ${(response.missing || []).join(", ")}`);
-      ui.envBadge.textContent = response.configured ? "ENV✓" : "ENV!";
-      ui.envBadge.dataset.configured = response.configured ? "true" : "false";
+      renderProviderConfiguration(response);
     } catch (_error) {
-      showError("runtime_error", "Environment defaults could not be loaded.");
+      showError("runtime_error", "Model defaults could not be loaded.");
     }
+  }
+
+  function renderProviderConfiguration(response) {
+    providerSource = stringValue(response.provider_source, "env").toLowerCase();
+    const provider = stringValue(response.provider, "openai-compatible");
+    const baseUrl = stringValue(response.base_url, "");
+    const model = stringValue(response.model || response.selected_model, "");
+    const models = Array.isArray(response.models) ? response.models : (model ? [model] : []);
+    const configured = Boolean(response.configured);
+    const isManual = providerSource === "manual";
+
+    ui.providerInput.value = provider;
+    ui.providerBaseUrl.value = baseUrl;
+    setText(ui.configSource, isManual ? "Manual in-memory connection" : "Environment variables");
+    setText(ui.configProvider, provider);
+    setText(ui.configBaseUrl, baseUrl || "not configured");
+    setText(ui.configModel, model || "not configured");
+    setText(ui.configCredential, configured ? "Configured (hidden)" : `Missing: ${(response.missing || []).join(", ")}`);
+    setText(ui.modelLabel, model || (isManual ? "MANUAL" : "ENV"));
+    renderModelOptions(models, model, isManual && configured);
+    setText(ui.connectionStatus, isManual ? "CONNECTED" : (configured ? "ENV READY" : "NOT CONNECTED"));
+    setText(ui.providerSummary, configured
+      ? `LLM · ${isManual ? "MANUAL" : "ENV"} · ${provider} / ${model || "model"}`
+      : `LLM · ENV INCOMPLETE · ${(response.missing || []).join(", ")}`);
+    ui.envBadge.textContent = isManual ? "API✓" : (configured ? "ENV✓" : "ENV!");
+    ui.envBadge.dataset.configured = configured ? "true" : "false";
+  }
+
+  function renderModelOptions(models, selectedModel, enabled) {
+    ui.providerModel.replaceChildren();
+    const normalizedModels = [];
+    for (const value of models || []) {
+      const model = stringValue(value, "").trim();
+      if (model && !normalizedModels.includes(model)) normalizedModels.push(model);
+    }
+    if (!normalizedModels.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "Connect provider first";
+      ui.providerModel.append(option);
+      ui.providerModel.disabled = true;
+      return;
+    }
+    for (const model of normalizedModels) {
+      const option = document.createElement("option");
+      option.value = model;
+      option.textContent = model;
+      option.selected = model === selectedModel;
+      ui.providerModel.append(option);
+    }
+    ui.providerModel.disabled = !enabled;
+  }
+
+  async function connectProvider() {
+    const api = backendApi();
+    if (!api || typeof api.connect_provider !== "function") {
+      showError("gui_dependency_missing", "Desktop bridge does not support provider connection.");
+      return;
+    }
+    const provider = ui.providerInput.value.trim() || "openai-compatible";
+    const baseUrl = ui.providerBaseUrl.value.trim();
+    const apiKey = ui.providerApiKey.value.trim();
+    if (!baseUrl || !apiKey) {
+      showError("validation_error", "请输入 Base URL 和 API Key。" );
+      (!baseUrl ? ui.providerBaseUrl : ui.providerApiKey).focus();
+      return;
+    }
+
+    clearError();
+    ui.connectProvider.disabled = true;
+    ui.providerModel.disabled = true;
+    setText(ui.connectionStatus, "CONNECTING…");
+    try {
+      const response = await api.connect_provider({
+        provider,
+        base_url: baseUrl,
+        api_key: apiKey
+      });
+      if (!response || !response.ok) {
+        renderBackendError(response);
+        setText(ui.connectionStatus, "CONNECTION FAILED");
+        return;
+      }
+      ui.providerApiKey.value = "";
+      ui.providerApiKey.type = "password";
+      ui.toggleApiKey.setAttribute("aria-pressed", "false");
+      setText(ui.toggleApiKey, "SHOW KEY");
+      renderProviderConfiguration(response);
+      appendMissionMessage("system", "SYSTEM", `Provider connected. ${numberValue((response.models || []).length)} models available.`);
+      showToast("Provider connected and model list loaded.");
+    } catch (_error) {
+      showError("provider_network_error", "Provider connection could not be completed.");
+      setText(ui.connectionStatus, "CONNECTION FAILED");
+    } finally {
+      ui.connectProvider.disabled = false;
+    }
+  }
+
+  async function selectProviderModel() {
+    const selected = ui.providerModel.value;
+    if (!selected) return;
+    const api = backendApi();
+    if (!api || typeof api.select_provider_model !== "function") {
+      showError("gui_dependency_missing", "Desktop bridge does not support model selection.");
+      return;
+    }
+    ui.providerModel.disabled = true;
+    try {
+      const response = await api.select_provider_model(selected);
+      if (!response || !response.ok) {
+        renderBackendError(response);
+        return;
+      }
+      providerSource = "manual";
+      setText(ui.configModel, selected);
+      setText(ui.modelLabel, selected);
+      setText(ui.providerSummary, `LLM · MANUAL · ${stringValue(response.provider, "openai-compatible")} / ${selected}`);
+      setText(ui.connectionStatus, "CONNECTED");
+      ui.envBadge.textContent = "API✓";
+      ui.envBadge.dataset.configured = "true";
+      showToast(`Model selected: ${selected}`);
+    } catch (_error) {
+      showError("runtime_error", "Model selection could not be saved.");
+    } finally {
+      ui.providerModel.disabled = false;
+    }
+  }
+
+  function toggleApiKeyVisibility() {
+    const showing = ui.providerApiKey.type === "text";
+    ui.providerApiKey.type = showing ? "password" : "text";
+    ui.toggleApiKey.setAttribute("aria-pressed", showing ? "false" : "true");
+    setText(ui.toggleApiKey, showing ? "SHOW KEY" : "HIDE KEY");
+    ui.providerApiKey.focus();
   }
 
   async function refreshState() {
@@ -198,7 +329,7 @@
       }
       ui.task.value = "";
       updateTaskInput();
-      appendMissionMessage("system", "SYSTEM", "Run accepted. Model configuration will be resolved from environment variables in Python.");
+      appendMissionMessage("system", "SYSTEM", `Run accepted. Using ${providerSource === "manual" ? "the manual in-memory provider" : "environment-backed provider configuration"}.`);
       updateControls(response.status || "starting");
     } catch (_error) {
       showError("runtime_error", "Run could not be started.");
@@ -445,7 +576,7 @@
 
   function openSettings() {
     ui.settingsPanel.hidden = false;
-    ui.closeSettings.focus();
+    ui.providerBaseUrl.focus();
   }
 
   function closeSettings() {
@@ -470,7 +601,7 @@
     setText(ui.verificationSummary, "not run");
     updateProgress("idle", false);
     clearError();
-    appendMissionMessage("system", "SYSTEM", "New run workspace prepared. Environment-backed model configuration is unchanged.");
+    appendMissionMessage("system", "SYSTEM", "New run workspace prepared. Current model configuration is unchanged.");
     ui.task.focus();
   }
 
