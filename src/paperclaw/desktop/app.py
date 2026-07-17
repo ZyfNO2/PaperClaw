@@ -46,7 +46,8 @@ class DesktopAPI:
         try:
             import webview
 
-            selected = window.create_file_dialog(webview.FOLDER_DIALOG)
+            dialog_type = _folder_dialog_type(webview)
+            selected = window.create_file_dialog(dialog_type)
         except Exception:
             return DesktopPublicError(
                 "runtime_error",
@@ -67,6 +68,18 @@ class DesktopAPI:
                 "Selected workspace is not a directory.",
             ).to_public_dict()
         return {"ok": True, "workspace": str(workspace)}
+
+
+def _folder_dialog_type(webview_module: Any) -> Any:
+    """Support pywebview 5 constants and the pywebview 6 enum."""
+
+    file_dialog = getattr(webview_module, "FileDialog", None)
+    modern = getattr(file_dialog, "FOLDER", None) if file_dialog is not None else None
+    legacy = getattr(webview_module, "FOLDER_DIALOG", None)
+    dialog_type = modern if modern is not None else legacy
+    if dialog_type is None:
+        raise RuntimeError("pywebview folder dialog API is unavailable")
+    return dialog_type
 
 
 def pywebview_available() -> bool:
