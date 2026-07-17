@@ -11,7 +11,11 @@ from paperclaw.desktop.contracts import DesktopPublicError
 
 
 class FakeController:
+    def __init__(self) -> None:
+        self.last_request = None
+
     def start_run(self, request):
+        self.last_request = request
         return {"ok": True, "request_size": len(request)}
 
     def cancel_run(self):
@@ -33,9 +37,110 @@ class FakeWindow:
         return self.result
 
 
-def test_desktop_api_exposes_only_narrow_controller_operations(tmp_path, monkeypatch) -> None:
+def _set_provider_env(monkeypatch) -> None:
+    monkeypatch.setenv("PAPERCLAW_API_KEY", "secret-value")
+    monkeypatch.setenv("PAPERCLAW_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.setenv("PAPERCLAW_MODEL", "test-model")
+    monkeypatch.setenv("PAPERCLAW_PROVIDER", "test-provider")
+
+
+def test_desktop_api_hydrates_default_run_from_environment(tmp_path, monkeypatch) -> None:
+    _set_provider_env(monkeypatch)
+    controller = FakeController()
+    api = app.DesktopAPI(controller)
+
+    response = api.start_run({"task": "x", "workspace": str(tmp_path)})
+
+    assert response["ok"] is True
+    assert controller.last_request == {
+        "task": "x",
+        "workspace": str(tmp_path),
+        "api_key": "secret-value",
+        "base_url": "https://example.invalid/v1",
+        "model": "test-model",
+        "provider": "test-provider",
+    }
+
+
+def test_environment_defaults_never_expose_api_key(tmp_path, monkeypatch) -> None:
+    _set_provider_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
     api = app.DesktopAPI(FakeController())
-    assert api.start_run({"task": "x"}) == {"ok": True, "request_size": 1}
+
+    defaults = api.get_defaults()
+
+    assert defaults == {
+        "ok": True,
+        "workspace": str(tmp_path.resolve()),
+        "provider_source": "env",
+        "provider": "test-provider",
+        "base_url": "https://example.invalid/v1",
+        "model": "test-model",
+        "configured": True,
+        "missing": [],
+    }
+    assert "secret-value" not in repr(defaults)
+    assert "api_key" not in defaults
+
+
+def test_missing_environment_is_a_typed_public_error(tmp_path, monkeypatch) -> None:
+    for name in app._REQUIRED_ENV:
+        monkeypatch.delenv(name, raising=False)
+    controller = FakeController()
+    api = app.DesktopAPI(controller)
+
+    response = api.start_run({"task": "x", "workspace": str(tmp_path)})
+
+    assert response["ok"] is False
+    assert response["error_code"] == "provider_configuration_error"
+    assert "PAPERCLAW_API_KEY" in response["error_message"]
+    assert controller.last_request is None
+
+
+def test_workspace_dotenv_is_loaded_without_overriding_process_env(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("PAPERCLAW_MODEL", "process-model")
+    monkeypatch.delenv("PAPERCLAW_API_KEY", raising=False)
+    monkeypatch.delenv("PAPERCLAW_BASE_URL", raising=False)
+    (tmp_path / ".env").write_text(
+        "PAPERCLAW_API_KEY=file-secret\n"
+        "PAPERCLAW_BASE_URL=https://file.invalid/v1\n"
+        "PAPERCLAW_MODEL=file-model\n",
+        encoding="utf-8",
+    )
+    controller = FakeController()
+    api = app.DesktopAPI(controller)
+
+    response = api.start_run({"task": "x", "workspace": str(tmp_path)})
+
+    assert response["ok"] is True
+    assert controller.last_request["api_key"] == "file-secret"
+    assert controller.last_request["base_url"] == "https://file.invalid/v1"
+    assert controller.last_request["model"] == "process-model"
+
+
+def test_explicit_provider_configuration_remains_supported(tmp_path, monkeypatch) -> None:
+    for name in app._REQUIRED_ENV:
+        monkeypatch.delenv(name, raising=False)
+    controller = FakeController()
+    api = app.DesktopAPI(controller)
+    request = {
+        "task": "x",
+        "workspace": str(tmp_path),
+        "api_key": "explicit-secret",
+        "base_url": "https://explicit.invalid/v1",
+        "model": "explicit-model",
+        "provider": "explicit-provider",
+    }
+
+    response = api.start_run(request)
+
+    assert response["ok"] is True
+    assert controller.last_request == request
+
+
+def test_desktop_api_exposes_controller_operations_and_workspace_picker(tmp_path, monkeypatch) -> None:
+    _set_provider_env(monkeypatch)
+    api = app.DesktopAPI(FakeController())
     assert api.cancel_run() == {"ok": True, "accepted": True}
     assert api.poll_events(7) == {"ok": True, "items": [], "limit": 7}
     assert api.get_state()["state"]["status"] == "idle"
