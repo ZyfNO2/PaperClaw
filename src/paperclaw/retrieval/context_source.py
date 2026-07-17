@@ -27,10 +27,44 @@ _TASK_SECTION = re.compile(r"\[Task\]\s*(.*?)(?:\n\[History\]|\Z)", re.DOTALL)
 _WORD = re.compile(r"[^\W_]+(?:['’-][^\W_]+)*", re.UNICODE)
 _STOPWORDS = frozenset(
     {
-        "a", "an", "and", "are", "as", "at", "be", "by", "can", "could",
-        "did", "do", "does", "for", "from", "how", "in", "is", "it", "of",
-        "on", "or", "should", "that", "the", "this", "to", "use", "using",
-        "was", "were", "what", "when", "where", "which", "who", "why", "with",
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "for",
+        "from",
+        "how",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "should",
+        "that",
+        "the",
+        "this",
+        "to",
+        "use",
+        "using",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "with",
         "would",
     }
 )
@@ -253,12 +287,19 @@ def _defensive_unique_active_candidates(
 ) -> tuple[RetrievalCandidate, ...]:
     seen_chunks: set[str] = set()
     seen_content: set[str] = set()
+    seen_text: set[str] = set()
     selected: list[RetrievalCandidate] = []
     for candidate in candidates:
-        if candidate.chunk_id in seen_chunks or candidate.content_hash in seen_content:
+        text_hash = hashlib.sha256(candidate.text.encode("utf-8")).hexdigest()
+        if (
+            candidate.chunk_id in seen_chunks
+            or candidate.content_hash in seen_content
+            or text_hash in seen_text
+        ):
             continue
         seen_chunks.add(candidate.chunk_id)
         seen_content.add(candidate.content_hash)
+        seen_text.add(text_hash)
         selected.append(candidate)
     return tuple(selected)
 
