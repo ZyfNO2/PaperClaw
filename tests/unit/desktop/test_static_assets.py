@@ -3,65 +3,17 @@ import re
 
 
 EXPECTED_IDS = {
-    "provider",
-    "base-url",
-    "api-key",
-    "toggle-key",
-    "model",
-    "workspace",
-    "select-workspace",
-    "verification-enabled",
-    "max-steps",
-    "max-model-calls",
-    "max-tool-calls",
-    "task",
-    "task-count",
-    "clear-task",
-    "run-button",
-    "cancel-button",
-    "run-status",
-    "summary-status",
-    "model-calls",
-    "tool-calls",
-    "last-sequence",
-    "verification-status",
-    "verification-summary",
-    "timeline",
-    "final-result",
-    "public-error",
-    "global-search",
-    "run-id-label",
-    "workspace-label",
-    "provider-label",
-    "model-label",
-    "under-develop-toast",
-    "under-develop-message",
-    "close-toast",
-}
-
-PLANNED_SURFACES = {
-    "Runs",
-    "Workspaces",
-    "Trace Explorer",
-    "Agent Management",
-    "Knowledge Base",
-    "Prompt Library",
-    "Evaluation Dashboard",
-    "Model Registry",
-    "Settings",
-    "Saved Provider Profiles",
-    "Credential Vault",
-    "Model Discovery",
-    "Session Search",
-    "Interactive Trace Graph",
-    "File Preview",
-    "Citation Inspector",
-    "Markdown Preview",
-    "Structured JSON Preview",
-    "Result Diff",
-    "Token Analytics",
-    "Tool Usage Analytics",
-    "Diagnostics Center",
+    "app", "sidebar", "sidebar-toggle", "workspace-card", "workspace-name",
+    "workspace-path", "sidebar-nav", "trace-count", "env-badge", "new-run-button",
+    "run-subtitle", "global-search", "run-status", "run-button", "cancel-button",
+    "export-button", "select-workspace", "provider-summary", "mission-filters",
+    "mission-log", "public-error", "task", "send-button", "clear-task", "task-count",
+    "summary-status", "model-calls", "tool-calls", "last-sequence", "event-meta",
+    "model-label", "verification-status", "verification-summary", "progress-label",
+    "progress-bar", "timeline-filters", "timeline", "settings-panel", "close-settings",
+    "config-provider", "config-base-url", "config-model", "config-credential",
+    "max-steps", "max-model-calls", "max-tool-calls", "verification-enabled",
+    "toast", "toast-message", "close-toast",
 }
 
 
@@ -80,30 +32,17 @@ def test_static_assets_are_packaged_and_reference_only_local_resources() -> None
     assert "@import url(" not in css.lower()
 
 
-def test_html_has_expected_controls_labels_and_security_policy() -> None:
+def test_html_has_expected_controls_and_security_policy() -> None:
     html = _asset("index.html")
     for element_id in EXPECTED_IDS:
         assert f'id="{element_id}"' in html
     assert "Content-Security-Policy" in html
     assert "connect-src 'none'" in html
-    assert '<label for="api-key">' in html
     assert '<label class="sr-only" for="task">' in html
     assert 'aria-live="polite"' in html
 
 
-def test_expanded_shell_exposes_planned_surfaces_as_under_develop_controls() -> None:
-    html = _asset("index.html")
-    javascript = _asset("app.js")
-    for surface in PLANNED_SURFACES:
-        assert f'data-under-develop="{surface}"' in html
-    assert html.count("data-under-develop=") >= 45
-    assert "Under Develop" in javascript
-    assert "bindPlannedControls" in javascript
-    assert "showUnderDevelop" in javascript
-    assert "preventDefault" in javascript
-
-
-def test_frontend_uses_no_persistence_remote_code_or_unsafe_dynamic_execution() -> None:
+def test_frontend_uses_no_secret_field_persistence_remote_code_or_unsafe_execution() -> None:
     combined = "\n".join((_asset("index.html"), _asset("app.js"))).lower()
     for forbidden in (
         "localstorage",
@@ -113,20 +52,28 @@ def test_frontend_uses_no_persistence_remote_code_or_unsafe_dynamic_execution() 
         "eval(",
         "new function",
         ".innerhtml",
+        "api_key",
+        "paperclaw_api_key",
     ):
         assert forbidden not in combined
     assert "console.log" not in combined
-    assert "api_key" in combined
-    assert 'payload.api_key = ""' in combined
     assert not re.search(r"sk-[a-z0-9_-]{16,}", combined, flags=re.IGNORECASE)
+
+
+def test_uploaded_neobrutalist_visual_language_is_preserved() -> None:
+    css = _asset("styles.css")
+    html = _asset("index.html")
+    assert "--pc-background:#c5c9c9" in css
+    assert "--pc-accent:#0040ff" in css
+    assert "box-shadow:var(--pc-shadow" in css
+    assert "MISSION LOG" in html
+    assert "EVENT TIMELINE" in html
+    assert "RUN STATUS" in html
 
 
 def test_styles_keep_controls_visible_in_narrow_layout() -> None:
     css = _asset("styles.css")
-    assert "@media (max-width: 520px)" in css
-    assert ".action-row" in css
-    assert "flex-direction: column" in css
-    assert "min-width: 360px" in css
-    assert ".desktop-layout" in css
-    assert ".sidebar" in css
-    assert ".toast" in css
+    assert "@media(max-width:720px)" in css
+    assert "min-width:360px" in css
+    assert ".toolbar-group" in css
+    assert "flex-direction:column" in css
