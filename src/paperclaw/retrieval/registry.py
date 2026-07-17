@@ -122,7 +122,7 @@ SCHEMA_SQL: tuple[str, ...] = (
         chunk_count INTEGER NOT NULL,
         state TEXT NOT NULL,
         corpus_hash TEXT NOT NULL,
-        content_hash TEXT NOT NULL UNIQUE
+        content_hash TEXT NOT NULL
     )
     """,
 )
@@ -559,6 +559,16 @@ class SQLiteDocumentRegistry:
             raise ValueError(
                 f"manifest corpus_hash {manifest.corpus_hash} does not match active corpus {actual_corpus_hash}"
             )
+        existing = self._conn.execute(
+            "SELECT content_hash FROM index_manifests WHERE manifest_id = ?",
+            (manifest.manifest_id,),
+        ).fetchone()
+        if existing is not None:
+            if existing["content_hash"] != manifest.content_hash:
+                raise ValueError(
+                    f"manifest_id collision: {manifest.manifest_id} exists with different content"
+                )
+            return
         self._conn.execute(
             "INSERT INTO index_manifests(manifest_id, schema_version, index_version, created_at, chunk_config_hash, "
             "parser_versions_json, document_count, version_count, chunk_count, state, corpus_hash, content_hash) "

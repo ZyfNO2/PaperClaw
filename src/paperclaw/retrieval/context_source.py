@@ -25,6 +25,7 @@ from paperclaw.retrieval.query import (
 
 _TASK_SECTION = re.compile(r"\[Task\]\s*(.*?)(?:\n\[History\]|\Z)", re.DOTALL)
 _WORD = re.compile(r"[^\W_]+(?:['’-][^\W_]+)*", re.UNICODE)
+_CJK = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
 _STOPWORDS = frozenset(
     {
         "a",
@@ -266,6 +267,28 @@ def register_retrieval_context_source(
     )
 
 
+def _expand_token(token: str) -> list[str]:
+    """Keep non-CJK words intact; split CJK runs into single characters.
+
+    Single CJK characters combined with prefix matching in the BM25 query
+    builder allow natural Chinese questions to retrieve phrase-indexed docs.
+    """
+
+    parts: list[str] = []
+    non_cjk_parts: list[str] = []
+    for char in token:
+        if _CJK.fullmatch(char):
+            if non_cjk_parts:
+                parts.append("".join(non_cjk_parts))
+                non_cjk_parts = []
+            parts.append(char)
+        else:
+            non_cjk_parts.append(char)
+    if non_cjk_parts:
+        parts.append("".join(non_cjk_parts))
+    return parts
+
+
 def extract_retrieval_query(raw_prompt: str) -> str:
     """Extract task terms and remove fixed stopwords before BM25 retrieval."""
 
@@ -274,10 +297,12 @@ def extract_retrieval_query(raw_prompt: str) -> str:
     tokens = []
     seen: set[str] = set()
     for token in _WORD.findall(task.casefold()):
-        if token in _STOPWORDS or len(token) < 2 or token in seen:
-            continue
-        seen.add(token)
-        tokens.append(token)
+        for part in _expand_token(token):
+            is_cjk = bool(_CJK.fullmatch(part))
+            if part in _STOPWORDS or (not is_cjk and len(part) < 2) or part in seen:
+                continue
+            seen.add(part)
+            tokens.append(part)
     if not tokens:
         return "no_retrieval_query_terms"
     return " ".join(tokens)[:2_000]

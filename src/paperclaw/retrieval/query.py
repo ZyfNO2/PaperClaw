@@ -350,7 +350,10 @@ def _build_match_query(query: str) -> str:
             continue
         seen.add(token)
         escaped = token.replace('"', '""')
-        tokens.append(f'"{escaped}"')
+        # Prefix matching improves recall for CJK text (where unicode61 indexes
+        # whole phrases as single tokens) and for English stems. It only matches
+        # token prefixes, not arbitrary substrings.
+        tokens.append(f'"{escaped}"*')
     return " OR ".join(tokens)
 
 
