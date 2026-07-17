@@ -5,8 +5,8 @@
 - Repository: `ZyfNO2/PaperClaw`
 - Development branch: `agent/manual-provider-and-gate-control`
 - Draft PR: `#36`
-- Intended base after CI: `amend/v0.11-frontend-playwright` (follow-up to PR #34)
-- Current state: implementation complete; automated GitHub validation pending
+- Base: `amend/v0.11-frontend-playwright` (follow-up to PR #34)
+- Current state: implementation complete; focused offline validation passed; live provider and native Windows acceptance pending
 
 ## Scope
 
@@ -18,7 +18,8 @@ This change adds two desktop controls requested after the v0.11 UI acceptance:
 ## Architecture
 
 - `paperclaw.desktop.provider_config` installs a narrow extension before the desktop host starts.
-- Credentials remain in Python process memory only and are never returned to JavaScript, snapshots, traces, or exported events.
+- The API Key necessarily exists briefly in the password input and bridge request. After a successful connection, the input is cleared and the connected credential is retained only in Python process memory.
+- The credential is never returned in public desktop/browser responses and is not persisted to localStorage, sessionStorage, cookies, IndexedDB, traces, or exported events.
 - Model discovery uses `GET {base_url}/models` with a bounded 15 second timeout.
 - Manual configuration overrides ENV for new desktop runs; callers that supply a complete explicit provider remain unchanged.
 - `USE ENV` clears the in-memory manual configuration and restores existing environment-backed behavior.
@@ -38,16 +39,20 @@ This change adds two desktop controls requested after the v0.11 UI acceptance:
 - `tests/unit/desktop/test_static_assets.py`
 - `tests/unit/desktop/test_runtime_factory.py`
 
-## Verification
+## Verification performed
 
-Local offline checks completed before the PR was opened:
+Focused offline validation performed in the available execution environment:
 
-- Python syntax compilation for the new Python modules and tests;
-- `node --check` for `provider-config.js`;
-- isolated provider-extension smoke test;
-- HTML parser smoke test.
+- provider extension tests: `4 passed in 0.14s`;
+- `node --check src/paperclaw/desktop/static/provider-config.js`: passed;
+- provider UI static secret/persistence scan: passed;
+- disabled Verify/Reflection gate forwarding smoke: passed;
+- Python syntax compilation for the new Python modules and tests: passed;
+- HTML parser smoke: passed.
 
-GitHub validation is expected to include:
+The repository workflows are filtered to pull requests targeting `main`. This PR intentionally targets the active v0.11 frontend branch, so GitHub Actions did not execute for this exact head. Full repository regression and Windows package CI therefore remain `NOT VERIFIED` for PR #36.
+
+Recommended validation after PR #34 is merged or the workflow base filter is expanded:
 
 ```bash
 python -m pytest -q tests/unit/desktop/test_provider_config.py
