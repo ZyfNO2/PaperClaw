@@ -3,8 +3,6 @@
 Import this module only when the optional ``service`` dependencies are installed.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 from typing import Any
