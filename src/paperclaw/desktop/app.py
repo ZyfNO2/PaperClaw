@@ -29,6 +29,9 @@ _REQUIRED_ENV = (
     "PAPERCLAW_MODEL",
 )
 _MAX_DISCOVERED_MODELS = 1_000
+_MODEL_DISCOVERY_FALLBACK_CODES = frozenset(
+    {"provider_configuration_error", "provider_invalid_response"}
+)
 
 
 class DesktopAPI:
@@ -48,6 +51,7 @@ class DesktopAPI:
         self._provider_lock = RLock()
         self._manual_provider: dict[str, str] | None = None
         self._available_models: tuple[str, ...] = ()
+        self._manual_model_selected = False
 
     def bind_window(self, window: Any) -> None:
         self._window = window
@@ -75,8 +79,9 @@ class DesktopAPI:
         with self._provider_lock:
             manual_provider = dict(self._manual_provider) if self._manual_provider else None
             models = list(self._available_models)
+            manual_model_selected = self._manual_model_selected
         if manual_provider is not None:
-            return {
+            response: dict[str, object] = {
                 "ok": True,
                 "workspace": str(workspace),
                 "provider_source": "manual",
@@ -87,6 +92,10 @@ class DesktopAPI:
                 "configured": True,
                 "missing": [],
             }
+            if manual_model_selected:
+                response["model_source"] = "manual"
+                response["model_verified"] = False
+            return response
 
         _load_dotenv(workspace / ".env")
         missing = [name for name in _REQUIRED_ENV if not os.getenv(name)]
@@ -104,30 +113,55 @@ class DesktopAPI:
         }
 
     def connect_provider(self, request: Mapping[str, Any]) -> dict[str, object]:
-        """Validate one manual provider and discover its available models.
+        """Validate a manual provider and load models when the endpoint supports it.
 
-        The credential is retained only in this Python process. The response sent
-        to JavaScript contains connection metadata and model IDs, never the key.
+        A supplied manual model lets OpenAI-compatible providers work even when
+        ``GET /models`` is unavailable. The credential remains only in this Python
+        process and is never returned to JavaScript.
         """
 
         try:
             provider_config = _validate_provider_connection_request(request)
+        except DesktopPublicError as exc:
+            return self._provider_error_response(exc)
+
+        manual_model = provider_config.pop("model", "")
+        discovery_warning = ""
+        manual_model_selected = False
+        try:
             models = _discover_provider_models(
                 provider_config,
                 urlopen=self._provider_urlopen,
                 timeout=self._provider_timeout,
             )
         except DesktopPublicError as exc:
-            return exc.to_public_dict()
+            if manual_model and exc.code in _MODEL_DISCOVERY_FALLBACK_CODES:
+                models = [manual_model]
+                discovery_warning = (
+                    "Model discovery was unavailable. The manually entered model "
+                    "will be used without endpoint verification."
+                )
+                manual_model_selected = True
+            else:
+                return self._provider_error_response(exc)
 
-        selected_model = models[0]
+        if manual_model:
+            selected_model = manual_model
+            manual_model_selected = manual_model not in models or manual_model_selected
+            if manual_model not in models:
+                models.insert(0, manual_model)
+        else:
+            selected_model = models[0]
+
         with self._provider_lock:
             self._manual_provider = {
                 **provider_config,
                 "model": selected_model,
             }
             self._available_models = tuple(models)
-        return {
+            self._manual_model_selected = manual_model_selected
+
+        response: dict[str, object] = {
             "ok": True,
             "provider_source": "manual",
             "provider": provider_config["provider"],
@@ -136,35 +170,86 @@ class DesktopAPI:
             "selected_model": selected_model,
             "configured": True,
         }
+        if manual_model_selected:
+            response.update(
+                {
+                    "model_source": "manual",
+                    "model_verified": False,
+                    "discovery_warning": discovery_warning
+                    or "The selected model was entered manually and was not listed by the provider.",
+                }
+            )
+        return response
 
-    def select_provider_model(self, model: str) -> dict[str, object]:
-        """Select a discovered model for subsequent runs."""
+    def select_provider_model(
+        self,
+        model: str,
+        allow_unlisted: bool = False,
+    ) -> dict[str, object]:
+        """Select a discovered model, or explicitly opt into an unlisted one."""
 
         try:
             selected = _required_provider_text(model, "Model", limit=256)
+            if not isinstance(allow_unlisted, bool):
+                raise DesktopPublicError(
+                    "validation_error",
+                    "allow_unlisted must be a boolean.",
+                )
         except DesktopPublicError as exc:
             return exc.to_public_dict()
+
         with self._provider_lock:
             if self._manual_provider is None:
                 return DesktopPublicError(
                     "provider_configuration_error",
                     "Connect a provider before selecting a model.",
                 ).to_public_dict()
-            if selected not in self._available_models:
+            is_listed = selected in self._available_models
+            if not is_listed and not allow_unlisted:
                 return DesktopPublicError(
                     "provider_configuration_error",
                     "Selected model is not available from the connected provider.",
                 ).to_public_dict()
+            if not is_listed:
+                self._available_models = (selected, *self._available_models)
             self._manual_provider = {**self._manual_provider, "model": selected}
+            self._manual_model_selected = not is_listed and allow_unlisted
             provider = self._manual_provider["provider"]
             base_url = self._manual_provider["base_url"]
-        return {
+            models = list(self._available_models)
+
+        response: dict[str, object] = {
             "ok": True,
             "provider_source": "manual",
             "provider": provider,
             "base_url": base_url,
             "model": selected,
         }
+        if allow_unlisted:
+            response.update(
+                {
+                    "models": models,
+                    "selected_model": selected,
+                    "configured": True,
+                    "model_source": "manual" if not is_listed else "discovered",
+                    "model_verified": bool(is_listed),
+                }
+            )
+        return response
+
+    def clear_manual_provider(self) -> dict[str, object]:
+        """Drop the in-memory credential and return to ENV/.env resolution."""
+
+        with self._provider_lock:
+            cleared = self._manual_provider is not None
+            if self._manual_provider is not None:
+                self._manual_provider["api_key"] = ""
+            self._manual_provider = None
+            self._available_models = ()
+            self._manual_model_selected = False
+        response = self.get_defaults()
+        response["manual_provider_cleared"] = cleared
+        return response
 
     def select_workspace(self) -> dict[str, object]:
         window = self._window
@@ -198,6 +283,43 @@ class DesktopAPI:
                 "Selected workspace is not a directory.",
             ).to_public_dict()
         return {"ok": True, "workspace": str(workspace)}
+
+    def _provider_error_response(self, exc: DesktopPublicError) -> dict[str, object]:
+        response = exc.to_public_dict()
+        with self._provider_lock:
+            active = dict(self._manual_provider) if self._manual_provider else None
+        if active is not None:
+            response.update(
+                {
+                    "active_configuration_preserved": True,
+                    "active_provider_source": "manual",
+                    "active_provider": active["provider"],
+                    "active_base_url": active["base_url"],
+                    "active_model": active["model"],
+                    "error_message": (
+                        f"{response['error_message']} Previous provider remains active."
+                    ),
+                }
+            )
+            return response
+
+        defaults = self.get_defaults()
+        env_active = bool(defaults.get("configured"))
+        response["active_configuration_preserved"] = env_active
+        if env_active:
+            response.update(
+                {
+                    "active_provider_source": "env",
+                    "active_provider": defaults.get("provider"),
+                    "active_base_url": defaults.get("base_url"),
+                    "active_model": defaults.get("model"),
+                    "error_message": (
+                        f"{response['error_message']} Previous environment configuration "
+                        "remains active."
+                    ),
+                }
+            )
+        return response
 
     def _hydrate_provider(self, request: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(request, Mapping):
@@ -254,7 +376,7 @@ def _validate_provider_connection_request(request: Mapping[str, Any]) -> dict[st
             "validation_error",
             "Provider connection request must be an object.",
         )
-    allowed_fields = {"base_url", "api_key", "provider"}
+    allowed_fields = {"base_url", "api_key", "provider", "model"}
     unknown = sorted(str(key) for key in request if key not in allowed_fields)
     if unknown:
         raise DesktopPublicError(
@@ -279,11 +401,15 @@ def _validate_provider_connection_request(request: Mapping[str, Any]) -> dict[st
         "Provider",
         limit=128,
     )
-    return {
+    result = {
         "base_url": base_url.rstrip("/"),
         "api_key": api_key,
         "provider": provider,
     }
+    manual_model = request.get("model")
+    if manual_model not in (None, ""):
+        result["model"] = _required_provider_text(manual_model, "Model", limit=256)
+    return result
 
 
 def _discover_provider_models(
@@ -314,10 +440,10 @@ def _discover_provider_models(
                 "provider_authentication_error",
                 "Provider rejected the supplied API key or permission.",
             ) from exc
-        if exc.code == 404:
+        if exc.code in {400, 404, 405}:
             raise DesktopPublicError(
                 "provider_configuration_error",
-                "Provider model-list endpoint was not found at Base URL /models.",
+                "Provider model-list endpoint is unavailable at Base URL /models.",
             ) from exc
         raise DesktopPublicError(
             "provider_connection_error",
