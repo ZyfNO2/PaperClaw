@@ -1,4 +1,4 @@
-from paperclaw.desktop.app import main
+from paperclaw.desktop.bootstrap import main
 
 
 if __name__ == "__main__":
