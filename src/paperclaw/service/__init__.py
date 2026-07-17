@@ -7,8 +7,8 @@ from .contracts import (
     ServiceRunRequest,
     SubmitOutcome,
 )
-from .durable_application import DurableRunApplicationService
 from .plugins import ServicePlugin, ServicePluginRegistry
+from .production_application import DurableRunApplicationService
 from .resilience import LayerTimeoutError, TimeoutPolicy
 
 __all__ = [
