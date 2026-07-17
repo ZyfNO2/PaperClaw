@@ -1,0 +1,10 @@
+Plan/PaperClaw_v0.10_Model_Policy_Foundation_SOP.md
+artifacts/v0_10_model_policy/file_manifest.txt
+artifacts/v0_10_model_policy/implementation_summary.md
+artifacts/v0_10_model_policy/known_limitations.md
+artifacts/v0_10_model_policy/test_report.md
+docs/handoff/PaperClaw_v0.10_Model_Policy_Foundation_HANDOFF.md
+src/paperclaw/model_policy/__init__.py
+src/paperclaw/model_policy/contracts.py
+src/paperclaw/model_policy/router.py
+tests/unit/test_model_policy_foundation.py
