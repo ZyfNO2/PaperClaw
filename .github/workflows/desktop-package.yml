@@ -6,6 +6,7 @@ on:
     paths:
       - "src/paperclaw/desktop/**"
       - "src/paperclaw/entrypoint.py"
+      - "tests/unit/desktop/**"
       - "scripts/build_desktop.py"
       - "scripts/paperclaw_desktop_entry.py"
       - "pyproject.toml"
@@ -37,7 +38,30 @@ jobs:
       - name: Install desktop build dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[build]"
+          python -m pip install -e ".[build,dev]"
+          python -m pip install pytest-reportlog
+
+      - name: Prepare focused test directories
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path tmp\pytest-desktop | Out-Null
+
+      - name: Run focused desktop tests
+        shell: pwsh
+        run: |
+          python -m pytest `
+            -q tests/unit/desktop `
+            --basetemp=tmp/pytest-desktop `
+            --report-log=tmp/desktop_pytest_reportlog.jsonl
+
+      - name: Upload focused test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-pytest-results-${{ github.run_id }}
+          path: tmp/desktop_pytest_reportlog.jsonl
+          retention-days: 30
+          if-no-files-found: warn
 
       - name: Build PyInstaller onedir
         run: python scripts/build_desktop.py
