@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from paperclaw.desktop.contracts import DesktopRunRequest
 from paperclaw.desktop.runtime_factory import DesktopRuntimeFactory
 
@@ -60,7 +62,7 @@ def test_runtime_factory_uses_explicit_values_without_mutating_environment(
     assert engine.executor.model.kwargs["provider"] == "provider-a"
     assert engine.executor.model.kwargs["retry_policy"].max_attempts == 3
     assert engine.executor.kwargs["enable_verification_gate"] is True
-    assert monkeypatch.getenv("PAPERCLAW_API_KEY", raising=False) is None
+    assert os.environ["PAPERCLAW_API_KEY"] == "unrelated-env-key"
 
     engine.event_handler("run.started", {"run_id": "run-1", "sequence": 10})
     engine.executor.kwargs["legacy_event_handler"](
