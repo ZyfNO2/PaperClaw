@@ -121,15 +121,16 @@ class RunApplicationService:
             self._runs[service_run_id] = record
             if key:
                 self._idempotency[key] = (digest, service_run_id)
-            self._append_event_locked(
-                record,
-                "service.run.accepted",
-                {
-                    "conversation_id": request.conversation_id,
-                    "client_id": request.client_id,
-                },
-                terminal=False,
-            )
+            with record.condition:
+                self._append_event_locked(
+                    record,
+                    "service.run.accepted",
+                    {
+                        "conversation_id": request.conversation_id,
+                        "client_id": request.client_id,
+                    },
+                    terminal=False,
+                )
             record.future = self._executor.submit(self._execute, record)
 
         view = self._view(record)
