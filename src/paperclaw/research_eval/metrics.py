@@ -55,14 +55,14 @@ class MetricRegistry:
         self._plugins = plugins_tuple
 
     def score(self, case: EvalCase, result: CaseResult) -> CaseScore:
-        base = core_metrics(case, result)
+        metrics = core_metrics(case, result)
         failures: list[Mapping[str, str]] = []
         for plugin in self._plugins:
             try:
                 metric = plugin.evaluate(case, result)
                 if metric.metric_id != plugin.metric_id:
                     raise ValueError("plugin returned a different metric_id")
-                base[metric.metric_id] = metric
+                metrics[metric.metric_id] = metric
             except Exception as exc:
                 failures.append(
                     {
@@ -76,7 +76,7 @@ class MetricRegistry:
             case_id=case.case_id,
             variant_id=result.variant_id,
             status=result.status,
-            metrics=base,
+            metrics=metrics,
             plugin_failures=tuple(failures),
         )
 
@@ -89,7 +89,9 @@ def core_metrics(case: EvalCase, result: CaseResult) -> dict[str, MetricResult]:
     top_k = max(1, min(5, len(ranked) or 1))
     claims_text = [_normalize(claim.text) for claim in result.claims]
 
-    recall = _ratio(len(expected & set(retrieved[:top_k])), len(expected))
+    recall = _ratio(
+        len(expected & set(retrieved[:top_k])), len(expected), empty_value=1.0
+    )
     first_relevant = next(
         (index for index, source_id in enumerate(retrieved, start=1) if source_id in expected),
         None,
@@ -129,22 +131,34 @@ def core_metrics(case: EvalCase, result: CaseResult) -> dict[str, MetricResult]:
         ),
         "required_claim_coverage": MetricResult(
             "required_claim_coverage",
-            _ratio(required_hits, len(case.required_claims)),
+            _ratio(
+                required_hits,
+                len(case.required_claims),
+                empty_value=1.0,
+            ),
             {"matched": required_hits, "required": len(case.required_claims)},
         ),
         "forbidden_claim_rate": MetricResult(
             "forbidden_claim_rate",
-            _ratio(forbidden_hits, len(case.forbidden_claims)),
+            _ratio(
+                forbidden_hits,
+                len(case.forbidden_claims),
+                empty_value=0.0,
+            ),
             {"matched": forbidden_hits, "forbidden": len(case.forbidden_claims)},
         ),
         "citation_correctness": MetricResult(
             "citation_correctness",
-            _ratio(correct_citations, len(cited)),
+            _ratio(correct_citations, len(cited), empty_value=1.0),
             {"correct": correct_citations, "cited": len(cited)},
         ),
         "citation_completeness": MetricResult(
             "citation_completeness",
-            _ratio(claims_with_citations, len(result.claims)),
+            _ratio(
+                claims_with_citations,
+                len(result.claims),
+                empty_value=1.0,
+            ),
             {
                 "claims_with_citations": claims_with_citations,
                 "claims": len(result.claims),
@@ -152,9 +166,12 @@ def core_metrics(case: EvalCase, result: CaseResult) -> dict[str, MetricResult]:
         ),
         "unsupported_claim_rate": MetricResult(
             "unsupported_claim_rate",
-            1.0 - _ratio(supported_claims, len(result.claims))
-            if result.claims
-            else 0.0,
+            1.0
+            - _ratio(
+                supported_claims,
+                len(result.claims),
+                empty_value=1.0,
+            ),
             {"supported": supported_claims, "claims": len(result.claims)},
         ),
         "model_calls": MetricResult("model_calls", result.model_calls, {}),
@@ -182,9 +199,9 @@ def aggregate_scores(scores: Sequence[CaseScore]) -> dict[str, float]:
     }
 
 
-def _ratio(numerator: int, denominator: int) -> float:
+def _ratio(numerator: int, denominator: int, *, empty_value: float) -> float:
     if denominator == 0:
-        return 1.0
+        return empty_value
     return numerator / denominator
 
 
