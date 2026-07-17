@@ -1,1 +1,0 @@
-Regression hardening only; no reconnect, Resources, Prompts, routing, or third-party interoperability claim.
