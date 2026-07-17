@@ -106,6 +106,10 @@ def run_demo(output_path: Path | None = None) -> dict[str, Any]:
         },
         "grounding_metrics": metrics.to_dict(),
     }
+    # The public demo contract is JSON, so normalize tuples and other JSON-compatible
+    # containers before both returning and persisting the payload. This guarantees
+    # replay equality between the in-memory result and the saved artifact.
+    payload = json.loads(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
