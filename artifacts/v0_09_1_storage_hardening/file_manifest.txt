@@ -1,0 +1,7 @@
+Plan/PaperClaw_v0.09.1_RAG_Storage_Hardening_SOP.md
+artifacts/v0_09_1_storage_hardening/file_manifest.txt
+artifacts/v0_09_1_storage_hardening/implementation_summary.md
+artifacts/v0_09_1_storage_hardening/known_limitations.md
+artifacts/v0_09_1_storage_hardening/test_report.md
+docs/handoff/PaperClaw_v0.09.1_RAG_Storage_Hardening_HANDOFF.md
+tests/unit/test_rag_storage_hardening.py
