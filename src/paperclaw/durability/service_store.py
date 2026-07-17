@@ -10,7 +10,15 @@ import sqlite3
 import time
 from typing import Any, Callable, Iterator, Mapping
 
-from .core import DurableRun, SQLiteDurableRunStore
+from .core import (
+    ALLOWED_TRANSITIONS,
+    TERMINAL_STATES,
+    DurableRun,
+    DurableRunNotFoundError,
+    InvalidTransitionError,
+    LeaseConflictError,
+    SQLiteDurableRunStore,
+)
 
 
 @dataclass(frozen=True)
@@ -192,6 +200,179 @@ class SQLiteDurableServiceStore:
                 ),
             )
         return self.get_run(run_id)
+
+    def finalize_run(
+        self,
+        run_id: str,
+        *,
+        worker_id: str,
+        requested_state: str,
+        stop_reason: str,
+        metadata_patch: Mapping[str, Any],
+        event_type: str = "service.run.finalized",
+        event_payload: Mapping[str, Any] | None = None,
+    ) -> tuple[DurableRun, DurableRunEvent | None]:
+        """Atomically persist terminal metadata, state, lease release and event.
+
+        The worker lease is checked inside the same ``BEGIN IMMEDIATE``
+        transaction. A stale worker therefore cannot overwrite a run reclaimed
+        by another worker. Cancellation wins over a concurrently produced
+        runtime result; a run timeout is classified as ``failed`` while an
+        explicit user cancellation is classified as ``stopped``.
+        """
+
+        worker = worker_id.strip()
+        if not worker:
+            raise ValueError("worker_id must not be empty")
+        requested = requested_state.strip()
+        if requested not in TERMINAL_STATES:
+            raise ValueError("requested_state must be terminal")
+        reason = stop_reason.strip()
+        if not reason:
+            raise ValueError("stop_reason must not be empty")
+        normalized_event_type = event_type.strip()[:160]
+        if not normalized_event_type:
+            raise ValueError("event_type must not be empty")
+        patch = _sanitize(metadata_patch)
+        payload = _sanitize(event_payload or {})
+        if not isinstance(patch, dict) or not isinstance(payload, dict):
+            raise ValueError("metadata and event payload must be objects")
+
+        now = self._clock()
+        stored_event: DurableRunEvent | None = None
+        already_terminal = False
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT state, version, metadata_json FROM durable_runs "
+                "WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                raise DurableRunNotFoundError(f"unknown durable run: {run_id}")
+            current_state = str(row["state"])
+            if current_state in TERMINAL_STATES:
+                already_terminal = True
+            else:
+                lease = connection.execute(
+                    "SELECT worker_id, expires_at FROM durable_worker_leases "
+                    "WHERE run_id = ?",
+                    (run_id,),
+                ).fetchone()
+                if (
+                    lease is None
+                    or lease["worker_id"] != worker
+                    or float(lease["expires_at"]) <= now
+                ):
+                    raise LeaseConflictError(
+                        "worker does not own a live lease for finalization"
+                    )
+
+                metadata = json.loads(row["metadata_json"])
+                final_state = requested
+                final_reason = reason
+                if current_state == "cancelling":
+                    persisted_reason = metadata.get("stop_reason")
+                    if isinstance(persisted_reason, str) and persisted_reason.strip():
+                        final_reason = persisted_reason.strip()
+                    final_state = (
+                        "failed" if final_reason == "run_timeout" else "stopped"
+                    )
+                if final_state not in ALLOWED_TRANSITIONS.get(
+                    current_state, frozenset()
+                ):
+                    raise InvalidTransitionError(
+                        f"transition not allowed: {current_state} -> {final_state}"
+                    )
+
+                metadata.update(patch)
+                metadata["stop_reason"] = final_reason
+                if final_reason == "run_timeout":
+                    timeout_error = metadata.get("error")
+                    if not isinstance(timeout_error, dict) or (
+                        timeout_error.get("code") != "run_timeout"
+                    ):
+                        metadata["error"] = {
+                            "code": "run_timeout",
+                            "message": "run exceeded whole-run timeout",
+                        }
+
+                version = int(row["version"])
+                next_version = version + 1
+                connection.execute(
+                    "UPDATE durable_runs SET state = ?, version = ?, "
+                    "updated_at = ?, terminal_reason = ?, metadata_json = ? "
+                    "WHERE run_id = ?",
+                    (
+                        final_state,
+                        next_version,
+                        now,
+                        final_reason,
+                        json.dumps(
+                            metadata,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=False,
+                        ),
+                        run_id,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO durable_run_transitions (
+                        run_id, from_state, to_state, version, reason, actor,
+                        timestamp, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, '{}')
+                    """,
+                    (
+                        run_id,
+                        current_state,
+                        final_state,
+                        next_version,
+                        final_reason,
+                        worker,
+                        now,
+                    ),
+                )
+
+                event_data = dict(payload)
+                event_data["status"] = final_state
+                event_data["stop_reason"] = final_reason
+                encoded = json.dumps(
+                    event_data,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+                sequence_row = connection.execute(
+                    "SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence "
+                    "FROM durable_run_events WHERE run_id = ?",
+                    (run_id,),
+                ).fetchone()
+                sequence = int(sequence_row["next_sequence"])
+                connection.execute(
+                    """
+                    INSERT INTO durable_run_events (
+                        run_id, sequence, event_type, payload_json, terminal,
+                        timestamp
+                    ) VALUES (?, ?, ?, ?, 1, ?)
+                    """,
+                    (run_id, sequence, normalized_event_type, encoded, now),
+                )
+                connection.execute(
+                    "DELETE FROM durable_worker_leases WHERE run_id = ?",
+                    (run_id,),
+                )
+                stored_event = DurableRunEvent(
+                    run_id=run_id,
+                    sequence=sequence,
+                    event_type=normalized_event_type,
+                    payload=json.loads(encoded),
+                    terminal=True,
+                    timestamp=now,
+                )
+
+        run = self.get_run(run_id)
+        return run, None if already_terminal else stored_event
 
     def queued_count(self) -> int:
         with self._connection() as connection:

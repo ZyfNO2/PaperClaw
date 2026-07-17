@@ -15,6 +15,7 @@ from paperclaw.durability.core import (
     DurableRunNotFoundError,
     IdempotencyRecordConflictError,
     InvalidTransitionError,
+    LeaseConflictError,
     RecoveryCoordinator,
 )
 from paperclaw.durability.service_store import (
@@ -103,6 +104,7 @@ class DurableRunApplicationService:
         self._lock = RLock()
         self._event_condition = Condition(RLock())
         self._shutting_down = False
+        self._drainer_slots = 0
 
         reconciled = RecoveryCoordinator(self._store.run_store).reconcile()
         for item in reconciled:
@@ -241,7 +243,7 @@ class DurableRunApplicationService:
                 raise RunNotCancellableError("run is already terminal")
             try:
                 if run.state == "queued":
-                    updated = self._store.transition(
+                    self._store.transition(
                         run.run_id,
                         expected_state="queued",
                         expected_version=run.version,
@@ -266,7 +268,7 @@ class DurableRunApplicationService:
                         terminal=True,
                     )
                     self._plugins.event(terminal_event)
-                    view = self._view(updated)
+                    view = self.get_run(run.run_id)
                     self._plugins.run_terminal(view)
                     return view
                 if run.state == "running":
@@ -290,6 +292,9 @@ class DurableRunApplicationService:
                     )
                     break
                 if run.state == "cancelling":
+                    persisted_reason = run.metadata.get("stop_reason")
+                    if isinstance(persisted_reason, str) and persisted_reason.strip():
+                        normalized_reason = persisted_reason.strip()
                     break
                 raise RunNotCancellableError(
                     f"run cannot be cancelled from state={run.state}"
@@ -321,21 +326,34 @@ class DurableRunApplicationService:
         with self._lock:
             if self._shutting_down:
                 return
-            for _ in range(self._max_active_runs):
-                self._executor.submit(self._drain_queue)
+            available = self._max_active_runs - self._drainer_slots
+            for _ in range(max(0, available)):
+                self._drainer_slots += 1
+                try:
+                    self._executor.submit(self._drain_queue)
+                except Exception:
+                    self._drainer_slots -= 1
+                    raise
 
     def _drain_queue(self) -> None:
-        while True:
-            with self._lock:
-                if self._shutting_down:
+        try:
+            while True:
+                with self._lock:
+                    if self._shutting_down:
+                        return
+                run = self._store.claim_next(
+                    self._worker_id,
+                    lease_seconds=self._lease_seconds,
+                )
+                if run is None:
                     return
-            run = self._store.claim_next(
-                self._worker_id,
-                lease_seconds=self._lease_seconds,
-            )
-            if run is None:
-                return
-            self._execute_claimed(run)
+                self._execute_claimed(run)
+        finally:
+            with self._lock:
+                self._drainer_slots = max(0, self._drainer_slots - 1)
+                should_reschedule = not self._shutting_down
+            if should_reschedule and self._store.queued_count() > 0:
+                self._schedule_drainers()
 
     def _execute_claimed(self, claimed: DurableRun) -> None:
         if self._clock() - claimed.created_at > self._timeouts.queue_timeout_seconds:
@@ -387,90 +405,66 @@ class DurableRunApplicationService:
             with self._lock:
                 active.engine = engine
             result = engine.submit(request.task, limits=request.limits)
-            current = self._store.get_run(claimed.run_id)
             desired_state = result.status
-            stop_reason = result.stop_reason
-            if current.state == "cancelling":
-                desired_state = "stopped"
-                stop_reason = current.metadata.get("stop_reason") or stop_reason
+            stop_reason = result.stop_reason or result.status
+            error: dict[str, Any] | None = None
             if desired_state not in TERMINAL_SERVICE_STATUSES:
                 desired_state = "failed"
                 stop_reason = "invalid_runtime_terminal_status"
-            self._store.merge_metadata(
+                error = {
+                    "code": "invalid_runtime_terminal_status",
+                    "message": f"runtime returned status={result.status!r}",
+                }
+            _, durable_event = self._store.finalize_run(
                 claimed.run_id,
-                {
+                worker_id=self._worker_id,
+                requested_state=desired_state,
+                stop_reason=str(stop_reason),
+                metadata_patch={
                     "runtime_run_id": result.run_id,
-                    "stop_reason": stop_reason,
                     "model_calls": result.model_calls,
                     "tool_calls": result.tool_calls,
                     "output": result.output,
-                    "error": None,
+                    "error": error,
                 },
-            )
-            current = self._store.get_run(claimed.run_id)
-            if not current.terminal:
-                self._store.transition(
-                    claimed.run_id,
-                    expected_state=current.state,
-                    expected_version=current.version,
-                    next_state=desired_state,
-                    reason=str(stop_reason or desired_state),
-                    actor=self._worker_id,
-                )
-            final_event = self._append_event(
-                claimed.run_id,
-                "service.run.finalized",
-                {
-                    "status": desired_state,
-                    "stop_reason": stop_reason,
+                event_type="service.run.finalized",
+                event_payload={
                     "model_calls": result.model_calls,
                     "tool_calls": result.tool_calls,
                 },
-                terminal=True,
             )
-            self._plugins.event(final_event)
+            if durable_event is not None:
+                public_event = self._public_event(durable_event)
+                with self._event_condition:
+                    self._event_condition.notify_all()
+                self._plugins.event(public_event)
+        except LeaseConflictError:
+            # A newer worker owns the run after recovery. The stale worker must
+            # not alter state, metadata or public events.
+            pass
         except Exception as exc:
-            current = self._store.get_run(claimed.run_id)
-            self._store.merge_metadata(
-                claimed.run_id,
-                {
-                    "stop_reason": "service_execution_failed",
-                    "error": {
-                        "code": "runtime_failed",
-                        "error_type": type(exc).__name__,
-                        "message": str(exc)[:500],
-                    },
-                },
-            )
-            current = self._store.get_run(claimed.run_id)
-            if not current.terminal:
-                next_state = (
-                    "failed"
-                    if current.state in {"running", "cancelling"}
-                    else "recovery_required"
+            failure = {
+                "code": "runtime_failed",
+                "error_type": type(exc).__name__,
+                "message": str(exc)[:500],
+            }
+            try:
+                _, durable_event = self._store.finalize_run(
+                    claimed.run_id,
+                    worker_id=self._worker_id,
+                    requested_state="failed",
+                    stop_reason="service_execution_failed",
+                    metadata_patch={"error": failure},
+                    event_type="service.run.failed",
+                    event_payload=failure,
                 )
-                try:
-                    self._store.transition(
-                        claimed.run_id,
-                        expected_state=current.state,
-                        expected_version=current.version,
-                        next_state=next_state,
-                        reason="service_execution_failed",
-                        actor=self._worker_id,
-                    )
-                except (CompareAndSwapError, InvalidTransitionError):
-                    pass
-            failed_event = self._append_event(
-                claimed.run_id,
-                "service.run.failed",
-                {
-                    "code": "runtime_failed",
-                    "error_type": type(exc).__name__,
-                    "message": str(exc)[:500],
-                },
-                terminal=True,
-            )
-            self._plugins.event(failed_event)
+            except (LeaseConflictError, InvalidTransitionError):
+                durable_event = None
+            if durable_event is not None:
+                public_event = self._public_event(durable_event)
+                with self._event_condition:
+                    self._event_condition.notify_all()
+                self._plugins.event(public_event)
         finally:
             active.heartbeat_stop.set()
             active.timeout_stop.set()
@@ -480,7 +474,9 @@ class DurableRunApplicationService:
                 self._store.release_lease(claimed.run_id, self._worker_id)
             except Exception:
                 pass
-            self._plugins.run_terminal(self.get_run(claimed.run_id))
+            view = self.get_run(claimed.run_id)
+            if view.terminal:
+                self._plugins.run_terminal(view)
 
     def _handle_runtime_event(
         self,
@@ -537,46 +533,42 @@ class DurableRunApplicationService:
         if active.timeout_stop.wait(self._timeouts.run_timeout_seconds):
             return
         try:
-            timeout_event = self._append_event(
-                run_id,
-                "service.run.timeout",
-                {
-                    "code": "run_timeout",
-                    "seconds": self._timeouts.run_timeout_seconds,
-                },
-                terminal=False,
-            )
-            self._plugins.event(timeout_event)
             self.cancel(run_id, reason="run_timeout")
+            self._store.merge_metadata(
+                run_id,
+                {
+                    "error": {
+                        "code": "run_timeout",
+                        "message": "run exceeded whole-run timeout",
+                        "seconds": self._timeouts.run_timeout_seconds,
+                    }
+                },
+            )
         except (RunNotFoundError, RunNotCancellableError):
             return
 
     def _fail_claimed(self, run: DurableRun, *, code: str, message: str) -> None:
-        self._store.merge_metadata(
-            run.run_id,
-            {
-                "stop_reason": code,
-                "error": {"code": code, "message": message[:500]},
-            },
-        )
-        current = self._store.get_run(run.run_id)
-        if not current.terminal:
-            self._store.transition(
+        failure = {"code": code, "message": message[:500]}
+        try:
+            _, durable_event = self._store.finalize_run(
                 run.run_id,
-                expected_state=current.state,
-                expected_version=current.version,
-                next_state="failed",
-                reason=code,
-                actor=self._worker_id,
+                worker_id=self._worker_id,
+                requested_state="failed",
+                stop_reason=code,
+                metadata_patch={"error": failure},
+                event_type="service.run.failed",
+                event_payload=failure,
             )
-        event = self._append_event(
-            run.run_id,
-            "service.run.failed",
-            {"code": code, "message": message[:500]},
-            terminal=True,
-        )
-        self._plugins.event(event)
-        self._plugins.run_terminal(self.get_run(run.run_id))
+        except LeaseConflictError:
+            return
+        if durable_event is not None:
+            public_event = self._public_event(durable_event)
+            with self._event_condition:
+                self._event_condition.notify_all()
+            self._plugins.event(public_event)
+        view = self.get_run(run.run_id)
+        if view.terminal:
+            self._plugins.run_terminal(view)
 
     def _append_event(
         self,
