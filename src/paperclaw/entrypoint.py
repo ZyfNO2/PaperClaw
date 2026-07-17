@@ -8,7 +8,7 @@ import sys
 def main(argv: list[str] | None = None) -> int:
     resolved = list(sys.argv[1:] if argv is None else argv)
     if resolved and resolved[0] == "gui":
-        from paperclaw.desktop.app import main as desktop_main
+        from paperclaw.desktop.bootstrap import main as desktop_main
 
         return desktop_main(resolved[1:])
 
