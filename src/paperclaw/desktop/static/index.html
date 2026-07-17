@@ -172,6 +172,9 @@
               <button class="btn" id="provider-key-toggle" type="button">显示</button>
             </span>
           </label>
+          <label class="provider-field full" for="provider-manual-model">MODEL (OPTIONAL FALLBACK)
+            <input id="provider-manual-model" type="text" maxlength="256" autocomplete="off" spellcheck="false" placeholder="Use when /models is unavailable">
+          </label>
           <label class="provider-field full" for="provider-model">AVAILABLE MODEL
             <select id="provider-model" disabled aria-label="选择当前 API 可访问的模型"></select>
           </label>
@@ -180,7 +183,7 @@
           <button class="btn primary" id="provider-connect" type="button">CONNECT &amp; LOAD MODELS</button>
           <button class="btn" id="provider-reset" type="button">USE ENV</button>
         </div>
-        <p class="provider-status" id="provider-connect-status" data-state="idle" role="status" aria-live="polite">填写 Base URL 与 API Key 后连接。凭据仅保存在本次 Python 进程内存中。</p>
+        <p class="provider-status" id="provider-connect-status" data-state="idle" role="status" aria-live="polite">填写 Base URL 与 API Key 后连接。若服务不支持 /models，可填写可选模型名；凭据仅保存在本次 Python 进程内存中。</p>
       </section>
 
       <div class="budget-grid">
