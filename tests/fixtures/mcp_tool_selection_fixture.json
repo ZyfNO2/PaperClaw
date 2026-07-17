@@ -1,0 +1,48 @@
+{
+  "tools": [
+    {
+      "server_id": "fixture",
+      "name": "echo",
+      "description": "Echo one text value for message reflection",
+      "properties": {"text": {"type": "string"}},
+      "required": ["text"],
+      "scopes": ["shared"]
+    },
+    {
+      "server_id": "fixture",
+      "name": "add",
+      "description": "Add two integer values and return the numeric total",
+      "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+      "required": ["a", "b"],
+      "scopes": ["shared"]
+    },
+    {
+      "server_id": "research",
+      "name": "search_papers",
+      "description": "Search academic papers by topic and keyword",
+      "properties": {"query": {"type": "string"}},
+      "required": ["query"],
+      "scopes": ["research"]
+    }
+  ],
+  "queries": [
+    {
+      "id": "sum",
+      "task": "add two integer values and return the total",
+      "scopes": ["shared"],
+      "relevance": {"fixture.add": 3}
+    },
+    {
+      "id": "echo",
+      "task": "echo this text message",
+      "scopes": ["shared"],
+      "relevance": {"fixture.echo": 3}
+    },
+    {
+      "id": "papers",
+      "task": "search academic papers by keyword",
+      "scopes": ["research"],
+      "relevance": {"research.search_papers": 3}
+    }
+  ]
+}

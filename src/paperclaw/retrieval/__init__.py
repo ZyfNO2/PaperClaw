@@ -1,4 +1,4 @@
-"""PaperClaw v0.09.1 RAG document and index foundation."""
+"""PaperClaw v0.09.1 RAG document, index and BM25 retrieval foundation."""
 
 from paperclaw.retrieval.chunking import build_chunks
 from paperclaw.retrieval.contracts import (
@@ -18,27 +18,72 @@ from paperclaw.retrieval.contracts import (
     sha256_text,
     stable_id,
 )
+from paperclaw.retrieval.evaluation import (
+    RetrievalJudgment,
+    RetrievalMetrics,
+    evaluate_judgment,
+    evaluate_suite,
+    ndcg_at_k,
+    recall_at_k,
+    reciprocal_rank,
+)
+from paperclaw.retrieval.incremental import IncrementalIndexer, IncrementalIndexResult
+from paperclaw.retrieval.integrity import (
+    IndexIntegrityReport,
+    IndexRebuildResult,
+    SQLiteIndexMaintainer,
+)
 from paperclaw.retrieval.parsers import MarkdownParser, ParserOutput, PlainTextParser, select_parser
+from paperclaw.retrieval.query import (
+    BrokenIndexError,
+    RankedResult,
+    RetrievalCandidate,
+    RetrievalError,
+    RetrievalRequest,
+    SQLiteBM25Retriever,
+    StaleIndexError,
+    retrieved_ids,
+)
 from paperclaw.retrieval.registry import SQLiteDocumentRegistry
 
 __all__ = [
     "BlockLocator",
+    "BrokenIndexError",
     "Chunk",
     "ChunkConfig",
     "ChunkLocator",
     "DocumentIdentity",
     "DocumentVersion",
+    "IncrementalIndexer",
+    "IncrementalIndexResult",
+    "IndexIntegrityReport",
     "IndexManifest",
+    "IndexRebuildResult",
     "MarkdownParser",
     "ParsedBlock",
     "ParserOutput",
     "PlainTextParser",
+    "RankedResult",
     "RegistryMutationResult",
+    "RetrievalCandidate",
+    "RetrievalError",
+    "RetrievalJudgment",
+    "RetrievalMetrics",
+    "RetrievalRequest",
+    "SQLiteBM25Retriever",
     "SQLiteDocumentRegistry",
+    "SQLiteIndexMaintainer",
     "SourceArtifact",
+    "StaleIndexError",
     "build_chunks",
     "canonical_json",
     "compute_corpus_hash",
+    "evaluate_judgment",
+    "evaluate_suite",
+    "ndcg_at_k",
+    "recall_at_k",
+    "reciprocal_rank",
+    "retrieved_ids",
     "select_parser",
     "sha256_bytes",
     "sha256_text",

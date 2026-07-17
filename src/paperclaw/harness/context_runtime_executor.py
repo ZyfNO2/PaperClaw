@@ -22,6 +22,10 @@ from paperclaw.context.orchestration import (
 )
 from paperclaw.context.repository import Repository
 from paperclaw.context.session import SessionService
+from paperclaw.context.source_registry import (
+    ContextSourceRegistry,
+    ContextSourceRegistrySnapshot,
+)
 from paperclaw.models.base import ChatModel, ModelTurn
 from paperclaw.tools.registry import ToolRegistry
 
@@ -49,9 +53,15 @@ _CURRENT_CONTEXT: ContextVar[_BoundAssemblyContext | None] = ContextVar(
 class _ContextAwareModel:
     """ChatModel wrapper that assembles Context immediately before Provider I/O."""
 
-    def __init__(self, model: ChatModel, orchestrator: ContextOrchestrator) -> None:
+    def __init__(
+        self,
+        model: ChatModel,
+        orchestrator: ContextOrchestrator,
+        source_snapshot: ContextSourceRegistrySnapshot | None = None,
+    ) -> None:
         self._model = model
         self._orchestrator = orchestrator
+        self._source_snapshot = source_snapshot
         # Preserve explicit provider identity used by AgentRuntimeExecutor Trace.
         for name in ("provider", "model", "api_key"):
             value = getattr(model, name, None)
@@ -87,6 +97,7 @@ class _ContextAwareModel:
             workspace=context.workspace,
             at_sequence=at_sequence,
         )
+        source_trace = self._source_trace_payload()
         try:
             assembly = self._orchestrator.assemble(request)
         except ContextAssemblyBudgetExhausted as exc:
@@ -100,6 +111,7 @@ class _ContextAwareModel:
                     "required_tokens": exc.required_tokens,
                     "available_tokens": exc.available_tokens,
                     "policy_version": self._orchestrator.policy.policy_version,
+                    **source_trace,
                 },
             )
             raise
@@ -108,9 +120,22 @@ class _ContextAwareModel:
         payload = {
             "step_id": step_id,
             **assembly.trace.to_event_payload(),
+            **source_trace,
         }
         self._emit(context, "context.assembly.completed", payload)
         return self._model.complete(assembly.prompt)
+
+    def _source_trace_payload(self) -> dict[str, Any]:
+        snapshot = self._source_snapshot
+        if snapshot is None:
+            return {
+                "context_source_registry_fingerprint": None,
+                "context_source_count": 0,
+            }
+        return {
+            "context_source_registry_fingerprint": snapshot.fingerprint,
+            "context_source_count": len(snapshot.descriptors),
+        }
 
     @staticmethod
     def _emit(
@@ -151,14 +176,35 @@ class ContextOrchestratedAgentRuntimeExecutor:
         legacy_event_handler: Any | None = None,
         context_policy: ContextPolicy | None = None,
         orchestrator: ContextOrchestrator | None = None,
+        context_source_registry: ContextSourceRegistry | None = None,
     ) -> None:
+        if orchestrator is not None and context_source_registry is not None:
+            raise ValueError(
+                "orchestrator and context_source_registry are mutually exclusive"
+            )
         self._workspace = Path(workspace).resolve(strict=True)
         self._repository = repository
-        self._orchestrator = orchestrator or ContextOrchestrator(
-            repository,
-            policy=context_policy,
+        self.context_source_registry = context_source_registry
+        self.context_source_snapshot: ContextSourceRegistrySnapshot | None = None
+        if orchestrator is not None:
+            self._orchestrator = orchestrator
+        elif context_source_registry is not None:
+            self.context_source_snapshot = context_source_registry.freeze()
+            self._orchestrator = ContextOrchestrator(
+                repository,
+                policy=context_policy,
+                sources=(context_source_registry,),
+            )
+        else:
+            self._orchestrator = ContextOrchestrator(
+                repository,
+                policy=context_policy,
+            )
+        self._model = _ContextAwareModel(
+            model,
+            self._orchestrator,
+            self.context_source_snapshot,
         )
-        self._model = _ContextAwareModel(model, self._orchestrator)
         self._delegate = AgentRuntimeExecutor(
             self._model,
             self._workspace,
