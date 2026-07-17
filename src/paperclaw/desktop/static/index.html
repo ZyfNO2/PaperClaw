@@ -9,109 +9,471 @@
   <script src="app.js" defer></script>
 </head>
 <body>
-  <main class="app-shell" aria-labelledby="app-title">
-    <header class="app-header">
-      <div>
-        <p class="eyebrow">Local agent runtime</p>
-        <h1 id="app-title">PaperClaw Desktop</h1>
+  <div class="desktop-layout">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">P</div>
+        <div>
+          <strong>PaperClaw</strong>
+          <span>Desktop</span>
+        </div>
       </div>
-      <div class="status-pill" aria-live="polite">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span id="run-status">idle</span>
-      </div>
-    </header>
 
-    <section class="workspace-grid">
-      <aside class="panel config-panel" aria-labelledby="runtime-config-title">
-        <div class="panel-heading">
-          <h2 id="runtime-config-title">Runtime configuration</h2>
-          <p>Values remain in this process only.</p>
+      <nav class="sidebar-nav">
+        <button class="nav-item active" type="button" aria-current="page">
+          <span class="nav-icon" aria-hidden="true">⌂</span>
+          <span>Dashboard</span>
+        </button>
+        <button class="nav-item" type="button" data-under-develop="Runs">
+          <span class="nav-icon" aria-hidden="true">◷</span>
+          <span>Runs</span>
+          <span class="nav-count">12</span>
+        </button>
+        <button class="nav-item" type="button" data-under-develop="Workspaces">
+          <span class="nav-icon" aria-hidden="true">▣</span>
+          <span>Workspaces</span>
+        </button>
+        <button class="nav-item" type="button" data-under-develop="Trace Explorer">
+          <span class="nav-icon" aria-hidden="true">⌁</span>
+          <span>Traces</span>
+        </button>
+        <button class="nav-item" type="button" data-under-develop="Agent Management">
+          <span class="nav-icon" aria-hidden="true">◇</span>
+          <span>Agents</span>
+        </button>
+        <button class="nav-item" type="button" data-under-develop="Knowledge Base">
+          <span class="nav-icon" aria-hidden="true">▤</span>
+          <span>Knowledge</span>
+        </button>
+        <button class="nav-item" type="button" data-under-develop="Prompt Library">
+          <span class="nav-icon" aria-hidden="true">✎</span>
+          <span>Prompts</span>
+        </button>
+        <button class="nav-item" type="button" data-under-develop="Evaluation Dashboard">
+          <span class="nav-icon" aria-hidden="true">✓</span>
+          <span>Evaluations</span>
+        </button>
+        <button class="nav-item" type="button" data-under-develop="Model Registry">
+          <span class="nav-icon" aria-hidden="true">⬡</span>
+          <span>Models</span>
+        </button>
+        <button class="nav-item" type="button" data-under-develop="Settings">
+          <span class="nav-icon" aria-hidden="true">⚙</span>
+          <span>Settings</span>
+        </button>
+      </nav>
+
+      <section class="sidebar-workspace" aria-label="Workspace summary">
+        <button class="workspace-switcher" type="button" data-under-develop="Workspace Switcher">
+          <span>
+            <small>Current workspace</small>
+            <strong>Research Workspace</strong>
+          </span>
+          <span aria-hidden="true">⌄</span>
+        </button>
+        <div class="usage-row">
+          <span>Storage</span>
+          <strong>42.6 / 100 GB</strong>
+        </div>
+        <div class="progress-track" aria-label="Storage usage">
+          <span style="width: 43%"></span>
+        </div>
+        <div class="usage-row">
+          <span>API credits</span>
+          <strong>$12.43</strong>
+        </div>
+        <button class="secondary full-width" type="button" data-under-develop="Billing and Plans">Manage plan</button>
+      </section>
+
+      <footer class="sidebar-footer">
+        <span>PaperClaw Desktop v0.11</span>
+        <span class="health-label"><i aria-hidden="true"></i> Local runtime ready</span>
+      </footer>
+    </aside>
+
+    <main class="app-main" aria-labelledby="app-title">
+      <header class="topbar">
+        <div class="topbar-title">
+          <p class="eyebrow">Local agent runtime</p>
+          <h1 id="app-title">Research Dashboard</h1>
         </div>
 
-        <label for="provider">Provider ID</label>
-        <input id="provider" name="provider" type="text" value="openai-compatible" autocomplete="off" maxlength="128">
-
-        <label for="base-url">Base URL</label>
-        <input id="base-url" name="base_url" type="url" value="https://api.openai.com/v1" autocomplete="off" spellcheck="false">
-
-        <label for="api-key">API key</label>
-        <div class="inline-field">
-          <input id="api-key" name="api_key" type="password" autocomplete="off" spellcheck="false" aria-describedby="key-note">
-          <button id="toggle-key" class="secondary compact" type="button" aria-pressed="false">Show</button>
-        </div>
-        <p id="key-note" class="field-note">The key is cleared from the form after a run starts.</p>
-
-        <label for="model">Model ID</label>
-        <input id="model" name="model" type="text" autocomplete="off" spellcheck="false" maxlength="256">
-
-        <label for="workspace">Workspace</label>
-        <div class="inline-field workspace-field">
-          <input id="workspace" name="workspace" type="text" autocomplete="off" spellcheck="false">
-          <button id="select-workspace" class="secondary compact" type="button">Browse</button>
+        <div class="global-search-wrap">
+          <span aria-hidden="true">⌕</span>
+          <input id="global-search" type="search" readonly placeholder="Search runs, prompts, tools, knowledge..." data-under-develop="Global Search" aria-label="Global search">
+          <kbd>Ctrl K</kbd>
         </div>
 
-        <label class="check-row" for="verification-enabled">
-          <input id="verification-enabled" type="checkbox" checked>
-          <span>Enable verification gate</span>
-        </label>
-      </aside>
+        <div class="topbar-actions">
+          <button class="connection-pill" type="button" data-under-develop="Provider Connection Center">
+            <span class="status-dot connected" aria-hidden="true"></span>
+            Connected
+          </button>
+          <button class="icon-button" type="button" data-under-develop="Notifications" aria-label="Notifications">
+            <span aria-hidden="true">♢</span>
+            <b>3</b>
+          </button>
+          <button class="icon-button" type="button" data-under-develop="Quick Settings" aria-label="Quick settings">⚙</button>
+          <button class="avatar-button" type="button" data-under-develop="User Profile" aria-label="User profile">JD</button>
+        </div>
+      </header>
 
-      <section class="content-column">
+      <div id="public-error" class="error-box" role="alert" hidden></div>
+
+      <section class="composer-grid">
         <section class="panel task-panel" aria-labelledby="task-title">
-          <div class="panel-heading">
-            <h2 id="task-title">Task</h2>
-            <p>One active run per window.</p>
+          <div class="panel-heading compact-heading">
+            <div>
+              <span class="section-kicker">Run composer</span>
+              <h2 id="task-title">Task definition</h2>
+            </div>
+            <span class="live-badge">MVP active</span>
           </div>
+
+          <div class="tab-row" role="tablist" aria-label="Task configuration tabs">
+            <button class="tab active" type="button" role="tab" aria-selected="true">Task</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" data-under-develop="Context Builder">Context</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" data-under-develop="Constraint Editor">Constraints</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" data-under-develop="Output Format Designer">Output format</button>
+          </div>
+
           <label class="sr-only" for="task">Task instructions</label>
           <textarea id="task" rows="8" placeholder="Describe the coding or research task..."></textarea>
-          <div class="action-row">
-            <button id="run-button" class="primary" type="button">Run</button>
+
+          <div class="composer-footer">
+            <div class="button-cluster">
+              <button class="secondary compact" type="button" data-under-develop="Prompt Template Library">Template: Research Brief</button>
+              <button id="clear-task" class="ghost compact" type="button">Clear</button>
+            </div>
+            <span id="task-count" class="character-count">0 / 100000</span>
+          </div>
+        </section>
+
+        <aside class="panel config-panel" aria-labelledby="runtime-config-title">
+          <div class="panel-heading compact-heading">
+            <div>
+              <span class="section-kicker">Execution target</span>
+              <h2 id="runtime-config-title">Runtime configuration</h2>
+            </div>
+            <button class="ghost compact" type="button" data-under-develop="Saved Provider Profiles">Profiles</button>
+          </div>
+
+          <label for="provider">Provider ID</label>
+          <div class="field-with-status">
+            <input id="provider" name="provider" type="text" value="openai-compatible" autocomplete="off" maxlength="128">
+            <span class="field-state">manual</span>
+          </div>
+
+          <label for="base-url">Base URL</label>
+          <input id="base-url" name="base_url" type="url" value="https://api.openai.com/v1" autocomplete="off" spellcheck="false">
+
+          <label for="api-key">API key</label>
+          <div class="inline-field">
+            <input id="api-key" name="api_key" type="password" autocomplete="off" spellcheck="false" aria-describedby="key-note">
+            <button id="toggle-key" class="secondary compact" type="button" aria-pressed="false">Show</button>
+            <button class="ghost compact" type="button" data-under-develop="Credential Vault">Manage</button>
+          </div>
+          <p id="key-note" class="field-note">Memory-only. Cleared after an accepted run starts.</p>
+
+          <label for="model">Model ID</label>
+          <div class="inline-field">
+            <input id="model" name="model" type="text" autocomplete="off" spellcheck="false" maxlength="256" placeholder="gpt-4o-mini">
+            <button class="ghost compact" type="button" data-under-develop="Model Discovery">Discover</button>
+          </div>
+
+          <label for="workspace">Workspace</label>
+          <div class="inline-field workspace-field">
+            <input id="workspace" name="workspace" type="text" autocomplete="off" spellcheck="false">
+            <button id="select-workspace" class="secondary compact" type="button">Browse</button>
+          </div>
+
+          <div class="config-toggle-row">
+            <label class="switch-row" for="verification-enabled">
+              <input id="verification-enabled" type="checkbox" checked>
+              <span class="switch-control" aria-hidden="true"></span>
+              <span>Verification gate</span>
+            </label>
+            <button class="text-button" type="button" data-under-develop="Verification Policy">Configure</button>
+          </div>
+
+          <div class="limit-grid" aria-label="Run limits">
+            <label for="max-steps">Max steps
+              <input id="max-steps" type="number" min="1" max="1000" value="12">
+            </label>
+            <label for="max-model-calls">Model calls
+              <input id="max-model-calls" type="number" min="1" max="1000" value="10">
+            </label>
+            <label for="max-tool-calls">Tool calls
+              <input id="max-tool-calls" type="number" min="1" max="1000" value="20">
+            </label>
+            <label class="planned-field">Timeout
+              <button type="button" data-under-develop="Run Timeout">30 min</button>
+            </label>
+          </div>
+        </aside>
+
+        <section class="panel run-control-panel" aria-labelledby="run-controls-title">
+          <div class="panel-heading compact-heading">
+            <div>
+              <span class="section-kicker">Execution</span>
+              <h2 id="run-controls-title">Run controls</h2>
+            </div>
+            <div class="status-pill" aria-live="polite">
+              <span class="status-dot" aria-hidden="true"></span>
+              <span id="run-status">idle</span>
+            </div>
+          </div>
+
+          <div class="primary-actions">
+            <button id="run-button" class="primary" type="button"><span aria-hidden="true">▶</span> Run</button>
             <button id="cancel-button" class="danger" type="button" disabled>Cancel</button>
           </div>
-          <div id="public-error" class="error-box" role="alert" hidden></div>
+          <div class="secondary-actions">
+            <button class="secondary compact" type="button" data-under-develop="Save Draft">Save draft</button>
+            <button class="secondary compact" type="button" data-under-develop="Replay Run">Replay</button>
+            <button class="secondary compact" type="button" data-under-develop="Compare Runs">Compare</button>
+            <button class="secondary compact" type="button" data-under-develop="Export Center">Export</button>
+          </div>
+
+          <h3>Run summary <span class="muted">Live</span></h3>
+          <div class="summary-grid" aria-label="Run metrics">
+            <article class="summary-card accent-card">
+              <span>Status</span>
+              <strong id="summary-status">Idle</strong>
+            </article>
+            <article class="summary-card">
+              <span>Model calls</span>
+              <strong id="model-calls">0</strong>
+            </article>
+            <article class="summary-card">
+              <span>Tool calls</span>
+              <strong id="tool-calls">0</strong>
+            </article>
+            <article class="summary-card">
+              <span>Last event</span>
+              <strong id="last-sequence">0</strong>
+            </article>
+            <article class="summary-card planned-card" data-under-develop="Token Accounting">
+              <span>Tokens</span>
+              <strong>—</strong>
+            </article>
+            <article class="summary-card planned-card" data-under-develop="Cost Accounting">
+              <span>Cost</span>
+              <strong>—</strong>
+            </article>
+            <article class="summary-card planned-card" data-under-develop="Latency Analytics">
+              <span>Latency</span>
+              <strong>—</strong>
+            </article>
+            <article class="summary-card planned-card" data-under-develop="Evaluation Score">
+              <span>Evaluation</span>
+              <strong>—</strong>
+            </article>
+          </div>
+        </section>
+      </section>
+
+      <section class="observability-grid">
+        <section class="panel session-panel" aria-labelledby="sessions-title">
+          <div class="panel-heading compact-heading">
+            <div>
+              <span class="section-kicker">History</span>
+              <h2 id="sessions-title">Session history</h2>
+            </div>
+            <button class="ghost compact" type="button" data-under-develop="Run Filters">Filter</button>
+          </div>
+          <button class="fake-search" type="button" data-under-develop="Session Search">⌕ Search runs...</button>
+          <div class="session-list">
+            <span class="list-group-label">Today</span>
+            <button class="session-item selected" type="button" data-under-develop="Session Details">
+              <span><strong>Current desktop run</strong><small>Active workspace</small></span>
+              <i class="session-status running">Live</i>
+            </button>
+            <button class="session-item" type="button" data-under-develop="Session Details">
+              <span><strong>Multi-hop RAG comparison</strong><small>9:02 AM</small></span>
+              <i class="session-status completed">Done</i>
+            </button>
+            <button class="session-item" type="button" data-under-develop="Session Details">
+              <span><strong>GraphRAG survey</strong><small>8:17 AM</small></span>
+              <i class="session-status completed">Done</i>
+            </button>
+            <span class="list-group-label">Yesterday</span>
+            <button class="session-item" type="button" data-under-develop="Session Details">
+              <span><strong>Tool-augmented LLM eval</strong><small>Yesterday</small></span>
+              <i class="session-status completed">Done</i>
+            </button>
+            <button class="session-item" type="button" data-under-develop="Session Details">
+              <span><strong>Dataset benchmark</strong><small>Yesterday</small></span>
+              <i class="session-status failed">Failed</i>
+            </button>
+          </div>
+          <button class="secondary full-width" type="button" data-under-develop="All Runs">View all runs</button>
         </section>
 
-        <section class="metric-grid" aria-label="Run metrics">
-          <article class="metric-card">
-            <span>Model calls</span>
-            <strong id="model-calls">0</strong>
-          </article>
-          <article class="metric-card">
-            <span>Tool calls</span>
-            <strong id="tool-calls">0</strong>
-          </article>
-          <article class="metric-card">
-            <span>Last event</span>
-            <strong id="last-sequence">0</strong>
-          </article>
+        <section class="panel timeline-panel" aria-labelledby="timeline-title">
+          <div class="panel-heading compact-heading">
+            <div>
+              <span class="section-kicker">Observability</span>
+              <h2 id="timeline-title">Live event stream</h2>
+            </div>
+            <div class="button-cluster">
+              <button id="clear-timeline" class="ghost compact" type="button">Clear</button>
+              <button class="secondary compact" type="button" data-under-develop="Full Trace Explorer">View trace</button>
+            </div>
+          </div>
+          <ol id="timeline" class="timeline" aria-live="polite"></ol>
+        </section>
+
+        <section class="panel trace-panel" aria-labelledby="trace-title">
+          <div class="panel-heading compact-heading">
+            <div>
+              <span class="section-kicker">Execution graph</span>
+              <h2 id="trace-title">Trace explorer</h2>
+            </div>
+            <div class="button-cluster">
+              <button class="ghost compact" type="button" data-under-develop="Fit Trace Graph">Fit</button>
+              <button class="ghost compact" type="button" data-under-develop="Trace Zoom">100%</button>
+            </div>
+          </div>
+          <div class="trace-canvas" data-under-develop="Interactive Trace Graph" role="button" tabindex="0" aria-label="Interactive trace graph preview">
+            <div class="trace-node agent node-top"><small>Agent</small><strong>Planner</strong><span>waiting</span></div>
+            <div class="trace-branch branch-left" aria-hidden="true"></div>
+            <div class="trace-branch branch-right" aria-hidden="true"></div>
+            <div class="trace-node tool node-left"><small>Tool</small><strong>Web Search</strong><span>planned</span></div>
+            <div class="trace-node tool node-right"><small>Tool</small><strong>ArXiv Search</strong><span>planned</span></div>
+            <div class="trace-line line-center" aria-hidden="true"></div>
+            <div class="trace-node agent node-middle"><small>Agent</small><strong>Retriever</strong><span>planned</span></div>
+            <div class="trace-line line-bottom" aria-hidden="true"></div>
+            <div class="trace-node agent node-bottom"><small>Agent</small><strong>Synthesizer</strong><span>planned</span></div>
+          </div>
+          <div class="trace-legend">
+            <span><i class="legend-agent"></i>Agent</span>
+            <span><i class="legend-tool"></i>Tool</span>
+            <span><i class="legend-data"></i>Data</span>
+            <span><i class="legend-external"></i>External</span>
+          </div>
+        </section>
+
+        <section class="panel artifacts-panel" aria-labelledby="result-title">
+          <div class="panel-heading compact-heading">
+            <div>
+              <span class="section-kicker">Outputs</span>
+              <h2 id="result-title">Artifacts</h2>
+            </div>
+            <div class="button-cluster">
+              <button class="ghost compact" type="button" data-under-develop="Copy Result">Copy</button>
+              <button class="ghost compact" type="button" data-under-develop="Download Artifact">Download</button>
+            </div>
+          </div>
+          <div class="tab-row artifact-tabs" role="tablist" aria-label="Artifact views">
+            <button class="tab active" type="button" role="tab" aria-selected="true">Result</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" data-under-develop="File Preview">Files <span>0</span></button>
+            <button class="tab" type="button" role="tab" aria-selected="false" data-under-develop="Citation Inspector">Citations <span>0</span></button>
+            <button class="tab" type="button" role="tab" aria-selected="false" data-under-develop="Markdown Preview">Markdown</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" data-under-develop="Structured JSON Preview">JSON</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" data-under-develop="Result Diff">Diff</button>
+          </div>
+          <pre id="final-result" tabindex="0">No result yet.</pre>
         </section>
       </section>
-    </section>
 
-    <section class="lower-grid">
-      <section class="panel" aria-labelledby="verification-title">
-        <div class="panel-heading">
-          <h2 id="verification-title">Verification</h2>
-          <span id="verification-status" class="tag">not run</span>
-        </div>
-        <p id="verification-summary" class="empty-copy">No verification summary yet.</p>
+      <section class="insight-grid">
+        <section class="panel verification-panel" aria-labelledby="verification-title">
+          <div class="panel-heading compact-heading">
+            <div>
+              <span class="section-kicker">Quality gate</span>
+              <h2 id="verification-title">Verification &amp; evaluation</h2>
+            </div>
+            <span id="verification-status" class="tag">not run</span>
+          </div>
+          <div class="verification-content">
+            <div class="score-ring planned-card" data-under-develop="Evaluation Score">
+              <strong>—</strong>
+              <span>out of 100</span>
+            </div>
+            <div class="verification-copy">
+              <p id="verification-summary" class="empty-copy">No verification summary yet.</p>
+              <div class="check-grid">
+                <button type="button" data-under-develop="Hallucination Check"><span>Hallucination</span><i>Pending</i></button>
+                <button type="button" data-under-develop="Citation Coverage"><span>Citation coverage</span><i>Pending</i></button>
+                <button type="button" data-under-develop="Answer Relevance"><span>Answer relevance</span><i>Pending</i></button>
+                <button type="button" data-under-develop="Factual Consistency"><span>Factual consistency</span><i>Pending</i></button>
+                <button type="button" data-under-develop="Completeness Check"><span>Completeness</span><i>Pending</i></button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel analytics-panel" aria-labelledby="analytics-title">
+          <div class="panel-heading compact-heading">
+            <div>
+              <span class="section-kicker">Resource use</span>
+              <h2 id="analytics-title">Token &amp; tool analytics</h2>
+            </div>
+            <button class="ghost compact" type="button" data-under-develop="Analytics Range">This run</button>
+          </div>
+          <div class="analytics-grid">
+            <button class="analytics-card" type="button" data-under-develop="Token Analytics">
+              <span>Tokens</span>
+              <strong>—</strong>
+              <div class="sparkline" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </button>
+            <button class="analytics-card" type="button" data-under-develop="Tool Usage Analytics">
+              <span>Tool calls</span>
+              <strong>—</strong>
+              <div class="sparkline alternate" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </button>
+            <button class="analytics-card donut-card" type="button" data-under-develop="Usage Breakdown">
+              <div class="donut" aria-hidden="true"></div>
+              <span>Input / Output / System</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="panel diagnostics-panel" aria-labelledby="diagnostics-title">
+          <div class="panel-heading compact-heading">
+            <div>
+              <span class="section-kicker">System health</span>
+              <h2 id="diagnostics-title">Diagnostics</h2>
+            </div>
+            <button class="ghost compact" type="button" data-under-develop="Diagnostics Center">View logs</button>
+          </div>
+          <div class="diagnostic-list">
+            <button type="button" data-under-develop="Tool Performance Diagnostics">
+              <i class="diagnostic-icon warning" aria-hidden="true">!</i>
+              <span><strong>Tool latency monitor</strong><small>No measurements yet.</small></span>
+              <time>—</time>
+            </button>
+            <button type="button" data-under-develop="Rate Limit Monitor">
+              <i class="diagnostic-icon info" aria-hidden="true">i</i>
+              <span><strong>Rate limit monitor</strong><small>Provider budget unavailable.</small></span>
+              <time>—</time>
+            </button>
+            <button type="button" data-under-develop="System Health Details">
+              <i class="diagnostic-icon success" aria-hidden="true">✓</i>
+              <span><strong>Desktop bridge</strong><small>Awaiting first run.</small></span>
+              <time>ready</time>
+            </button>
+          </div>
+        </section>
       </section>
 
-      <section class="panel timeline-panel" aria-labelledby="timeline-title">
-        <div class="panel-heading">
-          <h2 id="timeline-title">Tool timeline</h2>
-          <button id="clear-timeline" class="secondary compact" type="button">Clear</button>
-        </div>
-        <ol id="timeline" class="timeline" aria-live="polite"></ol>
-      </section>
-    </section>
+      <footer class="status-bar">
+        <span>Run ID: <strong id="run-id-label">not started</strong></span>
+        <span>Workspace: <strong id="workspace-label">not selected</strong></span>
+        <span>Provider: <strong id="provider-label">openai-compatible</strong></span>
+        <span>Model: <strong id="model-label">not selected</strong></span>
+      </footer>
+    </main>
+  </div>
 
-    <section class="panel result-panel" aria-labelledby="result-title">
-      <div class="panel-heading">
-        <h2 id="result-title">Result</h2>
-      </div>
-      <pre id="final-result" tabindex="0">No result yet.</pre>
-    </section>
-  </main>
+  <div id="under-develop-toast" class="toast" role="status" aria-live="polite" hidden>
+    <span class="toast-icon" aria-hidden="true">⌁</span>
+    <div>
+      <strong>Under Develop</strong>
+      <p id="under-develop-message">This interface is planned for a later release.</p>
+    </div>
+    <button id="close-toast" type="button" aria-label="Close notification">×</button>
+  </div>
 </body>
 </html>
