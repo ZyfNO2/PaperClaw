@@ -1,0 +1,64 @@
+{
+  "anchors": [
+    {
+      "anchor_id": "citation_eac2bf5671f28afffce2038c",
+      "canonical_uri": "file:///fixture/launch.md",
+      "chunk_id": "chunk_a6be88c6b9c575c28ee933aa",
+      "content_hash": "39c00e59c883383bbc137f9afabb4fedf7c346d4429320383a6e3b6179f67ba6",
+      "corpus_hash": "b572cdb6cb598c6415f4bb4662c723b89efe15590bcb17c5ef24d21d39baaaec",
+      "display_name": "launch.md",
+      "document_id": "doc_9a7235e447a68bee13b303d6",
+      "label": "[C-fffce2038c]",
+      "locator": {
+        "end_fragment": 0,
+        "end_line": 3,
+        "end_paragraph": 0,
+        "heading_path": [
+          "Launch Record"
+        ],
+        "overlap_from_previous": false,
+        "source_uri": "file:///fixture/launch.md",
+        "start_fragment": 0,
+        "start_line": 3,
+        "start_paragraph": 0
+      },
+      "manifest_id": "manifest_ef9713741c68583f7b48de85",
+      "version_id": "version_0a86ac1ea939379bd91a7004"
+    }
+  ],
+  "answer": "The verified launch code is cobalt-42 [C-fffce2038c].",
+  "assembly": {
+    "fingerprint": "e7d369e2027508ffffbcc6aa22f09f8cb8621aa886f0d7b3444d9e6d72113cad",
+    "injection_contained_in_untrusted_data": true,
+    "injection_in_runtime_protocol": false,
+    "retrieval_candidate_ids": [
+      "retrieval:chunk_a6be88c6b9c575c28ee933aa"
+    ],
+    "section_names": [
+      "RUNTIME PROTOCOL",
+      "SELECTED CONTEXT",
+      "UNTRUSTED DATA"
+    ]
+  },
+  "decision": {
+    "anchor_ids": [
+      "citation_eac2bf5671f28afffce2038c"
+    ],
+    "answerable": true,
+    "corpus_hash": "b572cdb6cb598c6415f4bb4662c723b89efe15590bcb17c5ef24d21d39baaaec",
+    "manifest_id": "manifest_ef9713741c68583f7b48de85",
+    "query": "verified launch code recorded",
+    "reason": "retrieval_evidence_available",
+    "result_fingerprint": "e5db8c54e5eb389a29ca62df6a20a28421a7ca59682ab04184374bf3f6b1b90d",
+    "status": "answerable"
+  },
+  "grounding_metrics": {
+    "abstention_accuracy": 1.0,
+    "citation_correctness": 1.0,
+    "citation_count": 1,
+    "claim_count": 1,
+    "unsupported_claim_rate": 0.0
+  },
+  "schema_version": 1,
+  "task": "What verified launch code is recorded?"
+}
