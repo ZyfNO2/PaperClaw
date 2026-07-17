@@ -1,0 +1,68 @@
+name: Desktop package smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/paperclaw/desktop/**"
+      - "src/paperclaw/entrypoint.py"
+      - "scripts/build_desktop.py"
+      - "scripts/paperclaw_desktop_entry.py"
+      - "pyproject.toml"
+      - ".github/workflows/desktop-package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows-onedir:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install desktop build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[build]"
+
+      - name: Build PyInstaller onedir
+        run: python scripts/build_desktop.py
+
+      - name: Verify executable and packaged assets
+        shell: pwsh
+        run: |
+          $exe = "dist\PaperClaw\PaperClaw.exe"
+          if (-not (Test-Path $exe -PathType Leaf)) {
+            throw "Expected executable not found: $exe"
+          }
+          $assets = Get-ChildItem "dist\PaperClaw" -Recurse -File |
+            Where-Object { $_.Name -in @("index.html", "styles.css", "app.js") }
+          $names = $assets.Name | Sort-Object -Unique
+          foreach ($required in @("index.html", "styles.css", "app.js")) {
+            if ($required -notin $names) {
+              throw "Packaged static asset not found: $required"
+            }
+          }
+          Write-Host "::notice::onedir executable and static assets produced"
+
+      - name: Upload onedir artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaperClaw-Windows-onedir-${{ github.run_id }}
+          path: dist/PaperClaw
+          retention-days: 7
+          if-no-files-found: error
