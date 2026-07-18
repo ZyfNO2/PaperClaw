@@ -30,11 +30,20 @@ jobs:
       - name: Run focused tests
         run: >-
           python -m pytest -q
+          --junitxml=tmp/v017_focused.xml
           tests/unit/context/test_runtime_history_compaction.py
           tests/unit/memory
           tests/unit/service
           tests/unit/desktop
           tests/unit/tui
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v017-focused-${{ github.run_id }}
+          path: tmp/v017_focused.xml
+          retention-days: 30
+          if-no-files-found: warn
 
   regression:
     name: Windows non-live regression
