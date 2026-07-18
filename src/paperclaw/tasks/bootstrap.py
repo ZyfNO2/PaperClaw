@@ -11,9 +11,10 @@ from typing import Any, Callable
 from paperclaw.models.base import ChatModel
 from paperclaw.multiagent.judge_factory import build_judge_model_from_env
 
-from .distributed_store import DurableTaskStore, FencedSQLiteDurableTaskStore
+from .distributed_store import DurableTaskStore
 from .process_executor import SubprocessSubagentTaskExecutor
 from .runtime import BackgroundTaskSupervisor
+from .strict_store import StrictFencedSQLiteDurableTaskStore
 from .subagent import SubagentTaskExecutor
 from .tools import register_task_tools
 
@@ -58,10 +59,9 @@ def get_or_create_task_runtime(
         existing = _CACHE.get(key)
         if existing is not None:
             return existing
-        # v0.25 production composition uses the fenced reference store. It is a
-        # drop-in SQLite subclass for existing tools, while the runtime itself is
-        # typed to the backend-neutral DurableTaskStore protocol.
-        store = FencedSQLiteDurableTaskStore(resolved_database)
+        # Production composition forbids the historical unfenced owner APIs.
+        # Runtime claims and all owner-only mutations must carry a lease generation.
+        store = StrictFencedSQLiteDurableTaskStore(resolved_database)
         if normalized_mode == "subprocess":
             executor = SubprocessSubagentTaskExecutor()
         else:
