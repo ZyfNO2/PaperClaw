@@ -167,7 +167,8 @@ def test_provider_extension_updates_browser_allowlists_and_is_idempotent() -> No
 
     assert app.DesktopAPI.start_run is first_start_run
     assert app._BROWSER_API_ARITY["connect_provider"] == (1, 1)
-    assert app._BROWSER_API_ARITY["select_provider_model"] == (1, 1)
+    assert app._BROWSER_API_ARITY["select_provider_model"] == (1, 2)
     assert app._BROWSER_API_ARITY["clear_provider_config"] == (0, 0)
+    assert app._BROWSER_API_ARITY["clear_manual_provider"] == (0, 0)
     assert app._BROWSER_ASSETS["/provider-config.js"][0] == "provider-config.js"
     assert app._BROWSER_ASSETS["/provider-config.css"][0] == "provider-config.css"
