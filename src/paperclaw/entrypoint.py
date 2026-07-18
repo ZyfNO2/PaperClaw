@@ -22,10 +22,12 @@ def main(argv: list[str] | None = None) -> int:
 
     import paperclaw.cli
     from paperclaw.multiagent.bootstrap import install_cli_subagent_extension
+    from paperclaw.planning.bootstrap import install_cli_plan_skill_extension
     from paperclaw.tasks.bootstrap import install_cli_task_extension
 
     install_cli_subagent_extension(paperclaw.cli)
     install_cli_task_extension(paperclaw.cli)
+    install_cli_plan_skill_extension(paperclaw.cli)
     return paperclaw.cli.main(resolved)
 
 
