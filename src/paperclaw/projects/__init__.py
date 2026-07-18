@@ -1,4 +1,4 @@
-"""PaperClaw project workspace manifest and local knowledge lifecycle."""
+"""PaperClaw project workspace manifest and knowledge lifecycle."""
 
 from .indexing import (
     ProjectIndexReport,
@@ -15,11 +15,25 @@ from .manifest import (
     ProjectValidationReport,
     discover_project_manifest,
 )
+from .runtime import (
+    ProjectIndexPolicy,
+    ProjectKnowledgeRuntime,
+    ProjectKnowledgeSnapshot,
+    ProjectKnowledgeUnavailableError,
+    ProjectKnowledgeWatchEvent,
+    ProjectKnowledgeWatcher,
+)
 
 __all__ = [
+    "ProjectIndexPolicy",
     "ProjectIndexReport",
     "ProjectIndexStatus",
     "ProjectKnowledgeFile",
+    "ProjectKnowledgeRuntime",
+    "ProjectKnowledgeSnapshot",
+    "ProjectKnowledgeUnavailableError",
+    "ProjectKnowledgeWatchEvent",
+    "ProjectKnowledgeWatcher",
     "ProjectManifest",
     "ProjectManifestStore",
     "ProjectValidationIssue",
