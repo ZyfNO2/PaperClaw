@@ -319,7 +319,8 @@ class RemoteWorkerExecutor:
             snapshot = self._transport.submit(request)
         except GatewayTransportError:
             # The caller may safely retry the exact same ExecutionRequest because
-            # execution_id submit is idempotent. We must not synthesize failure.
+            # execution_id submit is idempotent within the gateway process. We
+            # must not synthesize ordinary business failure on transport loss.
             raise
         return RemoteExecutionHandle(
             request, self._transport, snapshot, self._poll_seconds
@@ -334,16 +335,12 @@ class RemoteExecutionHandle:
         initial: GatewayExecutionSnapshot,
         poll_seconds: float,
     ) -> None:
-        if (
-            initial.execution_id != request.execution_id
-            or initial.task_id != request.task_id
-        ):
-            raise GatewayTransportError(
-                "gateway returned mismatched execution identity"
-            )
         self.request = request
         self._transport = transport
-        self._snapshot = initial
+        self._expected_digest = hashlib.sha256(
+            _canonical_request_bytes(request)
+        ).hexdigest()
+        self._snapshot = self._validated_snapshot(initial)
         self._poll_seconds = poll_seconds
         self._closed = False
 
@@ -358,7 +355,8 @@ class RemoteExecutionHandle:
     def poll(self) -> ExecutionResult | None:
         if self._snapshot.state == "terminal":
             return self._snapshot.result
-        self._snapshot = self._transport.get(self.execution_id)
+        snapshot = self._transport.get(self.execution_id)
+        self._snapshot = self._validated_snapshot(snapshot)
         return self._snapshot.result if self._snapshot.state == "terminal" else None
 
     def wait(self, timeout: float | None = None) -> ExecutionResult | None:
@@ -376,7 +374,8 @@ class RemoteExecutionHandle:
             assert self._snapshot.result is not None
             return self._snapshot.result
         try:
-            self._snapshot = self._transport.cancel(self.execution_id, reason)
+            snapshot = self._transport.cancel(self.execution_id, reason)
+            self._snapshot = self._validated_snapshot(snapshot)
         except GatewayTransportError:
             return ExecutionResult(
                 execution_id=self.request.execution_id,
@@ -402,6 +401,20 @@ class RemoteExecutionHandle:
     def close(self) -> None:
         # Closing a client handle is not remote cancellation.
         self._closed = True
+
+    def _validated_snapshot(
+        self,
+        snapshot: GatewayExecutionSnapshot,
+    ) -> GatewayExecutionSnapshot:
+        if (
+            snapshot.execution_id != self.request.execution_id
+            or snapshot.task_id != self.request.task_id
+            or snapshot.request_digest != self._expected_digest
+        ):
+            raise GatewayTransportError(
+                "gateway returned a snapshot for a different execution request"
+            )
+        return snapshot
 
 
 def _canonical_request_bytes(request: ExecutionRequest) -> bytes:
