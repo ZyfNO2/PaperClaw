@@ -92,22 +92,20 @@ def test_live_mistral_parallel_isolated_subagents() -> None:
                 "task_id": "mcp-permissions",
                 "title": "MCP Permission Boundary",
                 "objective": (
-                    "Inspect PaperClaw MCP permission and policy code and summarize "
-                    "the authorization boundary and one risk."
+                    "Inspect src/paperclaw/mcp/runtime.py and summarize the "
+                    "MCPPermissionPolicy boundary, DenyAllMCPPermissionPolicy default, "
+                    "AllowListMCPPermissionPolicy behavior, one concrete denial path, "
+                    "and one implementation risk."
                 ),
                 "acceptance_criteria": [
-                    "Cite inspected module paths",
-                    "Explain one permission denial path",
+                    "Cite src/paperclaw/mcp/runtime.py as the inspected module",
+                    "Explain one concrete permission denial path from the inspected code",
                 ],
-                "allowed_paths": ["src/paperclaw/mcp", "src/paperclaw/policy"],
+                "allowed_paths": ["src/paperclaw/mcp/runtime.py"],
                 "writable_paths": [],
                 "allowed_tools": ["file_read", "grep"],
                 "dependencies": [],
-                # The real Provider may inspect several policy/adapter files before
-                # synthesizing its final evidence-backed result. Keep this bounded
-                # but leave completion headroom beyond the 8-step failure observed
-                # in the first v0.22 live acceptance rerun.
-                "max_steps": 12,
+                "max_steps": 8,
                 "timeout_seconds": 180,
             },
         ],
