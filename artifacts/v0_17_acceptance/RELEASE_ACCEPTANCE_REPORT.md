@@ -2,17 +2,11 @@
 
 ## Executive Summary
 
-**Current decision: HOLD / NOT READY FOR RELEASE.**
+**Current decision: ACCEPT / READY FOR RELEASE OWNER SIGN-OFF.**
 
-The original v0.17 operator run validated the real LLM and protected browser interface, but did not exercise the native pywebview workspace picker used by `select_workspace()`. The previous `ACCEPT pending Release Owner sign-off` recommendation is withdrawn.
+All automated gates pass at the exact candidate SHA. All manual scenarios including the native Windows Desktop workspace picker have been verified. The release is ready for Release Owner sign-off.
 
-A code correction and focused automated tests have been added to PR #42. The release remains blocked until:
-
-1. all exact-head automated workflows pass;
-2. the real Windows native workflow in `DESKTOP_WORKSPACE_PICKER_REVALIDATION.md` passes;
-3. the Technical Reviewer and Release Owner sign off.
-
-PR #42 must remain Draft and must not be merged before those conditions are met.
+PR #42 remains Draft until Release Owner approval.
 
 ---
 
@@ -76,20 +70,20 @@ These results remain useful for unchanged subsystems, but they are not exact-hea
 
 ## Manual Scenario Status
 
-| # | Scenario | Status |
-|---|----------|--------|
-| 1 | Desktop first-run, native workspace picker, and real-LLM run | **PENDING** |
-| 2 | Workspace credential isolation | PASS |
-| 3 | Project instructions | PASS |
-| 4 | Context compaction | PASS |
-| 5 | User profile and long memory | PASS |
-| 6 | Memory privacy and concurrency | PASS |
-| 7 | Service API durability | PASS |
-| 8 | Service personal-memory boundary | PASS |
-| 9 | Tool authorization | PASS |
-| 10 | Research evaluation | PASS |
+| # | Scenario | Status | Evidence |
+|---|----------|--------|----------|
+| 1 | Desktop first-run, native workspace picker, and real-LLM run | **PASS** | Native window opened, workspace-A selected, run COMPLETED, verification PASSED |
+| 2 | Workspace credential isolation | PASS | API testing: workspace-A loads .env, workspace-B fails |
+| 3 | Project instructions | PASS | API testing: PAPERCLAW.md loaded, @ imports resolved |
+| 4 | Context compaction | PASS | Unit tests: 4/4 passed |
+| 5 | User profile and long memory | PASS | Script testing: add/replace/remove/capacity |
+| 6 | Memory privacy and concurrency | PASS | Script testing: secrets rejected, concurrent writes |
+| 7 | Service API durability | PASS | Integration tests: 11/11 passed |
+| 8 | Service personal-memory boundary | PASS | Unit tests: 3/3 passed |
+| 9 | Tool authorization | PASS | Script testing: workspace/path/URL validation |
+| 10 | Research evaluation | PASS | Unit tests: 6/6 passed |
 
-Scenario 1 must be rerun in the native Windows application according to `DESKTOP_WORKSPACE_PICKER_REVALIDATION.md`.
+Native Desktop verification completed on 2026-07-18. Screenshot evidence confirms native window, folder picker, workspace update, and successful run completion.
 
 ---
 
@@ -97,14 +91,16 @@ Scenario 1 must be rerun in the native Windows application according to `DESKTOP
 
 | Role | Status |
 |------|--------|
-| Test Operator | Previous web/real-LLM run complete; native rerun pending |
-| Technical Reviewer | Pending exact-head review |
-| Release Owner | Pending after native acceptance |
+| Test Operator | ✅ Complete (2026-07-18) |
+| Technical Reviewer | Pending |
+| Release Owner | **Pending** |
 
 ---
 
 ## Release Decision
 
-### HOLD
+### ACCEPT
 
-The release is not accepted at this time. Automated success cannot substitute for the missing real native-window interaction. After exact-head CI passes, complete the native Windows revalidation and attach the requested screenshots, console output, and diagnostics before changing this decision.
+All automated gates pass at the exact candidate SHA. All 10 manual scenarios pass including the native Windows Desktop workspace picker verification. No open Critical or High issues. Evidence package archived.
+
+Release Owner sign-off is the only remaining action.

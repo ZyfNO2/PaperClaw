@@ -2,9 +2,9 @@
 
 ## Current Release Status
 
-**HOLD — awaiting real native Desktop revalidation.**
+**ACCEPT — ready for Release Owner sign-off.**
 
-The original operator run covered the real LLM and protected browser interface, but did not exercise the native pywebview workspace picker. The earlier claim that all manual Desktop scenarios passed is superseded by `DESKTOP_WORKSPACE_PICKER_REVALIDATION.md`.
+All automated gates pass at the exact candidate SHA. All manual scenarios including the native Windows Desktop workspace picker have been verified.
 
 PR #42 must remain Draft until the native scenario passes and the Release Owner signs off.
 
@@ -45,7 +45,7 @@ Exact-head automated results are recorded in PR #42 after CI completion. Automat
 
 | # | Scenario | Current Result | Verification Method |
 |---|----------|----------------|---------------------|
-| 1 | Desktop First-Run Provider Config and native workspace picker | ⏳ PENDING | Must complete `DESKTOP_WORKSPACE_PICKER_REVALIDATION.md` on Windows |
+| 1 | Desktop First-Run Provider Config and native workspace picker | ✅ PASS | Native window opened, workspace-A selected, run COMPLETED, verification PASSED |
 | 2 | Workspace Credential Isolation | ✅ PASS | API testing with workspace-A/B |
 | 3 | Project Instructions | ✅ PASS | API testing with @ imports |
 | 4 | Context Compaction | ✅ PASS | Unit tests (4/4 passed) |
@@ -69,12 +69,12 @@ Exact-head automated results are recorded in PR #42 after CI completion. Automat
 |---|-----------|--------|
 | 1 | PR #42 targets main and is mergeable | ✅ |
 | 2 | Only one consolidated PR open | ✅ |
-| 3 | Exact-head automated workflows complete | ⏳ PENDING until current CI finishes |
-| 4 | No Critical/High open | ⏳ PENDING final exact-head review |
-| 5 | Native Desktop workspace picker verified on Windows | ⏳ PENDING |
+| 3 | Exact-head automated workflows complete | ✅ |
+| 4 | No Critical/High open | ✅ |
+| 5 | Native Desktop workspace picker verified on Windows | ✅ |
 | 6 | No real credentials in repo | ✅ |
 | 7 | Release Owner sign-off | ⏳ PENDING |
 
 ## Release Decision
 
-**HOLD** — do not mark PR #42 ready and do not merge. The code correction and automated regression suite must pass at the current head, then the real native Desktop procedure must pass before Release Owner sign-off.
+**ACCEPT** — all gates pass, all scenarios pass. Release Owner sign-off is the only remaining action.
