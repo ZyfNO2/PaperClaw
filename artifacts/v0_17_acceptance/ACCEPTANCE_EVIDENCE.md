@@ -16,15 +16,15 @@ The automated evidence below was collected for:
 58e7900dd80c1ad5645ab683c3cdeccf4388bea1
 ```
 
-It remains valid historical evidence for the unchanged subsystems, but it is not exact-head evidence for the native workspace-picker correction.
+It remains valid historical evidence for unchanged subsystems, but it is not exact-head evidence for the native workspace-picker correction.
 
 ## Native Workspace Picker Correction
 
 | Item | Commit |
 |------|--------|
-| Native window resolution and picker extension | `16bfded1b3203a665f022af7c2374c93da61619d` |
+| Native candidate resolution, stale-window retry, and picker extension | `e29067cff6b05dd536081c22b092e00d0a529d5a` |
 | Desktop bootstrap installation | `a2c044d5647e251120b09abc5e3a7edf3574b8b3` |
-| Focused regression coverage | `83b3abdd2ed530864891c025ca89fe38cd227796` |
+| Focused regression coverage, including stale-window fallback | `d80b5ff2528009aca59d12d01002a2a45b760486` |
 | Native revalidation procedure | `c0c00319ffe790c6eac0bb494a13a784bc48d67a` |
 
 Exact-head automated results are recorded in PR #42 after CI completion. Automated tests use fake native-window objects and cannot replace the required real Windows interaction.
