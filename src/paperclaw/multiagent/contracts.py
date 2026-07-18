@@ -126,6 +126,32 @@ class AgentTask:
         return asdict(self)
 
 
+SemanticJudgeStatus = Literal[
+    "passed",
+    "rejected",
+    "inconclusive",
+    "transient_error",
+    "provider_error",
+    "protocol_error",
+]
+
+
+@dataclass(frozen=True)
+class SemanticJudgeResult:
+    """Bounded semantic acceptance result separate from deterministic Verify."""
+
+    status: SemanticJudgeStatus | str
+    reason_code: str
+    summary: str
+    attempt_count: int
+    provider: str | None = None
+    model: str | None = None
+    transient: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 @dataclass
 class WorkerResult:
     """Structured output from a Worker after running one task.
@@ -141,6 +167,7 @@ class WorkerResult:
     changed_files: list[str] = field(default_factory=list)
     artifact_ids: list[str] = field(default_factory=list)
     verification_result: VerificationResult | None = None
+    semantic_judge_result: SemanticJudgeResult | None = None
     unresolved_items: list[str] = field(default_factory=list)
     handoff_notes: list[str] = field(default_factory=list)
     step_count: int = 0
@@ -151,6 +178,8 @@ class WorkerResult:
         data = asdict(self)
         if self.verification_result is not None:
             data["verification_result"] = self.verification_result.to_dict()
+        if self.semantic_judge_result is not None:
+            data["semantic_judge_result"] = self.semantic_judge_result.to_dict()
         return data
 
 
