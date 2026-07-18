@@ -9,6 +9,7 @@ from .contracts import (
 )
 from .gateway import (
     DirectWorkerGatewayTransport,
+    GatewayCapacityError,
     GatewayConflictError,
     GatewayError,
     GatewayExecutionSnapshot,
@@ -35,6 +36,7 @@ __all__ = [
     "ExecutionRequest",
     "ExecutionResult",
     "ExecutorStatus",
+    "GatewayCapacityError",
     "GatewayConflictError",
     "GatewayError",
     "GatewayExecutionSnapshot",
