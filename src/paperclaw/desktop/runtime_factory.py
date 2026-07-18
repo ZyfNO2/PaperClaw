@@ -74,8 +74,13 @@ class DesktopRuntimeFactory:
         conversation_id = self._conversation_id_factory()
         if self._context_enabled:
             components = build_memory_runtime(request.workspace)
-            model_factory = lambda _agent_id: self._create_model(request)
-            judge_model_factory = lambda _agent_id: self._create_judge_model(request)
+
+            def model_factory(_agent_id: str) -> Any:
+                return self._create_model(request)
+
+            def judge_model_factory(_agent_id: str) -> Any:
+                return self._create_judge_model(request)
+
             components.tool_registry.register(
                 ReliableSubagentTaskTool(
                     model_factory,
