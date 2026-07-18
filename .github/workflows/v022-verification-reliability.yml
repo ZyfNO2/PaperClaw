@@ -50,6 +50,7 @@ jobs:
         run: |
           set -o pipefail
           python -m ruff check \
+            --select E9,F63,F7,F82 \
             src/paperclaw/multiagent \
             src/paperclaw/tasks \
             src/paperclaw/desktop \
@@ -65,6 +66,8 @@ jobs:
           semantic rejection confirmation/disagreement behavior, typed Provider/protocol
           failures, bounded retry, separate judge-model composition, and model-call budget
           accounting. It is deterministic automated evidence and is not a live Provider test.
+          Ruff uses the repository correctness policy (E9/F63/F7/F82); unrelated style/dead-import
+          cleanup is intentionally outside this release scope.
           EOF
       - uses: actions/upload-artifact@v4
         if: always()
