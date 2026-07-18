@@ -7,6 +7,7 @@ so Verify / Reflection remain available without modification.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import threading
 from pathlib import Path
@@ -19,7 +20,6 @@ from paperclaw.models.base import ChatModel
 from paperclaw.multiagent.contracts import (
     AgentTask,
     MessageType,
-    TeamStopReason,
     WorkerResult,
     WorkerStatus,
 )
@@ -93,6 +93,7 @@ class Worker:
         )
 
         counters = WorkerRuntimeCounters()
+        worker_task = _render_task_context(task)
         runtime_state = self._make_worker_runtime_state(task, workspace)
         registry = build_scoped_registry(
             task,
@@ -111,7 +112,7 @@ class Worker:
 
         try:
             final_state = runtime.run(
-                task.objective,
+                worker_task,
                 workspace,
                 max_steps=task.max_steps,
                 event_handler=lambda event, payload: self._on_runtime_event(
@@ -217,7 +218,7 @@ class Worker:
             "_team_state": self._team_state,
             "_process_registry": self._process_registry,
             "_task_id": task.task_id,
-            "task": task.objective,
+            "task": _render_task_context(task),
             "workspace": workspace.resolve(strict=True),
             "history": [],
             "current_tool_call": None,
@@ -296,3 +297,21 @@ class Worker:
                 if isinstance(path, str):
                     changed.add(path)
         return sorted(changed)
+
+
+def _render_task_context(task: AgentTask) -> str:
+    """Render only the explicit task contract into a fresh worker context."""
+
+    return json.dumps(
+        {
+            "task_id": task.task_id,
+            "title": task.title,
+            "objective": task.objective,
+            "acceptance_criteria": task.acceptance_criteria,
+            "allowed_paths": task.allowed_paths,
+            "writable_paths": task.writable_paths,
+            "allowed_tools": task.allowed_tools,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )

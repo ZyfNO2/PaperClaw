@@ -263,6 +263,8 @@ class _BudgetedTool:
             workspace=context.workspace,
             output_limit=context.output_limit,
             stop_token=self._stop_token,
+            remaining_model_calls=context.remaining_model_calls,
+            remaining_tool_calls=context.remaining_tool_calls,
         )
         try:
             result = self._tool.execute(arguments, tool_context)

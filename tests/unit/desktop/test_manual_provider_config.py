@@ -199,7 +199,13 @@ def test_partial_explicit_provider_fields_never_receive_manual_credential(
     assert "model" not in controller.last_request
 
 
-def test_manual_provider_errors_are_typed_and_never_echo_credentials(monkeypatch) -> None:
+def test_manual_provider_errors_are_typed_and_never_echo_credentials(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    for name in app._REQUIRED_ENV:
+        monkeypatch.delenv(name, raising=False)
+
     def fake_urlopen(request, timeout):
         raise urllib.error.HTTPError(
             request.full_url,

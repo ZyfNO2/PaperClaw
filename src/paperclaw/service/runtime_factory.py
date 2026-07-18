@@ -9,36 +9,30 @@ from typing import Any
 from uuid import uuid4
 
 from paperclaw.agent.flow import default_registry
-from paperclaw.harness import (
-    AgentRuntimeExecutor,
-    ContextOrchestratedAgentRuntimeExecutor,
-    QueryEngine,
-)
-from paperclaw.memory import (
-    MemoryRuntimeSettings,
-    MemoryTool,
-    build_memory_runtime,
-)
+from paperclaw.harness import ContextOrchestratedAgentRuntimeExecutor, QueryEngine
+from paperclaw.lsp.bootstrap import get_lsp_manager
+from paperclaw.lsp.tools import register_lsp_tools
+from paperclaw.memory import MemoryRuntimeSettings, MemoryTool, build_memory_runtime
 from paperclaw.models.adapters import OpenAICompatibleModel
+from paperclaw.planning.bootstrap import default_plan_database
+from paperclaw.planning.runtime import SQLitePlanStore
+from paperclaw.planning.tools import PlanController, compose_plan_registry
 from paperclaw.policy import (
     DefaultToolAuthorizationPolicy,
     ToolAuthorizationPolicy,
     authorize_registry,
 )
+from paperclaw.skills.runtime import SkillRegistry
+from paperclaw.skills.tools import SkillListTool, SkillTool
+from paperclaw.tasks.bootstrap import TaskRuntimeComponents
+from paperclaw.tasks.tools import register_task_tools
 from paperclaw.tui.bridge import TUIEventBridge
 
 from .contracts import ServiceRunRequest
 
 
 class ServiceRuntimeFactory:
-    """Build one environment-backed QueryEngine per service submission.
-
-    Context orchestration and deterministic in-run compaction are enabled by
-    default. Personal ``USER.md``/``MEMORY.md`` injection and writes are disabled
-    for the unauthenticated HTTP service unless trusted deployment configuration
-    explicitly enables them. Supplying ``executor_factory`` preserves the legacy
-    injectable boundary used by offline tests and custom runtimes.
-    """
+    """Build one environment-backed QueryEngine per service submission."""
 
     def __init__(
         self,
@@ -48,11 +42,10 @@ class ServiceRuntimeFactory:
         engine_factory: Callable[..., Any] = QueryEngine,
         tool_policy: ToolAuthorizationPolicy | None = None,
         enable_personal_memory: bool | None = None,
+        task_runtime: TaskRuntimeComponents | None = None,
     ) -> None:
         self._model_factory = model_factory
-        self._executor_factory = (
-            executor_factory or ContextOrchestratedAgentRuntimeExecutor
-        )
+        self._executor_factory = executor_factory or ContextOrchestratedAgentRuntimeExecutor
         self._context_enabled = executor_factory is None
         self._engine_factory = engine_factory
         self._tool_policy = tool_policy or DefaultToolAuthorizationPolicy()
@@ -61,6 +54,7 @@ class ServiceRuntimeFactory:
             if enable_personal_memory is None
             else bool(enable_personal_memory)
         )
+        self._task_runtime = task_runtime
 
     def create(
         self,
@@ -69,6 +63,29 @@ class ServiceRuntimeFactory:
     ) -> QueryEngine:
         bridge = TUIEventBridge(event_handler)
         model = self._model_factory()
+        conversation_id = request.conversation_id or f"api-{uuid4().hex[:12]}"
+        registry = authorize_registry(
+            default_registry(),
+            workspace=request.workspace,
+            policy=self._tool_policy,
+        )
+        if self._task_runtime is not None:
+            register_task_tools(
+                registry,
+                self._task_runtime.store,
+                self._task_runtime.supervisor,
+            )
+
+        plan_controller = PlanController(
+            SQLitePlanStore(default_plan_database()),
+            conversation_id,
+        )
+        registry = compose_plan_registry(registry, plan_controller)
+        skills = SkillRegistry(workspace=request.workspace)
+        registry.register(SkillListTool(skills))
+        registry.register(SkillTool(skills))
+        register_lsp_tools(registry, get_lsp_manager(request.workspace))
+
         if self._context_enabled:
             settings = MemoryRuntimeSettings.from_env()
             if not self._enable_personal_memory:
@@ -79,18 +96,11 @@ class ServiceRuntimeFactory:
                     memory_tool_enabled=False,
                 )
             components = build_memory_runtime(request.workspace, settings=settings)
-            registry = authorize_registry(
-                default_registry(),
-                workspace=request.workspace,
-                policy=self._tool_policy,
-            )
             if (
                 self._enable_personal_memory
                 and components.settings.memory_enabled
                 and components.settings.memory_tool_enabled
             ):
-                # Explicit deployment opt-in is required because the current API
-                # has no authenticated tenant ownership boundary.
                 registry.register(MemoryTool(components.store))
             executor = self._executor_factory(
                 model,
@@ -102,11 +112,6 @@ class ServiceRuntimeFactory:
                 context_source_registry=components.source_registry,
             )
         else:
-            registry = authorize_registry(
-                default_registry(),
-                workspace=request.workspace,
-                policy=self._tool_policy,
-            )
             executor = self._executor_factory(
                 model,
                 request.workspace,
@@ -114,7 +119,6 @@ class ServiceRuntimeFactory:
                 enable_verification_gate=request.enable_verification_gate,
                 legacy_event_handler=bridge.handle_legacy_event,
             )
-        conversation_id = request.conversation_id or f"api-{uuid4().hex[:12]}"
         return self._engine_factory(
             executor,
             conversation_id=conversation_id,

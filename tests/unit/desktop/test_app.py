@@ -118,6 +118,7 @@ def test_theme_preference_is_validated_and_persisted(tmp_path, monkeypatch) -> N
 
 
 def test_missing_environment_is_a_typed_public_error(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
     for name in app._REQUIRED_ENV:
         monkeypatch.delenv(name, raising=False)
     controller = FakeController()

@@ -23,7 +23,6 @@ def test_manual_model_override_and_return_to_env(page: Page) -> None:
               model,
               selected_model: model,
               models: [model, 'manual-model-a', 'manual-model-b'],
-              available_models: [model, 'manual-model-a', 'manual-model-b'],
               configured: true,
               model_source: allowUnlisted ? 'manual' : 'discovered',
               model_verified: !allowUnlisted
@@ -39,7 +38,6 @@ def test_manual_model_override_and_return_to_env(page: Page) -> None:
               base_url: 'https://provider.example/v1',
               model: 'env-model',
               models: ['env-model'],
-              available_models: ['env-model'],
               configured: true,
               missing: [],
               manual_provider_cleared: true
@@ -53,14 +51,14 @@ def test_manual_model_override_and_return_to_env(page: Page) -> None:
     page.get_by_role("button", name="Settings", exact=False).click()
     page.locator("#provider-base-url").fill("https://manual.example/v1")
     page.locator("#provider-api-key").fill("temporary-secret")
-    page.locator("#provider-connect").click()
-    expect(page.locator("#provider-connect-status")).to_contain_text("连接成功")
+    page.locator("#connect-provider").click()
+    expect(page.locator("#connection-status")).to_have_text("CONNECTED")
 
     page.locator("#provider-manual-model").fill("unlisted-manual-model")
     page.locator("#use-manual-model").click()
 
-    expect(page.locator("#config-model")).to_contain_text("unlisted-manual-model")
-    expect(page.locator("#provider-connect-status")).to_contain_text("已选择模型")
+    expect(page.locator("#config-model")).to_have_text("unlisted-manual-model")
+    expect(page.locator("#connection-status")).to_have_text("CONNECTED · MANUAL MODEL")
     expect(page.locator("#active-config-status")).to_contain_text("MANUAL")
     assert page.evaluate("window.__bridgeCalls.manual") == ["unlisted-manual-model"]
 
@@ -68,7 +66,7 @@ def test_manual_model_override_and_return_to_env(page: Page) -> None:
 
     expect(page.locator("#config-source")).to_have_text("Environment variables")
     expect(page.locator("#config-model")).to_have_text("env-model")
-    expect(page.locator("#provider-connect-status")).to_contain_text("ENV")
+    expect(page.locator("#connection-status")).to_have_text("ENV READY")
     expect(page.locator("#provider-summary")).to_contain_text("ENV")
     expect(page.locator("#disconnect-provider")).to_be_disabled()
     assert page.evaluate("window.__bridgeCalls.clear") == 1

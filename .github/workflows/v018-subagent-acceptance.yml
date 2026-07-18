@@ -1,0 +1,51 @@
+name: v0.18 Subagent acceptance
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project
+        run: python -m pip install -e '.[dev]'
+      - name: Run Subagent acceptance matrix
+        run: |
+          mkdir -p tmp
+          python -m pytest -q \
+            tests/acceptance/test_v018_subagent_acceptance.py \
+            tests/unit/test_multiagent_coordinator.py \
+            tests/unit/multiagent/test_subagent_tool.py \
+            tests/unit/multiagent/test_subagent_runtime_integration.py \
+            --report-log=tmp/v018-subagent-report.jsonl
+      - name: Write acceptance summary
+        if: always()
+        run: |
+          cat > tmp/v018-subagent-summary.md <<'EOF'
+          # v0.18 Subagent acceptance
+
+          This gate uses deterministic Fake Models and real local tools. It covers:
+          context isolation, scoped permissions, parallel execution, DAG blocking,
+          file leases, cancellation propagation, compact results, and parent budget accounting.
+
+          It is not evidence of a live Provider call. Live Mistral evidence is produced
+          only by the separate manually triggered workflow.
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v018-subagent-acceptance-${{ github.run_id }}
+          path: |
+            tmp/v018-subagent-report.jsonl
+            tmp/v018-subagent-summary.md
+          retention-days: 30

@@ -28,6 +28,7 @@ from paperclaw.multiagent.events import EventEnvelope, emit_team_event
 from paperclaw.multiagent.lease import LeaseManager
 from paperclaw.multiagent.permissions import PermissionGuardLite
 from paperclaw.multiagent.reviewer import Reviewer
+from paperclaw.multiagent.tool import SubagentTaskTool
 from paperclaw.multiagent.worker import Worker
 
 __all__ = [
@@ -45,6 +46,7 @@ __all__ = [
     "ReviewFinding",
     "Reviewer",
     "ReviewVerdict",
+    "SubagentTaskTool",
     "TaskStatus",
     "TeamBudget",
     "TeamStopReason",
