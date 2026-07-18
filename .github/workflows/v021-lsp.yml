@@ -1,0 +1,63 @@
+name: v0.21 LSP semantic tools
+
+on:
+  pull_request:
+    paths:
+      - "src/paperclaw/lsp/**"
+      - "tests/unit/lsp/**"
+      - "tests/integration/lsp/**"
+      - "tests/fixtures/fake_lsp_server.py"
+      - ".github/workflows/v021-lsp.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lsp-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PAPERCLAW_RUN_REAL_LSP: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install project and real language server
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+          python -m pip install pytest-reportlog python-lsp-server
+      - name: Run fake protocol and real pylsp acceptance
+        run: |
+          mkdir -p tmp
+          python -m pytest -q \
+            tests/unit/lsp \
+            tests/integration/lsp/test_real_pylsp_smoke.py \
+            --report-log=tmp/v021-lsp-report.jsonl
+      - name: Write acceptance summary
+        if: always()
+        run: |
+          cat > tmp/v021-lsp-summary.md <<'EOF'
+          # v0.21 LSP acceptance
+
+          This gate separates two evidence layers:
+
+          - deterministic fake stdio JSON-RPC tests for framing, timeouts, fresh diagnostics,
+            definition, references, hover, symbols, workspace confinement, and process restart;
+          - a real `python-lsp-server` process smoke for diagnostics and semantic navigation.
+
+          A green result is real local LSP-process evidence, not only a mocked protocol test.
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v021-lsp-acceptance-${{ github.run_id }}
+          path: |
+            tmp/v021-lsp-report.jsonl
+            tmp/v021-lsp-summary.md
+          retention-days: 30
+          if-no-files-found: warn
