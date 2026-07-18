@@ -177,7 +177,10 @@ class ProjectManifestStore:
 
     @property
     def exists(self) -> bool:
-        return self.path.is_file() and not self.path.is_symlink()
+        # A symlink is intentionally considered present so discovery enters
+        # `load()` and returns a clear policy error instead of silently treating
+        # a hostile/invalid project manifest as absent.
+        return self.path.is_file() or self.path.is_symlink()
 
     def initialize(self, name: str, *, force: bool = False) -> ProjectManifest:
         project_id = _slug(name)
