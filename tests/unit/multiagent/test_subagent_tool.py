@@ -92,14 +92,21 @@ def _request() -> dict:
     }
 
 
-def test_delegate_tasks_returns_compact_results_and_isolation_metadata(tmp_path) -> None:
+def test_delegate_tasks_returns_compact_results_and_usage_metadata(tmp_path) -> None:
     FakeCoordinator.instances.clear()
     tool = SubagentTaskTool(
         lambda agent_id: object(),
         coordinator_factory=FakeCoordinator,
     )
 
-    result = tool.execute(_request(), ToolContext(tmp_path))
+    result = tool.execute(
+        _request(),
+        ToolContext(
+            tmp_path,
+            remaining_model_calls=5,
+            remaining_tool_calls=4,
+        ),
+    )
 
     assert result.ok is True
     assert result.error_code is None
@@ -108,6 +115,11 @@ def test_delegate_tasks_returns_compact_results_and_isolation_metadata(tmp_path)
         "max_agents": 2,
         "context_isolation": "fresh_worker_state",
         "recursive_delegation": False,
+        "child_steps": 4,
+        "child_model_calls": 2,
+        "child_tool_calls": 2,
+        "team_model_call_limit": 5,
+        "team_step_limit": 9,
         "result_truncated": False,
     }
     payload = json.loads(result.output)
@@ -118,8 +130,29 @@ def test_delegate_tasks_returns_compact_results_and_isolation_metadata(tmp_path)
     coordinator = FakeCoordinator.instances[-1]
     assert coordinator.goal == "Inspect two independent areas"
     assert coordinator.budget.max_agents == 2
-    assert coordinator.budget.max_total_steps == 12
+    assert coordinator.budget.max_total_model_calls == 5
+    assert coordinator.budget.max_total_steps == 9
     assert coordinator.tasks[0].allowed_tools == ["file_read", "grep"]
+
+
+def test_delegate_tasks_stops_before_child_calls_when_parent_model_budget_is_empty(
+    tmp_path,
+) -> None:
+    FakeCoordinator.instances.clear()
+    tool = SubagentTaskTool(
+        lambda agent_id: object(),
+        coordinator_factory=FakeCoordinator,
+    )
+
+    result = tool.execute(
+        _request(),
+        ToolContext(tmp_path, remaining_model_calls=0, remaining_tool_calls=5),
+    )
+
+    assert result.ok is False
+    assert result.error_code == "parent_budget_exhausted"
+    assert result.metadata["child_model_calls"] == 0
+    assert FakeCoordinator.instances == []
 
 
 def test_delegate_tasks_rejects_recursive_tool_access() -> None:
