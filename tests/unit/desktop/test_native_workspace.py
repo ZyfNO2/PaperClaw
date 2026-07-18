@@ -38,6 +38,13 @@ class FakeWindow:
         return self.selected
 
 
+class StaleWindow(FakeWindow):
+    def create_file_dialog(self, dialog_type):
+        assert dialog_type == "folder"
+        self.calls.append("dialog")
+        raise RuntimeError("native window is closed")
+
+
 def _install() -> None:
     install_native_workspace_extension(app)
 
@@ -110,6 +117,30 @@ def test_picker_prefers_active_native_window(tmp_path, monkeypatch) -> None:
     assert api._window is active
     assert active.calls == ["show", "restore", "dialog"]
     assert fallback.calls == []
+
+
+def test_picker_retries_after_stale_bound_window(tmp_path, monkeypatch) -> None:
+    _install()
+    stale = StaleWindow(None)
+    active = FakeWindow((str(tmp_path),))
+    monkeypatch.setitem(
+        sys.modules,
+        "webview",
+        SimpleNamespace(
+            FOLDER_DIALOG="folder",
+            active_window=lambda: active,
+            windows=[stale, active],
+        ),
+    )
+    api = app.DesktopAPI(FakeController())
+    api.bind_window(stale)
+
+    response = api.select_workspace()
+
+    assert response == {"ok": True, "workspace": str(tmp_path.resolve())}
+    assert api._window is active
+    assert stale.calls == ["show", "restore", "dialog"]
+    assert active.calls == ["show", "restore", "dialog"]
 
 
 def test_picker_cancel_is_non_destructive(monkeypatch) -> None:
