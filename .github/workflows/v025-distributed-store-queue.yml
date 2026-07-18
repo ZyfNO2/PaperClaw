@@ -35,7 +35,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
       - name: Run fenced queue acceptance
-        run: python -m pytest -q tests/unit/tasks/test_fenced_store.py tests/unit/tasks/test_task_runtime.py tests/unit/tasks/test_executor_mode.py
+        run: python -m pytest -q tests/unit/tasks/test_fenced_store.py tests/unit/tasks/test_executor_mode.py
       - name: Run all task compatibility tests
         run: python -m pytest -q tests/unit/tasks
       - name: Run correctness lint
