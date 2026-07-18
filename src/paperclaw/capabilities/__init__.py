@@ -1,10 +1,7 @@
 """PaperClaw capability discovery and maturity truth source."""
 
-from .catalog import (
-    CapabilityCatalog,
-    CapabilityDescriptor,
-    default_capability_catalog,
-)
+from .catalog import CapabilityCatalog, CapabilityDescriptor
+from .current import default_capability_catalog
 
 __all__ = [
     "CapabilityCatalog",
