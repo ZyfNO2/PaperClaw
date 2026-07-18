@@ -1,32 +1,51 @@
 # PaperClaw v0.17 Consolidated Acceptance Evidence
 
-## Candidate SHA
+## Current Release Status
+
+**HOLD — awaiting real native Desktop revalidation.**
+
+The original operator run covered the real LLM and protected browser interface, but did not exercise the native pywebview workspace picker. The earlier claim that all manual Desktop scenarios passed is superseded by `DESKTOP_WORKSPACE_PICKER_REVALIDATION.md`.
+
+PR #42 must remain Draft until the native scenario passes and the Release Owner signs off.
+
+## Historical Candidate
+
+The automated evidence below was collected for:
 
 ```
 58e7900dd80c1ad5645ab683c3cdeccf4388bea1
 ```
 
-## Acceptance Date
+It remains valid historical evidence for the unchanged subsystems, but it is not exact-head evidence for the native workspace-picker correction.
 
-2026-07-18
+## Native Workspace Picker Correction
 
-## Automated Gates
+| Item | Commit |
+|------|--------|
+| Native window resolution and picker extension | `16bfded1b3203a665f022af7c2374c93da61619d` |
+| Desktop bootstrap installation | `a2c044d5647e251120b09abc5e3a7edf3574b8b3` |
+| Focused regression coverage | `83b3abdd2ed530864891c025ca89fe38cd227796` |
+| Native revalidation procedure | `c0c00319ffe790c6eac0bb494a13a784bc48d67a` |
+
+Exact-head automated results are recorded in PR #42 after CI completion. Automated tests use fake native-window objects and cannot replace the required real Windows interaction.
+
+## Historical Automated Gates
 
 | Gate | Result | Evidence |
 |------|--------|----------|
 | Windows Main CI | 765 passed, 0 failed | `pytest-results-29627370327` |
-| Windows Non-Process Regression | 763 passed, 0 failed | Same artifact |
+| Windows Non-Process Regression | 763 passed, 0 failed | Same historical release chain |
 | Real Process Recovery | 2 passed, 0 failed | `process-acceptance` workflow |
 | Context/Memory Focused | 92 passed, 0 failed | `context-memory-focused-29627370326` |
 | Desktop Playwright | 5 passed, 0 failed | `desktop-playwright-29627370335` |
-| Ruff Correctness | PASS | Local verification |
+| Ruff Correctness | PASS | Historical exact-head verification |
 | Windows PyInstaller onedir | PASS | `PaperClaw-Windows-onedir-29627370338` |
 
 ## Manual Acceptance Scenarios
 
-| # | Scenario | Result | Verification Method |
-|---|----------|--------|---------------------|
-| 1 | Desktop First-Run Provider Config | ✅ PASS | Manual verification with screenshots |
+| # | Scenario | Current Result | Verification Method |
+|---|----------|----------------|---------------------|
+| 1 | Desktop First-Run Provider Config and native workspace picker | ⏳ PENDING | Must complete `DESKTOP_WORKSPACE_PICKER_REVALIDATION.md` on Windows |
 | 2 | Workspace Credential Isolation | ✅ PASS | API testing with workspace-A/B |
 | 3 | Project Instructions | ✅ PASS | API testing with @ imports |
 | 4 | Context Compaction | ✅ PASS | Unit tests (4/4 passed) |
@@ -39,22 +58,23 @@
 
 ## Code Review
 
-- Critical/High: 0
-- Medium: 1 (dead code: `reject_secret_like_fields`)
-- Low: 0
+- Historical Critical/High: 0
+- Historical Medium: 1 (`reject_secret_like_fields` dead code)
+- New reported defect: native workspace selection was not covered by the original operator acceptance
+- Current disposition: implementation corrected; real native behavior not yet verified
 
 ## Entry Criteria
 
 | # | Criterion | Status |
 |---|-----------|--------|
-| 1 | PR #42 targets main, mergeable | ✅ |
+| 1 | PR #42 targets main and is mergeable | ✅ |
 | 2 | Only one consolidated PR open | ✅ |
-| 3 | Exact-head workflows complete | ✅ |
-| 4 | No Critical/High open | ✅ |
-| 5 | Artifacts identify same SHA | ✅ |
-| 6 | Working tree clean | ✅ |
-| 7 | No real credentials in repo | ✅ |
+| 3 | Exact-head automated workflows complete | ⏳ PENDING until current CI finishes |
+| 4 | No Critical/High open | ⏳ PENDING final exact-head review |
+| 5 | Native Desktop workspace picker verified on Windows | ⏳ PENDING |
+| 6 | No real credentials in repo | ✅ |
+| 7 | Release Owner sign-off | ⏳ PENDING |
 
 ## Release Decision
 
-**ACCEPT** — All automated gates pass, all manual scenarios pass, no open Critical or High issue.
+**HOLD** — do not mark PR #42 ready and do not merge. The code correction and automated regression suite must pass at the current head, then the real native Desktop procedure must pass before Release Owner sign-off.
