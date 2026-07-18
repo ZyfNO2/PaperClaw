@@ -198,7 +198,10 @@ def _parse_request(
         _MAX_AGENTS,
     )
     requested_steps = min(100, sum(task.max_steps for task in tasks))
-    requested_models = min(120, requested_steps + (2 * len(tasks)))
+    # v0.22 reserves up to two Reflection calls and two semantic-judge calls
+    # per task. Legacy callers simply receive extra headroom; actual usage is
+    # still measured and charged through WorkerResult counters.
+    requested_models = min(120, requested_steps + (4 * len(tasks)))
     parent_model_cap = (
         requested_models
         if remaining_model_calls is None
@@ -351,6 +354,16 @@ def _result_payload(result: CoordinatorResult) -> dict[str, Any]:
             "steps": worker_result.step_count,
             "model_calls": worker_result.model_call_count,
             "tool_calls": worker_result.tool_call_count,
+            "deterministic_verification": (
+                worker_result.verification_result.to_dict()
+                if worker_result.verification_result is not None
+                else None
+            ),
+            "semantic_acceptance": (
+                worker_result.semantic_judge_result.to_dict()
+                if worker_result.semantic_judge_result is not None
+                else None
+            ),
         }
     return {
         "stop_reason": stop_reason,
