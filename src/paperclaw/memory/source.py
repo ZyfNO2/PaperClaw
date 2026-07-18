@@ -14,6 +14,7 @@ from .store import MemoryEntry, MemorySnapshot
 
 _IMPORT_PATTERN = re.compile(r"(?<![A-Za-z0-9_])@([A-Za-z0-9_./\\-]+)")
 _DEFAULT_INSTRUCTION_FILES = ("PAPERCLAW.md", "CLAUDE.md", "AGENTS.md")
+_TRUNCATION_MARKER = "\n[paperclaw: project instructions truncated at configured limit]"
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class ProjectInstructionSnapshot:
     content: str
     source_files: tuple[str, ...]
     fingerprint: str
+    truncated: bool = False
 
 
 class ProjectInstructionLoader:
@@ -57,13 +59,19 @@ class ProjectInstructionLoader:
         blocks: list[str] = []
         used = 0
         source_files: list[str] = []
+        truncated = False
         for path, content in loaded.items():
             relative = path.relative_to(self.workspace).as_posix()
             block = f"[project-instruction:{relative}]\n{content}"
             if used + len(block) > self.max_total_chars:
+                truncated = True
                 remaining = self.max_total_chars - used
-                if remaining > 0:
-                    blocks.append(block[:remaining])
+                marker_budget = len(_TRUNCATION_MARKER)
+                if remaining > marker_budget:
+                    blocks.append(block[: remaining - marker_budget] + _TRUNCATION_MARKER)
+                    source_files.append(relative)
+                elif remaining > 0:
+                    blocks.append(_TRUNCATION_MARKER[-remaining:])
                 break
             blocks.append(block)
             source_files.append(relative)
@@ -74,6 +82,7 @@ class ProjectInstructionLoader:
             content=rendered,
             source_files=tuple(source_files),
             fingerprint=fingerprint,
+            truncated=truncated,
         )
 
     def _load(self, path: Path, *, depth: int, loaded: dict[Path, str]) -> None:
@@ -121,9 +130,17 @@ class FrozenFoundationalContextSource:
         *,
         memory_snapshot: MemorySnapshot,
         project_snapshot: ProjectInstructionSnapshot,
+        minimum_confidence: float = 0.60,
     ) -> None:
+        if (
+            isinstance(minimum_confidence, bool)
+            or not isinstance(minimum_confidence, (int, float))
+            or not 0 <= float(minimum_confidence) <= 1
+        ):
+            raise ValueError("minimum_confidence must be within [0, 1]")
         self.memory_snapshot = memory_snapshot
         self.project_snapshot = project_snapshot
+        self.minimum_confidence = float(minimum_confidence)
 
     def collect(self, request: ContextRequest) -> tuple[ContextCandidate, ...]:
         candidates: list[ContextCandidate] = []
@@ -145,13 +162,13 @@ class FrozenFoundationalContextSource:
                     bucket="protected",
                     pinned=True,
                     compressible=False,
+                    metadata={"truncated": project.truncated},
                 )
             )
 
         user_content = self._render_store(
             "USER PROFILE",
             self.memory_snapshot.user_entries,
-            self.memory_snapshot.user_used_chars,
             self.memory_snapshot.user_limit_chars,
         )
         if user_content:
@@ -177,7 +194,6 @@ class FrozenFoundationalContextSource:
         memory_content = self._render_store(
             "MEMORY",
             self.memory_snapshot.memory_entries,
-            self.memory_snapshot.memory_used_chars,
             self.memory_snapshot.memory_limit_chars,
         )
         if memory_content:
@@ -201,18 +217,28 @@ class FrozenFoundationalContextSource:
             )
         return tuple(candidates)
 
-    @staticmethod
     def _render_store(
+        self,
         title: str,
         entries: tuple[MemoryEntry, ...],
-        used_chars: int,
         limit_chars: int,
     ) -> str:
-        if not entries:
+        selected = tuple(
+            entry
+            for entry in entries
+            if entry.confidence >= self.minimum_confidence and not entry.is_expired
+        )
+        if not selected:
             return ""
+        used_chars = sum(len(entry.content) for entry in selected) + max(
+            0, len(selected) - 1
+        )
         percentage = round((used_chars / limit_chars) * 100) if limit_chars else 0
-        lines = [f"{title} [{percentage}% — {used_chars}/{limit_chars} chars]"]
-        for entry in entries:
+        lines = [
+            f"{title} [{percentage}% — {used_chars}/{limit_chars} chars; "
+            f"minimum_confidence={self.minimum_confidence:.2f}]"
+        ]
+        for entry in selected:
             lines.append(
                 "\n".join(
                     (
