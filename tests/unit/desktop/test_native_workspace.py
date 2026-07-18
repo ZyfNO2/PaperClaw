@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from types import SimpleNamespace
 import sys
 
@@ -47,6 +48,16 @@ class StaleWindow(FakeWindow):
 
 def _install() -> None:
     install_native_workspace_extension(app)
+
+
+def test_bootstrap_installs_native_workspace_extension(monkeypatch) -> None:
+    marker = "_paperclaw_native_workspace_extension"
+    monkeypatch.delattr(app.DesktopAPI, marker, raising=False)
+    from paperclaw.desktop import bootstrap
+
+    importlib.reload(bootstrap)
+
+    assert getattr(app.DesktopAPI, marker) is True
 
 
 def test_native_workspace_extension_is_idempotent() -> None:
