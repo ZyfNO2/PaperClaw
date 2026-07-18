@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -39,6 +39,7 @@ _SENSITIVE_FIELDS = frozenset(
         "private_key",
     }
 )
+_DEFAULT_INSTRUCTIONS = ("PAPERCLAW.md", "CLAUDE.md", "AGENTS.md")
 
 
 @dataclass(frozen=True)
@@ -81,28 +82,32 @@ class ProjectManifest:
     schema_version: int
     project_id: str
     name: str
-    instruction_files: tuple[str, ...] = (
-        "PAPERCLAW.md",
-        "CLAUDE.md",
-        "AGENTS.md",
-    )
+    instruction_files: tuple[str, ...] = _DEFAULT_INSTRUCTIONS
     knowledge_paths: tuple[str, ...] = ()
     enabled_skills: tuple[str, ...] = ()
     enabled_connectors: tuple[str, ...] = ()
     data_directory: str = ".paperclaw/data"
 
     def __post_init__(self) -> None:
-        if self.schema_version != 1:
+        if isinstance(self.schema_version, bool) or self.schema_version != 1:
             raise ValueError("unsupported project manifest schema_version")
-        if _PROJECT_ID.fullmatch(self.project_id) is None:
+        if not isinstance(self.project_id, str) or _PROJECT_ID.fullmatch(
+            self.project_id
+        ) is None:
             raise ValueError("invalid project_id")
-        if not isinstance(self.name, str) or not self.name.strip() or len(self.name) > 200:
+        if (
+            not isinstance(self.name, str)
+            or not self.name.strip()
+            or len(self.name) > 200
+        ):
             raise ValueError("project name must be 1-200 characters")
         instructions = _normalize_paths(self.instruction_files, "instruction_files")
         knowledge = _normalize_paths(self.knowledge_paths, "knowledge_paths")
         skills = _normalize_ids(self.enabled_skills, "enabled_skills")
         connectors = _normalize_ids(self.enabled_connectors, "enabled_connectors")
-        data_directory = _normalize_relative_path(self.data_directory, "data_directory")
+        data_directory = _normalize_relative_path(
+            self.data_directory, "data_directory"
+        )
         object.__setattr__(self, "name", self.name.strip())
         object.__setattr__(self, "instruction_files", instructions)
         object.__setattr__(self, "knowledge_paths", knowledge)
@@ -138,15 +143,19 @@ class ProjectManifest:
             schema_version=value["schema_version"],
             project_id=value["project_id"],
             name=value["name"],
-            instruction_files=tuple(
-                value.get(
-                    "instruction_files",
-                    ("PAPERCLAW.md", "CLAUDE.md", "AGENTS.md"),
-                )
+            instruction_files=_array(
+                value.get("instruction_files", _DEFAULT_INSTRUCTIONS),
+                "instruction_files",
             ),
-            knowledge_paths=tuple(value.get("knowledge_paths", ())),
-            enabled_skills=tuple(value.get("enabled_skills", ())),
-            enabled_connectors=tuple(value.get("enabled_connectors", ())),
+            knowledge_paths=_array(
+                value.get("knowledge_paths", ()), "knowledge_paths"
+            ),
+            enabled_skills=_array(
+                value.get("enabled_skills", ()), "enabled_skills"
+            ),
+            enabled_connectors=_array(
+                value.get("enabled_connectors", ()), "enabled_connectors"
+            ),
             data_directory=value.get("data_directory", ".paperclaw/data"),
         )
 
@@ -168,7 +177,7 @@ class ProjectManifestStore:
 
     @property
     def exists(self) -> bool:
-        return self.path.is_file()
+        return self.path.is_file() and not self.path.is_symlink()
 
     def initialize(self, name: str, *, force: bool = False) -> ProjectManifest:
         project_id = _slug(name)
@@ -181,6 +190,7 @@ class ProjectManifestStore:
         return manifest
 
     def save(self, manifest: ProjectManifest, *, overwrite: bool = True) -> None:
+        self._assert_manifest_path_safe()
         if self.path.exists() and not overwrite:
             raise FileExistsError(f"project manifest already exists: {self.path}")
         encoded = (
@@ -204,6 +214,7 @@ class ProjectManifestStore:
             temporary.unlink(missing_ok=True)
 
     def load(self) -> ProjectManifest:
+        self._assert_manifest_path_safe()
         raw = self.path.read_bytes()
         if len(raw) > self.max_manifest_bytes:
             raise ValueError("project manifest exceeds configured byte limit")
@@ -289,13 +300,32 @@ class ProjectManifestStore:
             try:
                 unresolved.resolve(strict=True).relative_to(self.workspace)
             except (FileNotFoundError, ValueError) as exc:
-                raise ValueError("declared symlink escapes workspace or is broken") from exc
+                raise ValueError(
+                    "declared symlink escapes workspace or is broken"
+                ) from exc
         return resolved
+
+    def _assert_manifest_path_safe(self) -> None:
+        if self.path.is_symlink():
+            raise ValueError("project manifest must not be a symbolic link")
+        parent = self.path.parent.resolve(strict=False)
+        try:
+            parent.relative_to(self.workspace)
+        except ValueError as exc:
+            raise ValueError("project manifest path escapes workspace") from exc
 
 
 def discover_project_manifest(workspace: str | Path) -> ProjectManifest | None:
     store = ProjectManifestStore(workspace)
     return store.load() if store.exists else None
+
+
+def _array(value: object, name: str) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"{name} must be an array")
+    if any(not isinstance(item, str) for item in value):
+        raise ValueError(f"{name} must contain strings")
+    return tuple(value)
 
 
 def _normalize_paths(values: tuple[str, ...], name: str) -> tuple[str, ...]:
@@ -343,7 +373,9 @@ def _reject_sensitive_fields(value: object, path: str) -> None:
         for raw_key, child in value.items():
             key = str(raw_key).strip().lower().replace("-", "_")
             if key in _SENSITIVE_FIELDS:
-                raise ValueError(f"project manifest contains secret field: {path}.{raw_key}")
+                raise ValueError(
+                    f"project manifest contains secret field: {path}.{raw_key}"
+                )
             _reject_sensitive_fields(child, f"{path}.{raw_key}")
     elif isinstance(value, (list, tuple)):
         for index, child in enumerate(value):
