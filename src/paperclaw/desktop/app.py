@@ -6,14 +6,18 @@ import argparse
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 from collections import OrderedDict, deque
 from copy import deepcopy
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 =======
@@ -23,6 +27,8 @@ import http.client
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 from importlib.resources import as_file, files
 from importlib.util import find_spec
 import json
@@ -31,16 +37,20 @@ from pathlib import Path
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 import secrets
 import sys
 from threading import RLock, Thread
 from typing import Any, Mapping
 from urllib.parse import quote, urlsplit
 import webbrowser
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 =======
@@ -57,6 +67,8 @@ from urllib.parse import urlsplit
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 
 from .contracts import DesktopPublicError
 from .controller import DesktopController
@@ -72,11 +84,14 @@ _REQUIRED_ENV = (
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 =======
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 _BROWSER_THEMES = frozenset(
     {
         "neo-brutalist",
@@ -107,6 +122,7 @@ _EVENT_HISTORY_LIMIT = 2_048
 _CLIENT_CURSOR_LIMIT = 32
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> edf37eb
 =======
 _MAX_DISCOVERED_MODELS = 1_000
@@ -118,6 +134,8 @@ _MODEL_DISCOVERY_FALLBACK_CODES = frozenset(
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 
 
 class DesktopAPI:
@@ -135,10 +153,13 @@ class DesktopAPI:
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
         self._browser_host: _BrowserHost | None = None
         self._browser_lock = RLock()
         self._poll_lock = RLock()
@@ -147,6 +168,7 @@ class DesktopAPI:
         )
         self._event_serial = 0
         self._client_cursors: OrderedDict[str, int] = OrderedDict()
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 =======
@@ -161,6 +183,8 @@ class DesktopAPI:
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 
     def bind_window(self, window: Any) -> None:
         self._window = window
@@ -173,6 +197,7 @@ class DesktopAPI:
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         self._reset_event_fanout()
 >>>>>>> edf37eb
@@ -182,6 +207,9 @@ class DesktopAPI:
 =======
         self._reset_event_fanout()
 >>>>>>> 70e7334
+=======
+        self._reset_event_fanout()
+>>>>>>> 77ef8ea
         return self._controller.start_run(hydrated)
 
     def cancel_run(self) -> dict[str, object]:
@@ -259,6 +287,7 @@ class DesktopAPI:
         workspace = Path.cwd().expanduser().resolve()
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
         with self._provider_lock:
             manual_provider = dict(self._manual_provider) if self._manual_provider else None
             models = list(self._available_models)
@@ -291,10 +320,15 @@ class DesktopAPI:
         values = _resolve_provider_environment(workspace)
         missing = [name for name in _REQUIRED_ENV if not values.get(name)]
 >>>>>>> 70e7334
+=======
+        values = _resolve_provider_environment(workspace)
+        missing = [name for name in _REQUIRED_ENV if not values.get(name)]
+>>>>>>> 77ef8ea
         return {
             "ok": True,
             "workspace": str(workspace),
             "provider_source": "env",
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
             "provider": os.getenv("PAPERCLAW_PROVIDER", "openai-compatible"),
@@ -335,6 +369,18 @@ class DesktopAPI:
         }
 
 >>>>>>> 70e7334
+=======
+            "provider": values.get(
+                "PAPERCLAW_PROVIDER", "openai-compatible"
+            ),
+            "base_url": values.get("PAPERCLAW_BASE_URL") or None,
+            "model": values.get("PAPERCLAW_MODEL") or None,
+            "configured": not missing,
+            "missing": missing,
+            "theme": _load_theme_preference(),
+        }
+
+>>>>>>> 77ef8ea
     def set_theme(self, theme: str) -> dict[str, object]:
         if theme not in _BROWSER_THEMES:
             return DesktopPublicError(
@@ -350,6 +396,7 @@ class DesktopAPI:
             ).to_public_dict()
         return {"ok": True, "theme": theme}
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 >>>>>>> edf37eb
@@ -498,6 +545,8 @@ class DesktopAPI:
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
     def select_workspace(self) -> dict[str, object]:
         window = self._window
         if window is None:
@@ -534,10 +583,13 @@ class DesktopAPI:
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
     def open_in_browser(self, theme: str = "neo-brutalist") -> dict[str, object]:
         """Open a token-protected loopback mirror in the system browser."""
 
@@ -804,6 +856,9 @@ class _BrowserHost:
         return BrowserRequestHandler
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 77ef8ea
 
 def _hydrate_environment_provider(request: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(request, Mapping):
@@ -921,6 +976,7 @@ def _save_theme_preference(theme: str) -> None:
         encoding="utf-8",
     )
     temporary.replace(path)
+<<<<<<< HEAD
 
 
 def _preference_path() -> Path:
@@ -1276,6 +1332,8 @@ def _save_theme_preference(theme: str) -> None:
         encoding="utf-8",
     )
     temporary.replace(path)
+=======
+>>>>>>> 77ef8ea
 
 
 def _folder_dialog_type(webview_module: Any) -> Any:

@@ -2,9 +2,12 @@
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 ## Status
 
 - Repository: `ZyfNO2/PaperClaw`
@@ -14,9 +17,12 @@
 - Current state: implementation complete; focused offline validation passed; live provider and native Windows acceptance pending
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 ## Scope
 
 This change adds two desktop controls requested after the v0.11 UI acceptance:
@@ -29,6 +35,7 @@ This change adds two desktop controls requested after the v0.11 UI acceptance:
 - `paperclaw.desktop.provider_config` installs a narrow extension before the desktop host starts.
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 - Credentials remain in Python process memory only and are never returned to JavaScript, snapshots, traces, or exported events.
 =======
 - The API Key necessarily exists briefly in the password input and bridge request. After a successful connection, the input is cleared and the connected credential is retained only in Python process memory.
@@ -38,6 +45,10 @@ This change adds two desktop controls requested after the v0.11 UI acceptance:
 - The API Key necessarily exists briefly in the password input and bridge request. After a successful connection, the input is cleared and the connected credential is retained only in Python process memory.
 - The credential is never returned in public desktop/browser responses and is not persisted to localStorage, sessionStorage, cookies, IndexedDB, traces, or exported events.
 >>>>>>> 70e7334
+=======
+- The API Key necessarily exists briefly in the password input and bridge request. After a successful connection, the input is cleared and the connected credential is retained only in Python process memory.
+- The credential is never returned in public desktop/browser responses and is not persisted to localStorage, sessionStorage, cookies, IndexedDB, traces, or exported events.
+>>>>>>> 77ef8ea
 - Model discovery uses `GET {base_url}/models` with a bounded 15 second timeout.
 - Manual configuration overrides ENV for new desktop runs; callers that supply a complete explicit provider remain unchanged.
 - `USE ENV` clears the in-memory manual configuration and restores existing environment-backed behavior.
@@ -59,12 +70,15 @@ This change adds two desktop controls requested after the v0.11 UI acceptance:
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 ## Verification
 
 Automated verification is expected to include:
 =======
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 ## Verification performed
 
 Focused offline validation performed in the available execution environment:
@@ -80,9 +94,12 @@ The repository workflows are filtered to pull requests targeting `main`. This PR
 
 Recommended validation after PR #34 is merged or the workflow base filter is expanded:
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 
 ```bash
 python -m pytest -q tests/unit/desktop/test_provider_config.py

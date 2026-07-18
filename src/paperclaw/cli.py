@@ -8,7 +8,12 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
-from paperclaw.harness import AgentRuntimeExecutor, QueryEngine, RunLimits
+from paperclaw.harness import (
+    ContextOrchestratedAgentRuntimeExecutor,
+    QueryEngine,
+    RunLimits,
+)
+from paperclaw.memory import build_memory_runtime
 from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.multiagent.contracts import AgentTask, TeamBudget
 from paperclaw.multiagent.coordinator import Coordinator
@@ -105,11 +110,15 @@ def _build_print_event(verbose: bool):
 
 def _run_agent(args: argparse.Namespace) -> int:
     load_dotenv(Path.cwd() / ".env")
-    executor = AgentRuntimeExecutor(
+    components = build_memory_runtime(args.workspace)
+    executor = ContextOrchestratedAgentRuntimeExecutor(
         OpenAICompatibleModel.from_env(),
         args.workspace,
+        registry=components.tool_registry,
         enable_verification_gate=args.enable_verification_gate,
         legacy_event_handler=_build_print_event(args.verbose_events),
+        context_policy=components.context_policy,
+        context_source_registry=components.source_registry,
     )
     engine = QueryEngine(executor, conversation_id=f"cli-{uuid4().hex[:12]}")
     result = engine.submit(

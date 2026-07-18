@@ -12,7 +12,11 @@ from dataclasses import dataclass
 import hashlib
 import json
 from math import ceil
+<<<<<<< HEAD
 from typing import Any, Iterable
+=======
+from typing import Any
+>>>>>>> 77ef8ea
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,11 @@ class RuntimeCompactionPolicy:
     recent_entries: int = 6
     max_argument_chars: int = 320
     max_output_excerpt_chars: int = 320
+<<<<<<< HEAD
+=======
+    max_recent_argument_chars: int = 2_000
+    max_recent_output_chars: int = 4_000
+>>>>>>> 77ef8ea
     max_summary_chars: int = 7_000
 
     def __post_init__(self) -> None:
@@ -31,6 +40,11 @@ class RuntimeCompactionPolicy:
             ("recent_entries", self.recent_entries),
             ("max_argument_chars", self.max_argument_chars),
             ("max_output_excerpt_chars", self.max_output_excerpt_chars),
+<<<<<<< HEAD
+=======
+            ("max_recent_argument_chars", self.max_recent_argument_chars),
+            ("max_recent_output_chars", self.max_recent_output_chars),
+>>>>>>> 77ef8ea
             ("max_summary_chars", self.max_summary_chars),
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
@@ -90,6 +104,7 @@ def build_runtime_history_view(
 
     old_entries = list(history[: -resolved.recent_entries])
     recent_entries = list(history[-resolved.recent_entries :])
+<<<<<<< HEAD
     summary_payload = _summary_payload(old_entries, shared, resolved)
     summary_json = json.dumps(
         summary_payload,
@@ -113,10 +128,15 @@ def build_runtime_history_view(
         ensure_ascii=False,
         separators=(",", ":"),
     )
+=======
+    summary_payload, summary_json = _render_summary(old_entries, shared, resolved)
+    recent_records, recent_json = _render_recent(recent_entries, resolved)
+>>>>>>> 77ef8ea
     rendered_tokens = estimate_runtime_tokens(summary_json + recent_json)
 
     while rendered_tokens > resolved.target_tokens and len(recent_entries) > 2:
         old_entries.append(recent_entries.pop(0))
+<<<<<<< HEAD
         summary_payload = _summary_payload(old_entries, shared, resolved)
         summary_json = json.dumps(
             summary_payload,
@@ -129,13 +149,21 @@ def build_runtime_history_view(
             ensure_ascii=False,
             separators=(",", ":"),
         )
+=======
+        summary_payload, summary_json = _render_summary(old_entries, shared, resolved)
+        recent_records, recent_json = _render_recent(recent_entries, resolved)
+>>>>>>> 77ef8ea
         rendered_tokens = estimate_runtime_tokens(summary_json + recent_json)
 
     covered_steps = tuple(int(entry.step) for entry in old_entries)
     recent_steps = tuple(int(entry.step) for entry in recent_entries)
     fingerprint_payload = {
         "summary": summary_payload,
+<<<<<<< HEAD
         "recent": [entry.to_dict() for entry in recent_entries],
+=======
+        "recent": recent_records,
+>>>>>>> 77ef8ea
     }
     fingerprint = hashlib.sha256(
         json.dumps(
@@ -170,6 +198,46 @@ def build_runtime_history_view(
     )
 
 
+<<<<<<< HEAD
+=======
+def _render_summary(
+    entries: list[Any],
+    shared: dict[str, Any],
+    policy: RuntimeCompactionPolicy,
+) -> tuple[dict[str, Any], str]:
+    payload = _summary_payload(entries, shared, policy)
+    rendered = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if len(rendered) > policy.max_summary_chars:
+        payload["records"] = _fit_records(
+            payload["records"], policy.max_summary_chars
+        )
+        payload["summary_truncated"] = True
+        rendered = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    return payload, rendered
+
+
+def _render_recent(
+    entries: list[Any], policy: RuntimeCompactionPolicy
+) -> tuple[list[dict[str, Any]], str]:
+    records = [_recent_record(entry, policy) for entry in entries]
+    return records, json.dumps(
+        records,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+>>>>>>> 77ef8ea
 def _summary_payload(
     entries: list[Any],
     shared: dict[str, Any],
@@ -230,6 +298,36 @@ def _entry_record(entry: Any, policy: RuntimeCompactionPolicy) -> dict[str, Any]
     }
 
 
+<<<<<<< HEAD
+=======
+def _recent_record(entry: Any, policy: RuntimeCompactionPolicy) -> dict[str, Any]:
+    result = entry.result
+    arguments = json.dumps(
+        entry.arguments,
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":"),
+    )
+    output = str(result.output or "")
+    return {
+        "step": int(entry.step),
+        "tool": str(entry.tool),
+        "arguments": _clip(arguments, policy.max_recent_argument_chars),
+        "arguments_truncated": len(arguments) > policy.max_recent_argument_chars,
+        "reason": _clip(str(entry.reason), 500),
+        "result": {
+            "ok": bool(result.ok),
+            "output": _clip(output, policy.max_recent_output_chars),
+            "output_truncated": len(output) > policy.max_recent_output_chars,
+            "output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
+            "error_code": result.error_code,
+            "metadata": result.metadata,
+        },
+    }
+
+
+>>>>>>> 77ef8ea
 def _fit_records(records: list[dict[str, Any]], max_chars: int) -> list[dict[str, Any]]:
     kept: list[dict[str, Any]] = []
     used = 0

@@ -6,6 +6,7 @@ EXPECTED_IDS = {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     "app", "sidebar", "sidebar-toggle", "workspace-card", "workspace-name",
     "workspace-path", "sidebar-nav", "trace-count", "env-badge", "new-run-button",
     "run-subtitle", "global-search", "run-status", "run-button", "cancel-button",
@@ -24,6 +25,8 @@ EXPECTED_IDS = {
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
     "app",
     "sidebar",
     "sidebar-toggle",
@@ -97,11 +100,14 @@ THEMES = {
     "paper-light",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> edf37eb
 =======
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 }
 
 
@@ -135,6 +141,7 @@ def test_html_has_expected_controls_and_security_policy() -> None:
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     assert "connect-src 'none'" in html
 =======
     assert "connect-src 'self'" in html
@@ -155,10 +162,17 @@ def test_html_has_expected_controls_and_security_policy() -> None:
     assert '<label class="sr-only" for="task">' in html
     assert 'aria-live="polite"' in html
 >>>>>>> 70e7334
+=======
+    assert "connect-src 'self'" in html
+    assert "connect-src 'none'" not in html
+    assert '<label class="sr-only" for="task">' in html
+    assert 'aria-live="polite"' in html
+>>>>>>> 77ef8ea
     assert html.index('src="provider-config.js"') < html.index('src="app.js"')
     assert "Enable verification &amp; reflection gate" in html
 
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -200,6 +214,15 @@ def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_executi
     provider_javascript = _asset("provider-config.js").lower()
     combined = "\n".join((html, javascript, provider_javascript))
 >>>>>>> 70e7334
+=======
+def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_execution() -> (
+    None
+):
+    html = _asset("index.html").lower()
+    javascript = _asset("app.js").lower()
+    provider_javascript = _asset("provider-config.js").lower()
+    combined = "\n".join((html, javascript, provider_javascript))
+>>>>>>> 77ef8ea
     for forbidden in (
         "sessionstorage",
         "document.cookie",
@@ -218,6 +241,7 @@ def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_executi
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     assert "paperclaw_api_key" not in javascript
 =======
     assert "paperclaw_api_key" not in combined
@@ -228,6 +252,9 @@ def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_executi
 =======
     assert "paperclaw_api_key" not in combined
 >>>>>>> 70e7334
+=======
+    assert "paperclaw_api_key" not in combined
+>>>>>>> 77ef8ea
     assert "console.log" not in combined
 =======
     assert javascript.count("api_key") == 1
@@ -242,8 +269,11 @@ def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_executi
     assert 'ui.providerapikey.value = ""' in provider_javascript
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 
 
 def test_uploaded_theme_set_and_neobrutalist_default_are_preserved() -> None:
@@ -274,6 +304,7 @@ def test_browser_transport_is_loopback_token_aware_and_provider_secret_safe() ->
     assert "localstorage" not in provider_javascript.lower()
 
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 def test_manual_provider_flow_uses_only_the_python_bridge() -> None:
     javascript = _asset("app.js")
@@ -328,10 +359,16 @@ def test_styles_keep_controls_visible_in_narrow_layout() -> None:
     css = _asset("styles.css")
     provider_css = _asset("provider-config.css")
 >>>>>>> 70e7334
+=======
+def test_styles_keep_controls_visible_in_narrow_layout() -> None:
+    css = _asset("styles.css")
+    provider_css = _asset("provider-config.css")
+>>>>>>> 77ef8ea
     assert "@media(max-width:720px)" in css
     assert "min-width:360px" in css
     assert ".toolbar-group" in css
     assert "flex-direction:column" in css
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -347,3 +384,7 @@ def test_styles_keep_controls_visible_in_narrow_layout() -> None:
     assert "@media(max-width:720px)" in provider_css
     assert ".provider-form-grid" in provider_css
 >>>>>>> 70e7334
+=======
+    assert "@media(max-width:720px)" in provider_css
+    assert ".provider-form-grid" in provider_css
+>>>>>>> 77ef8ea

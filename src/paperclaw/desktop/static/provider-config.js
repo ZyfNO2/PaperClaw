@@ -19,20 +19,26 @@
       "config-credential", "provider-base-url", "provider-api-key",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
       "provider-key-toggle", "provider-connect", "provider-model",
       "provider-reset", "provider-connect-status", "provider-summary",
       "env-badge", "model-label", "verification-enabled", "gate-mode-status"
 =======
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
       "provider-manual-model", "provider-key-toggle", "provider-connect",
       "provider-model", "provider-reset", "provider-connect-status",
       "provider-summary", "env-badge", "model-label", "verification-enabled",
       "gate-mode-status"
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
     ]) ui[toCamel(id)] = byId(id);
 
     ui.providerKeyToggle.addEventListener("click", toggleKeyVisibility);
@@ -56,12 +62,16 @@
   async function maybeLoadDefaults() {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     if (!initialized) return;
 >>>>>>> 18cf7be
 =======
     if (!initialized) return;
 >>>>>>> 70e7334
+=======
+    if (!initialized) return;
+>>>>>>> 77ef8ea
     const api = backendApi();
     if (!api || typeof api.get_defaults !== "function") return;
     try {
@@ -78,12 +88,16 @@
     const apiKey = ui.providerApiKey.value.trim();
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     const manualModel = ui.providerManualModel.value.trim();
 >>>>>>> 18cf7be
 =======
     const manualModel = ui.providerManualModel.value.trim();
 >>>>>>> 70e7334
+=======
+    const manualModel = ui.providerManualModel.value.trim();
+>>>>>>> 77ef8ea
     if (!baseUrl || !apiKey) {
       setStatus("Base URL 和 API Key 均不能为空。", "error");
       return;
@@ -102,6 +116,7 @@
     try {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
       const response = await api.connect_provider({
         base_url: baseUrl,
         api_key: apiKey,
@@ -110,6 +125,8 @@
 =======
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
       const payload = {
         base_url: baseUrl,
         api_key: apiKey,
@@ -118,9 +135,12 @@
       if (manualModel) payload.model = manualModel;
       const response = await api.connect_provider(payload);
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
       if (!response || !response.ok) {
         renderError(response);
         return;
@@ -131,19 +151,25 @@
       renderProviderState(response);
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
       setStatus(`连接成功，可用模型 ${response.available_models.length} 个。`, "success");
 =======
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
       if (response.discovery_warning) {
         setStatus(response.discovery_warning, "warning");
       } else {
         setStatus(`连接成功，可用模型 ${response.available_models.length} 个。`, "success");
       }
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
     } catch (_error) {
       setStatus("连接失败：桌面桥接未返回有效结果。", "error");
     } finally {
@@ -191,12 +217,16 @@
       ui.providerModel.disabled = true;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
       ui.providerManualModel.value = "";
 >>>>>>> 18cf7be
 =======
       ui.providerManualModel.value = "";
 >>>>>>> 70e7334
+=======
+      ui.providerManualModel.value = "";
+>>>>>>> 77ef8ea
       setStatus("已恢复为环境变量配置。", "success");
       await maybeLoadDefaults();
     } catch (_error) {
@@ -212,16 +242,21 @@
     const configured = Boolean(response.configured);
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     const verified = response.model_verified !== false;
 >>>>>>> 18cf7be
 =======
     const verified = response.model_verified !== false;
 >>>>>>> 70e7334
+=======
+    const verified = response.model_verified !== false;
+>>>>>>> 77ef8ea
 
     ui.configSource.textContent = source;
     ui.configProvider.textContent = provider;
     ui.configBaseUrl.textContent = baseUrl;
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
     ui.configModel.textContent = model;
@@ -230,6 +265,8 @@
 =======
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
     ui.configModel.textContent = verified ? model : `${model} (unverified)`;
     ui.configCredential.textContent = configured ? "Configured (hidden)" : `Missing: ${(response.missing || []).join(", ")}`;
     ui.providerBaseUrl.value = response.base_url || "";
@@ -237,15 +274,19 @@
       ui.providerManualModel.value = response.model || "";
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
 
     if (Array.isArray(response.available_models)) {
       populateModels(response.available_models, response.model);
     }
 
     const prefix = response.provider_source === "manual" ? "MANUAL" : "ENV";
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
     ui.providerSummary.textContent = configured
@@ -255,15 +296,20 @@
 =======
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
     const modelDisplay = verified ? model : `${model} · UNVERIFIED`;
     ui.providerSummary.textContent = configured
       ? `LLM · ${prefix} · ${provider} / ${modelDisplay}`
       : `LLM · ${prefix} INCOMPLETE · ${(response.missing || []).join(", ")}`;
     ui.modelLabel.textContent = modelDisplay;
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
     ui.envBadge.textContent = response.provider_source === "manual" ? "API✓" : (configured ? "ENV✓" : "ENV!");
     ui.envBadge.dataset.configured = configured ? "true" : "false";
   }
@@ -303,18 +349,24 @@
     const message = response && response.error_message ? response.error_message : "Provider connection failed.";
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
     if (response && response.active_configuration_preserved) {
       const source = text(response.active_provider_source, "previous").toUpperCase();
       setStatus(`${code}: ${message} · ${source} CONFIG STILL ACTIVE`, "warning");
       return;
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 18cf7be
 =======
 >>>>>>> 70e7334
+=======
+>>>>>>> 77ef8ea
     setStatus(`${code}: ${message}`, "error");
   }
 
@@ -344,6 +396,7 @@
       });
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
       const payload = await response.json();
       return payload;
 =======
@@ -352,10 +405,14 @@
 =======
       return response.json();
 >>>>>>> 70e7334
+=======
+      return response.json();
+>>>>>>> 77ef8ea
     }
     return {
       get_defaults: () => invoke("get_defaults", []),
       connect_provider: (request) => invoke("connect_provider", [request]),
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
       select_provider_model: (model) => invoke("select_provider_model", [model]),
@@ -365,6 +422,9 @@
 =======
       select_provider_model: (model, allowUnlisted = false) => invoke("select_provider_model", [model, allowUnlisted]),
 >>>>>>> 70e7334
+=======
+      select_provider_model: (model, allowUnlisted = false) => invoke("select_provider_model", [model, allowUnlisted]),
+>>>>>>> 77ef8ea
       clear_provider_config: () => invoke("clear_provider_config", [])
     };
   }

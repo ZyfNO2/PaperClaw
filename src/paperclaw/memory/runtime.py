@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+<<<<<<< HEAD
+=======
+import hashlib
+>>>>>>> 77ef8ea
 import os
 from pathlib import Path
 
@@ -18,23 +22,66 @@ from .tool import MemoryTool
 
 @dataclass(frozen=True)
 class MemoryRuntimeSettings:
+<<<<<<< HEAD
     context_enabled: bool = True
+=======
+>>>>>>> 77ef8ea
     memory_enabled: bool = True
     user_profile_enabled: bool = True
     memory_tool_enabled: bool = True
     memory_root: Path = Path.home() / ".paperclaw" / "memories"
     memory_char_limit: int = 2_200
     user_char_limit: int = 1_375
+<<<<<<< HEAD
+=======
+    minimum_prompt_confidence: float = 0.60
+>>>>>>> 77ef8ea
     max_input_tokens: int = 16_000
     output_reserve_tokens: int = 2_000
     max_single_candidate_tokens: int = 4_000
     recent_message_limit: int = 12
     recent_tool_result_limit: int = 8
 
+<<<<<<< HEAD
     @classmethod
     def from_env(cls) -> "MemoryRuntimeSettings":
         return cls(
             context_enabled=_env_bool("PAPERCLAW_CONTEXT_ENABLED", True),
+=======
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("memory_char_limit", self.memory_char_limit),
+            ("user_char_limit", self.user_char_limit),
+            ("max_input_tokens", self.max_input_tokens),
+            ("max_single_candidate_tokens", self.max_single_candidate_tokens),
+            ("recent_message_limit", self.recent_message_limit),
+            ("recent_tool_result_limit", self.recent_tool_result_limit),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if self.memory_char_limit < 1 or self.user_char_limit < 1:
+            raise ValueError("memory character limits must be positive")
+        if self.max_input_tokens < 1 or self.max_single_candidate_tokens < 1:
+            raise ValueError("Context token limits must be positive")
+        if (
+            isinstance(self.output_reserve_tokens, bool)
+            or not isinstance(self.output_reserve_tokens, int)
+            or self.output_reserve_tokens < 0
+        ):
+            raise ValueError("output_reserve_tokens must be a non-negative integer")
+        if self.output_reserve_tokens >= self.max_input_tokens:
+            raise ValueError("output reserve must be smaller than max input tokens")
+        if (
+            isinstance(self.minimum_prompt_confidence, bool)
+            or not isinstance(self.minimum_prompt_confidence, (int, float))
+            or not 0 <= float(self.minimum_prompt_confidence) <= 1
+        ):
+            raise ValueError("minimum_prompt_confidence must be within [0, 1]")
+
+    @classmethod
+    def from_env(cls) -> "MemoryRuntimeSettings":
+        return cls(
+>>>>>>> 77ef8ea
             memory_enabled=_env_bool("PAPERCLAW_MEMORY_ENABLED", True),
             user_profile_enabled=_env_bool("PAPERCLAW_USER_PROFILE_ENABLED", True),
             memory_tool_enabled=_env_bool("PAPERCLAW_MEMORY_TOOL_ENABLED", True),
@@ -46,6 +93,12 @@ class MemoryRuntimeSettings:
             ).expanduser(),
             memory_char_limit=_env_int("PAPERCLAW_MEMORY_CHAR_LIMIT", 2_200),
             user_char_limit=_env_int("PAPERCLAW_USER_CHAR_LIMIT", 1_375),
+<<<<<<< HEAD
+=======
+            minimum_prompt_confidence=_env_float(
+                "PAPERCLAW_MEMORY_MIN_CONFIDENCE", 0.60
+            ),
+>>>>>>> 77ef8ea
             max_input_tokens=_env_int("PAPERCLAW_CONTEXT_MAX_INPUT_TOKENS", 16_000),
             output_reserve_tokens=_env_int(
                 "PAPERCLAW_CONTEXT_OUTPUT_RESERVE_TOKENS", 2_000
@@ -97,8 +150,26 @@ def build_memory_runtime(
             user_char_limit=resolved_settings.user_char_limit,
         ),
     )
+<<<<<<< HEAD
     snapshot = resolved_store.snapshot()
     if not resolved_settings.memory_enabled:
+=======
+    if resolved_settings.memory_enabled:
+        snapshot = resolved_store.snapshot()
+        if not resolved_settings.user_profile_enabled:
+            snapshot = MemorySnapshot(
+                memory_entries=snapshot.memory_entries,
+                user_entries=(),
+                memory_used_chars=snapshot.memory_used_chars,
+                user_used_chars=0,
+                memory_limit_chars=snapshot.memory_limit_chars,
+                user_limit_chars=snapshot.user_limit_chars,
+                fingerprint=snapshot.fingerprint,
+            )
+    else:
+        # Important for unauthenticated/multi-client service deployments: disabled
+        # personal memory means no filesystem read, not merely no prompt rendering.
+>>>>>>> 77ef8ea
         snapshot = MemorySnapshot(
             memory_entries=(),
             user_entries=(),
@@ -106,6 +177,7 @@ def build_memory_runtime(
             user_used_chars=0,
             memory_limit_chars=resolved_settings.memory_char_limit,
             user_limit_chars=resolved_settings.user_char_limit,
+<<<<<<< HEAD
             fingerprint=snapshot.fingerprint,
         )
     elif not resolved_settings.user_profile_enabled:
@@ -117,6 +189,9 @@ def build_memory_runtime(
             memory_limit_chars=snapshot.memory_limit_chars,
             user_limit_chars=snapshot.user_limit_chars,
             fingerprint=snapshot.fingerprint,
+=======
+            fingerprint=hashlib.sha256(b"paperclaw.memory.disabled.v1").hexdigest(),
+>>>>>>> 77ef8ea
         )
 
     tools = default_registry()
@@ -130,6 +205,10 @@ def build_memory_runtime(
         FrozenFoundationalContextSource(
             memory_snapshot=snapshot,
             project_snapshot=project_snapshot,
+<<<<<<< HEAD
+=======
+            minimum_confidence=float(resolved_settings.minimum_prompt_confidence),
+>>>>>>> 77ef8ea
         ),
         kind="memory",
         priority=1_000,
@@ -166,6 +245,19 @@ def _env_int(name: str, default: int) -> int:
     return parsed
 
 
+<<<<<<< HEAD
+=======
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    parsed = float(value)
+    if not 0 <= parsed <= 1:
+        raise ValueError(f"{name} must be within [0, 1]")
+    return parsed
+
+
+>>>>>>> 77ef8ea
 __all__ = [
     "MemoryRuntimeComponents",
     "MemoryRuntimeSettings",
