@@ -8,6 +8,7 @@ from typing import Sequence
 
 from paperclaw.durability import SQLiteDurableServiceStore
 from paperclaw.models.adapters import OpenAICompatibleModel
+from paperclaw.multiagent.judge_factory import build_judge_model_from_env
 from paperclaw.tasks import (
     BackgroundTaskSupervisor,
     SQLiteDurableTaskStore,
@@ -74,6 +75,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     task_store = SQLiteDurableTaskStore(database_path)
     task_executor = SubagentTaskExecutor(
         lambda _agent_id: OpenAICompatibleModel.from_env(),
+        judge_model_factory=lambda _agent_id: build_judge_model_from_env(),
         enable_verification_gate=True,
     )
     task_supervisor = BackgroundTaskSupervisor(
