@@ -87,6 +87,41 @@ def test_execution_request_rejects_non_json_payload(tmp_path: Path) -> None:
         )
 
 
+def test_execution_request_rejects_nested_credential_fields(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="credential-shaped field"):
+        ExecutionRequest(
+            execution_id="secret-payload",
+            task_id="task",
+            entrypoint="executor.echo.v1",
+            payload={"task": {"metadata": {"api_key": "must-not-cross-ipc"}}},
+            workspace=str(tmp_path),
+            timeout_seconds=1,
+        )
+    with pytest.raises(ValueError, match="credential-shaped field"):
+        ExecutionRequest(
+            execution_id="secret-metadata",
+            task_id="task",
+            entrypoint="executor.echo.v1",
+            payload={},
+            metadata={"transport": {"client-secret": "must-not-cross-ipc"}},
+            workspace=str(tmp_path),
+            timeout_seconds=1,
+        )
+
+
+def test_execution_request_allows_noncredential_token_metadata(tmp_path: Path) -> None:
+    request = ExecutionRequest(
+        execution_id="budget-metadata",
+        task_id="task",
+        entrypoint="executor.echo.v1",
+        payload={"token_budget": 4096},
+        metadata={"input_tokens": 120},
+        workspace=str(tmp_path),
+        timeout_seconds=1,
+    )
+    assert request.payload["token_budget"] == 4096
+
+
 def test_child_exception_is_bounded_crash_without_message_or_traceback(tmp_path: Path) -> None:
     handle = _executor().start(_request(tmp_path, "executor.crash.v1"))
     try:
