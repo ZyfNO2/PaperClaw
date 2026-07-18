@@ -14,12 +14,20 @@ from .core import (
     make_action_key,
 )
 from .plugins import RecoveryPolicyRegistry
+<<<<<<< HEAD
+=======
+from .service_store import DurableRunEvent, SQLiteDurableServiceStore
+>>>>>>> 18cf7be
 
 __all__ = [
     "ActionInProgressError",
     "CompareAndSwapError",
     "DefaultRecoveryPolicy",
     "DurableRun",
+<<<<<<< HEAD
+=======
+    "DurableRunEvent",
+>>>>>>> 18cf7be
     "IdempotentActionExecutor",
     "IdempotencyRecordConflictError",
     "LeaseConflictError",
@@ -27,5 +35,9 @@ __all__ = [
     "RecoveryDecision",
     "RecoveryPolicyRegistry",
     "SQLiteDurableRunStore",
+<<<<<<< HEAD
+=======
+    "SQLiteDurableServiceStore",
+>>>>>>> 18cf7be
     "make_action_key",
 ]

@@ -12,12 +12,18 @@ dependencies = []
 [project.scripts]
 paperclaw = "paperclaw.entrypoint:main"
 <<<<<<< HEAD
+<<<<<<< HEAD
 paperclaw-gui = "paperclaw.desktop.app:main"
 paperclaw-api = "paperclaw.service.entrypoint:main"
 paperclaw-research-eval = "paperclaw.research_eval.cli:main"
 =======
 paperclaw-gui = "paperclaw.desktop.bootstrap:main"
 >>>>>>> edf37eb
+=======
+paperclaw-gui = "paperclaw.desktop.bootstrap:main"
+paperclaw-api = "paperclaw.service.entrypoint:main"
+paperclaw-research-eval = "paperclaw.research_eval.cli:main"
+>>>>>>> 18cf7be
 
 [project.optional-dependencies]
 tui = [
@@ -42,11 +48,17 @@ dev = [
     "textual>=1.0,<8",
     "playwright>=1.50,<2",
 <<<<<<< HEAD
+<<<<<<< HEAD
     "fastapi>=0.115,<1",
     "uvicorn>=0.34,<1",
     "httpx>=0.28,<1",
 =======
 >>>>>>> edf37eb
+=======
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.34,<1",
+    "httpx>=0.28,<1",
+>>>>>>> 18cf7be
 ]
 
 [tool.setuptools.packages.find]
@@ -68,7 +80,4 @@ target-version = "py312"
 extend-exclude = ["src/pocketflow"]
 
 [tool.ruff.lint]
-# Bootstrap CI with correctness-critical rules. The repository predates the
-# Ruff gate and still contains a large unused-import/style backlog; those are
-# cleanup debt, not reasons to disable syntax/undefined-name protection.
 select = ["E9", "F63", "F7", "F82"]

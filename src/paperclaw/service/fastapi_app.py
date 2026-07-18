@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 """FastAPI/SSE adapter for RunApplicationService.
+=======
+"""FastAPI/SSE adapter for PaperClaw application services.
+>>>>>>> 18cf7be
 
 Import this module only when the optional ``service`` dependencies are installed.
 """
@@ -9,6 +13,7 @@ from typing import Any
 
 from paperclaw.harness import RunLimits
 
+<<<<<<< HEAD
 from .application import RunApplicationService
 from .contracts import ServiceError, ServiceRunRequest
 
@@ -16,6 +21,14 @@ from .contracts import ServiceError, ServiceRunRequest
 def create_app(service: RunApplicationService) -> Any:
     try:
         from fastapi import FastAPI, Header, HTTPException
+=======
+from .contracts import ServiceError, ServiceRunRequest
+
+
+def create_app(service: Any) -> Any:
+    try:
+        from fastapi import FastAPI, Header, HTTPException, Request
+>>>>>>> 18cf7be
         from fastapi.responses import StreamingResponse
         from pydantic import BaseModel, Field
     except ImportError as exc:  # pragma: no cover - depends on optional install
@@ -34,9 +47,16 @@ def create_app(service: RunApplicationService) -> Any:
         conversation_id: str | None = None
         client_id: str | None = None
         enable_verification_gate: bool = True
+<<<<<<< HEAD
         limits: LimitsBody = Field(default_factory=LimitsBody)
 
     app = FastAPI(title="PaperClaw Service API", version="0.12.0")
+=======
+        disconnect_policy: str = Field(default="detach_on_disconnect")
+        limits: LimitsBody = Field(default_factory=LimitsBody)
+
+    app = FastAPI(title="PaperClaw Service API", version="0.15.0")
+>>>>>>> 18cf7be
     app.state.paperclaw_service = service
 
     def public_error(exc: Exception) -> HTTPException:
@@ -73,6 +93,10 @@ def create_app(service: RunApplicationService) -> Any:
                 conversation_id=body.conversation_id,
                 client_id=body.client_id,
                 enable_verification_gate=body.enable_verification_gate,
+<<<<<<< HEAD
+=======
+                disconnect_policy=body.disconnect_policy,
+>>>>>>> 18cf7be
                 limits=RunLimits(
                     max_steps=body.limits.max_steps,
                     max_model_calls=body.limits.max_model_calls,
@@ -108,6 +132,10 @@ def create_app(service: RunApplicationService) -> Any:
 
     @app.get("/v1/runs/{service_run_id}/events")
     async def stream_events(
+<<<<<<< HEAD
+=======
+        request: Request,
+>>>>>>> 18cf7be
         service_run_id: str,
         last_event_id: str | None = Header(
             default=None, alias="Last-Event-ID"
@@ -115,18 +143,47 @@ def create_app(service: RunApplicationService) -> Any:
     ) -> StreamingResponse:
         try:
             after = int(last_event_id or "0")
+<<<<<<< HEAD
             service.get_run(service_run_id)
+=======
+            if after < 0:
+                raise ValueError("Last-Event-ID must not be negative")
+            service.get_run(service_run_id)
+            disconnect_policy = (
+                service.get_disconnect_policy(service_run_id)
+                if hasattr(service, "get_disconnect_policy")
+                else "detach_on_disconnect"
+            )
+>>>>>>> 18cf7be
         except Exception as exc:
             raise public_error(exc) from exc
 
         async def generate():
             cursor = after
             while True:
+<<<<<<< HEAD
+=======
+                if await request.is_disconnected():
+                    if disconnect_policy == "cancel_on_disconnect":
+                        try:
+                            await asyncio.to_thread(
+                                service.cancel,
+                                service_run_id,
+                                reason="client_disconnected",
+                            )
+                        except Exception:
+                            pass
+                    break
+>>>>>>> 18cf7be
                 events, terminal = await asyncio.to_thread(
                     service.wait_for_events,
                     service_run_id,
                     after_sequence=cursor,
+<<<<<<< HEAD
                     timeout=5.0,
+=======
+                    timeout=1.0,
+>>>>>>> 18cf7be
                 )
                 if not events:
                     yield ": heartbeat\n\n"
@@ -147,6 +204,17 @@ def create_app(service: RunApplicationService) -> Any:
                 ):
                     break
 
+<<<<<<< HEAD
         return StreamingResponse(generate(), media_type="text/event-stream")
+=======
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+>>>>>>> 18cf7be
 
     return app

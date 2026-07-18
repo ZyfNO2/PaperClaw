@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 18cf7be
 import json
 from types import SimpleNamespace
 import sys
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request, urlopen
+<<<<<<< HEAD
 =======
 import io
 import json
@@ -14,6 +18,8 @@ from types import SimpleNamespace
 import sys
 import urllib.error
 >>>>>>> f189121
+=======
+>>>>>>> 18cf7be
 
 import pytest
 
@@ -74,12 +80,18 @@ def _set_provider_env(monkeypatch) -> None:
 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 def test_desktop_api_hydrates_default_run_from_environment(tmp_path, monkeypatch) -> None:
 =======
 def test_desktop_api_hydrates_default_run_from_environment(
     tmp_path, monkeypatch
 ) -> None:
 >>>>>>> edf37eb
+=======
+def test_desktop_api_hydrates_default_run_from_environment(
+    tmp_path, monkeypatch
+) -> None:
+>>>>>>> 18cf7be
     _set_provider_env(monkeypatch)
     controller = FakeController()
     api = app.DesktopAPI(controller)
@@ -100,9 +112,13 @@ def test_desktop_api_hydrates_default_run_from_environment(
 def test_environment_defaults_never_expose_api_key(tmp_path, monkeypatch) -> None:
     _set_provider_env(monkeypatch)
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     monkeypatch.setenv("PAPERCLAW_DESKTOP_CONFIG_DIR", str(tmp_path / "config"))
 >>>>>>> edf37eb
+=======
+    monkeypatch.setenv("PAPERCLAW_DESKTOP_CONFIG_DIR", str(tmp_path / "config"))
+>>>>>>> 18cf7be
     monkeypatch.chdir(tmp_path)
     api = app.DesktopAPI(FakeController())
 
@@ -119,9 +135,13 @@ def test_environment_defaults_never_expose_api_key(tmp_path, monkeypatch) -> Non
         "configured": True,
         "missing": [],
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         "theme": "neo-brutalist",
 >>>>>>> edf37eb
+=======
+        "theme": "neo-brutalist",
+>>>>>>> 18cf7be
     }
     assert "secret-value" not in repr(defaults)
     assert "api_key" not in defaults
@@ -129,7 +149,10 @@ def test_environment_defaults_never_expose_api_key(tmp_path, monkeypatch) -> Non
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 18cf7be
 def test_theme_preference_is_validated_and_persisted(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("PAPERCLAW_DESKTOP_CONFIG_DIR", str(tmp_path))
     api = app.DesktopAPI(FakeController())
@@ -145,6 +168,7 @@ def test_theme_preference_is_validated_and_persisted(tmp_path, monkeypatch) -> N
     )
 
 
+<<<<<<< HEAD
 >>>>>>> edf37eb
 =======
 def test_manual_provider_connection_discovers_models_and_hydrates_runs(
@@ -275,6 +299,8 @@ def test_manual_provider_rejects_unlisted_model_without_changing_selection() -> 
 
 
 >>>>>>> f189121
+=======
+>>>>>>> 18cf7be
 def test_missing_environment_is_a_typed_public_error(tmp_path, monkeypatch) -> None:
     for name in app._REQUIRED_ENV:
         monkeypatch.delenv(name, raising=False)
@@ -290,12 +316,18 @@ def test_missing_environment_is_a_typed_public_error(tmp_path, monkeypatch) -> N
 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 def test_workspace_dotenv_is_loaded_without_overriding_process_env(tmp_path, monkeypatch) -> None:
 =======
 def test_workspace_dotenv_is_loaded_without_overriding_process_env(
     tmp_path, monkeypatch
 ) -> None:
 >>>>>>> edf37eb
+=======
+def test_workspace_dotenv_is_loaded_without_overriding_process_env(
+    tmp_path, monkeypatch
+) -> None:
+>>>>>>> 18cf7be
     monkeypatch.setenv("PAPERCLAW_MODEL", "process-model")
     monkeypatch.delenv("PAPERCLAW_API_KEY", raising=False)
     monkeypatch.delenv("PAPERCLAW_BASE_URL", raising=False)
@@ -317,12 +349,18 @@ def test_workspace_dotenv_is_loaded_without_overriding_process_env(
 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 def test_explicit_provider_configuration_remains_supported(tmp_path, monkeypatch) -> None:
 =======
 def test_explicit_provider_configuration_remains_supported(
     tmp_path, monkeypatch
 ) -> None:
 >>>>>>> edf37eb
+=======
+def test_explicit_provider_configuration_remains_supported(
+    tmp_path, monkeypatch
+) -> None:
+>>>>>>> 18cf7be
     for name in app._REQUIRED_ENV:
         monkeypatch.delenv(name, raising=False)
     controller = FakeController()
@@ -343,12 +381,18 @@ def test_explicit_provider_configuration_remains_supported(
 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 def test_desktop_api_exposes_controller_operations_and_workspace_picker(tmp_path, monkeypatch) -> None:
 =======
 def test_desktop_api_exposes_controller_operations_and_workspace_picker(
     tmp_path, monkeypatch
 ) -> None:
 >>>>>>> edf37eb
+=======
+def test_desktop_api_exposes_controller_operations_and_workspace_picker(
+    tmp_path, monkeypatch
+) -> None:
+>>>>>>> 18cf7be
     _set_provider_env(monkeypatch)
     api = app.DesktopAPI(FakeController())
     assert api.cancel_run() == {"ok": True, "accepted": True}

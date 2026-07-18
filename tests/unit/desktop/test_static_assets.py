@@ -4,6 +4,7 @@ import re
 
 EXPECTED_IDS = {
 <<<<<<< HEAD
+<<<<<<< HEAD
     "app", "sidebar", "sidebar-toggle", "workspace-card", "workspace-name",
     "workspace-path", "sidebar-nav", "trace-count", "env-badge", "new-run-button",
     "run-subtitle", "global-search", "run-status", "run-button", "cancel-button",
@@ -18,6 +19,8 @@ EXPECTED_IDS = {
     "max-steps", "max-model-calls", "max-tool-calls", "verification-enabled",
     "toast", "toast-message", "close-toast",
 =======
+=======
+>>>>>>> 18cf7be
     "app",
     "sidebar",
     "sidebar-toggle",
@@ -89,7 +92,10 @@ THEMES = {
     "terminal-dark",
     "clean-mono",
     "paper-light",
+<<<<<<< HEAD
 >>>>>>> edf37eb
+=======
+>>>>>>> 18cf7be
 }
 
 
@@ -121,6 +127,7 @@ def test_html_has_expected_controls_and_security_policy() -> None:
         assert f'id="{element_id}"' in html
     assert "Content-Security-Policy" in html
 <<<<<<< HEAD
+<<<<<<< HEAD
     assert "connect-src 'none'" in html
 =======
     assert "connect-src 'self'" in html
@@ -129,10 +136,17 @@ def test_html_has_expected_controls_and_security_policy() -> None:
     assert '<label class="sr-only" for="task">' in html
     assert 'aria-live="polite"' in html
 <<<<<<< HEAD
+=======
+    assert "connect-src 'self'" in html
+    assert "connect-src 'none'" not in html
+    assert '<label class="sr-only" for="task">' in html
+    assert 'aria-live="polite"' in html
+>>>>>>> 18cf7be
     assert html.index('src="provider-config.js"') < html.index('src="app.js"')
     assert "Enable verification &amp; reflection gate" in html
 
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 def test_frontend_uses_no_secret_field_persistence_remote_code_or_unsafe_execution() -> None:
 =======
@@ -154,6 +168,15 @@ def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_executi
     provider_javascript = _asset("provider-config.js").lower()
     combined = "\n".join((html, javascript, provider_javascript))
 >>>>>>> edf37eb
+=======
+def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_execution() -> (
+    None
+):
+    html = _asset("index.html").lower()
+    javascript = _asset("app.js").lower()
+    provider_javascript = _asset("provider-config.js").lower()
+    combined = "\n".join((html, javascript, provider_javascript))
+>>>>>>> 18cf7be
     for forbidden in (
         "sessionstorage",
         "document.cookie",
@@ -170,10 +193,14 @@ def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_executi
     assert 'id="api-key"' not in html
     assert "api_key" not in javascript
 <<<<<<< HEAD
+<<<<<<< HEAD
     assert "paperclaw_api_key" not in javascript
 =======
     assert "paperclaw_api_key" not in combined
 >>>>>>> edf37eb
+=======
+    assert "paperclaw_api_key" not in combined
+>>>>>>> 18cf7be
     assert "console.log" not in combined
 =======
     assert javascript.count("api_key") == 1
@@ -186,6 +213,7 @@ def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_executi
     assert javascript.count("localstorage.setitem(") == 1
     assert "localstorage" not in provider_javascript
     assert 'ui.providerapikey.value = ""' in provider_javascript
+<<<<<<< HEAD
 
 
 def test_uploaded_theme_set_and_neobrutalist_default_are_preserved() -> None:
@@ -222,31 +250,59 @@ def test_manual_provider_flow_uses_only_the_python_bridge() -> None:
     assert "api.select_provider_model" in javascript
     assert "CONNECT &amp; LOAD MODELS" in _asset("index.html")
     assert "window.pywebview.api" in javascript
+=======
+>>>>>>> 18cf7be
 
 
-def test_uploaded_neobrutalist_visual_language_is_preserved() -> None:
+def test_uploaded_theme_set_and_neobrutalist_default_are_preserved() -> None:
     css = _asset("styles.css")
     html = _asset("index.html")
-    assert "--pc-background:#c5c9c9" in css
-    assert "--pc-accent:#0040ff" in css
+    for theme in THEMES:
+        assert f'[data-theme="{theme}"]' in css
+        assert f'value="{theme}"' in html
+    assert '<html lang="zh-CN" data-theme="neo-brutalist">' in html
+    assert "--pc-background: #c5c9c9" in css
+    assert "--pc-accent: #0040ff" in css
     assert "box-shadow:var(--pc-shadow" in css
     assert "MISSION LOG" in html
     assert "EVENT TIMELINE" in html
     assert "RUN STATUS" in html
 
 
+def test_browser_transport_is_loopback_token_aware_and_provider_secret_safe() -> None:
+    javascript = _asset("app.js")
+    provider_javascript = _asset("provider-config.js")
+    assert '"X-PaperClaw-Token"' in javascript
+    assert "window.fetch(`/api/${method}`" in javascript
+    assert "open_in_browser(currentTheme)" in javascript
+    assert "api_key" not in javascript.lower()
+    assert '"X-PaperClaw-Token"' in provider_javascript
+    assert 'invoke("connect_provider"' in provider_javascript
+    assert 'invoke("select_provider_model"' in provider_javascript
+    assert "localstorage" not in provider_javascript.lower()
+
+
 def test_styles_keep_controls_visible_in_narrow_layout() -> None:
     css = _asset("styles.css")
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
     provider_css = _asset("provider-config.css")
 >>>>>>> edf37eb
+=======
+    provider_css = _asset("provider-config.css")
+>>>>>>> 18cf7be
     assert "@media(max-width:720px)" in css
     assert "min-width:360px" in css
     assert ".toolbar-group" in css
     assert "flex-direction:column" in css
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     assert "@media(max-width:720px)" in provider_css
     assert ".provider-form-grid" in provider_css
 >>>>>>> edf37eb
+=======
+    assert "@media(max-width:720px)" in provider_css
+    assert ".provider-form-grid" in provider_css
+>>>>>>> 18cf7be

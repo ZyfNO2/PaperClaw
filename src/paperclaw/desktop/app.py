@@ -4,25 +4,35 @@ from __future__ import annotations
 
 import argparse
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 18cf7be
 from collections import OrderedDict, deque
 from copy import deepcopy
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+<<<<<<< HEAD
 =======
 import http.client
 >>>>>>> f189121
+=======
+>>>>>>> 18cf7be
 from importlib.resources import as_file, files
 from importlib.util import find_spec
 import json
 import os
 from pathlib import Path
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 18cf7be
 import secrets
 import sys
 from threading import RLock, Thread
 from typing import Any, Mapping
 from urllib.parse import quote, urlsplit
 import webbrowser
+<<<<<<< HEAD
 =======
 import platform
 import socket
@@ -33,6 +43,8 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 >>>>>>> f189121
+=======
+>>>>>>> 18cf7be
 
 from .contracts import DesktopPublicError
 from .controller import DesktopController
@@ -46,7 +58,10 @@ _REQUIRED_ENV = (
 )
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 18cf7be
 _BROWSER_THEMES = frozenset(
     {
         "neo-brutalist",
@@ -75,6 +90,7 @@ _BROWSER_API_ARITY: dict[str, tuple[int, int]] = {
 _BROWSER_MAX_REQUEST_BYTES = 1_000_000
 _EVENT_HISTORY_LIMIT = 2_048
 _CLIENT_CURSOR_LIMIT = 32
+<<<<<<< HEAD
 >>>>>>> edf37eb
 =======
 _MAX_DISCOVERED_MODELS = 1_000
@@ -82,6 +98,8 @@ _MODEL_DISCOVERY_FALLBACK_CODES = frozenset(
     {"provider_configuration_error", "provider_invalid_response"}
 )
 >>>>>>> f189121
+=======
+>>>>>>> 18cf7be
 
 
 class DesktopAPI:
@@ -97,6 +115,9 @@ class DesktopAPI:
         self._controller = controller
         self._window: Any | None = None
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 18cf7be
         self._browser_host: _BrowserHost | None = None
         self._browser_lock = RLock()
         self._poll_lock = RLock()
@@ -105,6 +126,7 @@ class DesktopAPI:
         )
         self._event_serial = 0
         self._client_cursors: OrderedDict[str, int] = OrderedDict()
+<<<<<<< HEAD
 =======
         self._provider_urlopen = provider_urlopen or urllib.request.urlopen
         self._provider_timeout = max(1.0, float(provider_timeout))
@@ -113,6 +135,8 @@ class DesktopAPI:
         self._available_models: tuple[str, ...] = ()
         self._manual_model_selected = False
 >>>>>>> f189121
+=======
+>>>>>>> 18cf7be
 
     def bind_window(self, window: Any) -> None:
         self._window = window
@@ -123,9 +147,13 @@ class DesktopAPI:
         except DesktopPublicError as exc:
             return exc.to_public_dict()
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         self._reset_event_fanout()
 >>>>>>> edf37eb
+=======
+        self._reset_event_fanout()
+>>>>>>> 18cf7be
         return self._controller.start_run(hydrated)
 
     def cancel_run(self) -> dict[str, object]:
@@ -201,6 +229,7 @@ class DesktopAPI:
         """Return non-secret desktop defaults for the initial UI projection."""
 
         workspace = Path.cwd().expanduser().resolve()
+<<<<<<< HEAD
         with self._provider_lock:
             manual_provider = dict(self._manual_provider) if self._manual_provider else None
             models = list(self._available_models)
@@ -225,10 +254,15 @@ class DesktopAPI:
         _load_dotenv(workspace / ".env")
         missing = [name for name in _REQUIRED_ENV if not os.getenv(name)]
         model = os.getenv("PAPERCLAW_MODEL") or None
+=======
+        values = _resolve_provider_environment(workspace)
+        missing = [name for name in _REQUIRED_ENV if not values.get(name)]
+>>>>>>> 18cf7be
         return {
             "ok": True,
             "workspace": str(workspace),
             "provider_source": "env",
+<<<<<<< HEAD
             "provider": os.getenv("PAPERCLAW_PROVIDER", "openai-compatible"),
             "base_url": os.getenv("PAPERCLAW_BASE_URL") or None,
             "model": model,
@@ -243,6 +277,18 @@ class DesktopAPI:
             "theme": _load_theme_preference(),
         }
 
+=======
+            "provider": values.get(
+                "PAPERCLAW_PROVIDER", "openai-compatible"
+            ),
+            "base_url": values.get("PAPERCLAW_BASE_URL") or None,
+            "model": values.get("PAPERCLAW_MODEL") or None,
+            "configured": not missing,
+            "missing": missing,
+            "theme": _load_theme_preference(),
+        }
+
+>>>>>>> 18cf7be
     def set_theme(self, theme: str) -> dict[str, object]:
         if theme not in _BROWSER_THEMES:
             return DesktopPublicError(
@@ -258,6 +304,7 @@ class DesktopAPI:
             ).to_public_dict()
         return {"ok": True, "theme": theme}
 
+<<<<<<< HEAD
 >>>>>>> edf37eb
 =======
     def connect_provider(self, request: Mapping[str, Any]) -> dict[str, object]:
@@ -400,6 +447,8 @@ class DesktopAPI:
         return response
 
 >>>>>>> f189121
+=======
+>>>>>>> 18cf7be
     def select_workspace(self) -> dict[str, object]:
         window = self._window
         if window is None:
@@ -434,6 +483,9 @@ class DesktopAPI:
         return {"ok": True, "workspace": str(workspace)}
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 18cf7be
     def open_in_browser(self, theme: str = "neo-brutalist") -> dict[str, object]:
         """Open a token-protected loopback mirror in the system browser."""
 
@@ -711,13 +763,13 @@ def _hydrate_environment_provider(request: Mapping[str, Any]) -> dict[str, Any]:
         return hydrated
 
     workspace_value = hydrated.get("workspace")
-    if isinstance(workspace_value, str) and workspace_value.strip():
-        workspace = Path(workspace_value).expanduser()
-        _load_dotenv(workspace / ".env")
-    _load_dotenv(Path.cwd() / ".env")
-
-    values = {name: os.getenv(name) for name in _REQUIRED_ENV}
-    missing = [name for name, value in values.items() if not value]
+    workspace = (
+        Path(workspace_value).expanduser()
+        if isinstance(workspace_value, str) and workspace_value.strip()
+        else None
+    )
+    values = _resolve_provider_environment(workspace)
+    missing = [name for name in _REQUIRED_ENV if not values.get(name)]
     if missing:
         raise DesktopPublicError(
             "provider_configuration_error",
@@ -728,21 +780,52 @@ def _hydrate_environment_provider(request: Mapping[str, Any]) -> dict[str, Any]:
             "api_key": values["PAPERCLAW_API_KEY"],
             "base_url": values["PAPERCLAW_BASE_URL"],
             "model": values["PAPERCLAW_MODEL"],
-            "provider": os.getenv("PAPERCLAW_PROVIDER", "openai-compatible"),
+            "provider": values.get(
+                "PAPERCLAW_PROVIDER", "openai-compatible"
+            ),
         }
     )
     return hydrated
 
 
-def _load_dotenv(dotenv_path: Path) -> None:
-    """Load a local .env without replacing explicit process environment values."""
+def _resolve_provider_environment(
+    workspace: Path | None,
+) -> dict[str, str]:
+    """Resolve provider settings without mutating process environment state.
 
+    Explicit process environment values have highest priority. A selected
+    workspace ``.env`` is next, followed by the current-directory ``.env``.
+    Reading one workspace can therefore never leak its credentials into a later
+    run for another workspace.
+    """
+
+    names = (*_REQUIRED_ENV, "PAPERCLAW_PROVIDER")
+    values = {
+        name: value
+        for name in names
+        if (value := os.getenv(name)) not in (None, "")
+    }
+    paths: list[Path] = []
+    if workspace is not None:
+        paths.append(workspace / ".env")
+    cwd_path = Path.cwd() / ".env"
+    if not paths or cwd_path != paths[0]:
+        paths.append(cwd_path)
+    for dotenv_path in paths:
+        for name, value in _read_dotenv(dotenv_path).items():
+            if name in names and name not in values and value:
+                values[name] = value
+    return values
+
+
+def _read_dotenv(dotenv_path: Path) -> dict[str, str]:
     try:
         if not dotenv_path.is_file():
-            return
+            return {}
         lines = dotenv_path.read_text(encoding="utf-8").splitlines()
     except OSError:
-        return
+        return {}
+    values: dict[str, str] = {}
     for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -750,7 +833,41 @@ def _load_dotenv(dotenv_path: Path) -> None:
         key, value = line.split("=", 1)
         normalized_key = key.strip()
         if normalized_key:
-            os.environ.setdefault(normalized_key, value.strip())
+            values[normalized_key] = value.strip()
+    return values
+
+
+def _preference_path() -> Path:
+    override = os.getenv("PAPERCLAW_DESKTOP_CONFIG_DIR")
+    base = Path(override).expanduser() if override else Path.home() / ".paperclaw"
+    return base / "desktop-preferences.json"
+
+
+def _load_theme_preference() -> str:
+    path = _preference_path()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "neo-brutalist"
+    if not isinstance(payload, Mapping):
+        return "neo-brutalist"
+    theme = payload.get("theme")
+    return (
+        theme
+        if isinstance(theme, str) and theme in _BROWSER_THEMES
+        else "neo-brutalist"
+    )
+
+
+def _save_theme_preference(theme: str) -> None:
+    path = _preference_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps({"theme": theme}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def _preference_path() -> Path:

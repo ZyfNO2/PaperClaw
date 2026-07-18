@@ -19,10 +19,14 @@ def test_shell_navigation_workspace_settings_and_sidebar_controls(page: Page) ->
     expect(page.locator("#settings-panel")).to_be_hidden()
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     page.locator("#sidebar-nav [data-nav=\"trace\"]").click()
 =======
     page.locator('#sidebar-nav [data-nav="trace"]').click()
 >>>>>>> edf37eb
+=======
+    page.locator('#sidebar-nav [data-nav="trace"]').click()
+>>>>>>> 18cf7be
     expect(page.locator("#toast")).to_be_visible()
     expect(page.locator("#toast-message")).to_contain_text("under development")
     page.locator("#close-toast").click()
@@ -37,6 +41,7 @@ def test_shell_navigation_workspace_settings_and_sidebar_controls(page: Page) ->
     expect(page.locator("#app")).not_to_have_class("sidebar-collapsed")
 
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 =======
@@ -77,6 +82,8 @@ def test_manual_provider_connects_loads_models_and_clears_key(page: Page) -> Non
 >>>>>>> f189121
 def test_execute_flow_uses_env_payload_and_renders_events_and_result(page: Page) -> None:
 =======
+=======
+>>>>>>> 18cf7be
 def test_theme_switch_persists_and_browser_mode_receives_selected_theme(
     page: Page,
 ) -> None:
@@ -97,7 +104,10 @@ def test_theme_switch_persists_and_browser_mode_receives_selected_theme(
 def test_execute_flow_uses_env_payload_and_renders_events_and_result(
     page: Page,
 ) -> None:
+<<<<<<< HEAD
 >>>>>>> edf37eb
+=======
+>>>>>>> 18cf7be
     install_bridge(page)
     load_app(page)
 
@@ -111,12 +121,18 @@ def test_execute_flow_uses_env_payload_and_renders_events_and_result(
     expect(page.locator("#tool-calls")).to_have_text("1")
     expect(page.locator("#verification-status")).to_have_text("PASSED")
 <<<<<<< HEAD
+<<<<<<< HEAD
     expect(page.locator("#mission-log")).to_contain_text("任务完成：hello.py 已创建并验证。")
 =======
     expect(page.locator("#mission-log")).to_contain_text(
         "任务完成：hello.py 已创建并验证。"
     )
 >>>>>>> edf37eb
+=======
+    expect(page.locator("#mission-log")).to_contain_text(
+        "任务完成：hello.py 已创建并验证。"
+    )
+>>>>>>> 18cf7be
     expect(page.locator("#timeline .event-row")).to_have_count(4)
 
     payload = page.evaluate("window.__bridgeCalls.start[0]")
@@ -140,12 +156,18 @@ def test_execute_flow_uses_env_payload_and_renders_events_and_result(
 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 def test_cancel_flow_disables_duplicate_submission_and_reaches_terminal_state(page: Page) -> None:
 =======
 def test_cancel_flow_disables_duplicate_submission_and_reaches_terminal_state(
     page: Page,
 ) -> None:
 >>>>>>> edf37eb
+=======
+def test_cancel_flow_disables_duplicate_submission_and_reaches_terminal_state(
+    page: Page,
+) -> None:
+>>>>>>> 18cf7be
     install_bridge(page, auto_complete=False)
     load_app(page)
 

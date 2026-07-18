@@ -21,9 +21,19 @@ from urllib.parse import urlsplit
 from .contracts import DesktopPublicError
 
 _CONNECT_TIMEOUT_SECONDS = 15.0
+<<<<<<< HEAD
 _PROVIDER_STATE_ATTRIBUTE = "_paperclaw_manual_provider_state"
 _INSTALLED_ATTRIBUTE = "_paperclaw_provider_extension_installed"
 _PROVIDER_FIELDS = frozenset({"base_url", "api_key", "model", "provider"})
+=======
+_MAX_DISCOVERED_MODELS = 1_000
+_PROVIDER_STATE_ATTRIBUTE = "_paperclaw_manual_provider_state"
+_INSTALLED_ATTRIBUTE = "_paperclaw_provider_extension_installed"
+_PROVIDER_FIELDS = frozenset({"base_url", "api_key", "model", "provider"})
+_DISCOVERY_FALLBACK_CODES = frozenset(
+    {"provider_models_unavailable", "provider_response_error"}
+)
+>>>>>>> 18cf7be
 
 # Kept module-level so focused tests can replace the network boundary.
 _urlopen = urllib.request.urlopen
@@ -33,12 +43,23 @@ _urlopen = urllib.request.urlopen
 class _ManualProviderState:
     base_url: str
     api_key: str = field(repr=False)
+<<<<<<< HEAD
     provider: str
     models: tuple[str, ...]
     selected_model: str
 
     def to_public_dict(self) -> dict[str, object]:
         return {
+=======
+    provider: str = "openai-compatible"
+    models: tuple[str, ...] = ()
+    selected_model: str = ""
+    model_verified: bool = True
+    discovery_warning: str | None = None
+
+    def to_public_dict(self) -> dict[str, object]:
+        output: dict[str, object] = {
+>>>>>>> 18cf7be
             "provider_source": "manual",
             "provider": self.provider,
             "base_url": self.base_url,
@@ -47,7 +68,16 @@ class _ManualProviderState:
             "configured": True,
             "missing": [],
             "credential_configured": True,
+<<<<<<< HEAD
         }
+=======
+            "model_source": "discovered" if self.model_verified else "manual",
+            "model_verified": self.model_verified,
+        }
+        if self.discovery_warning:
+            output["discovery_warning"] = self.discovery_warning
+        return output
+>>>>>>> 18cf7be
 
 
 def install_provider_extension(app_module: Any) -> None:
@@ -55,46 +85,141 @@ def install_provider_extension(app_module: Any) -> None:
 
     if getattr(app_module, _INSTALLED_ATTRIBUTE, False):
         return
+<<<<<<< HEAD
 
+=======
+>>>>>>> 18cf7be
     desktop_api = app_module.DesktopAPI
     original_start_run = desktop_api.start_run
     original_get_defaults = desktop_api.get_defaults
 
     def connect_provider(self: Any, value: Mapping[str, Any]) -> dict[str, object]:
+<<<<<<< HEAD
         try:
             base_url, api_key, provider = _validate_connection_request(value)
             models = _discover_models(base_url, api_key)
+=======
+        previous = _get_state(self)
+        try:
+            base_url, api_key, provider, manual_model = _validate_connection_request(
+                value
+            )
+            warning: str | None = None
+            try:
+                discovered = _discover_models(base_url, api_key)
+            except DesktopPublicError as exc:
+                if manual_model and exc.code in _DISCOVERY_FALLBACK_CODES:
+                    discovered = (manual_model,)
+                    warning = (
+                        "Model discovery was unavailable. The manually entered "
+                        "model will be used without endpoint verification."
+                    )
+                else:
+                    return _provider_error_response(
+                        exc,
+                        previous,
+                        original_get_defaults(self),
+                    )
+
+            if manual_model:
+                verified = manual_model in discovered and warning is None
+                models = discovered
+                if manual_model not in models:
+                    models = (manual_model, *models)
+                selected_model = manual_model
+                if not verified and warning is None:
+                    warning = (
+                        "The selected model was entered manually and was not "
+                        "listed by the provider."
+                    )
+            else:
+                verified = True
+                models = discovered
+                selected_model = models[0]
+
+>>>>>>> 18cf7be
             state = _ManualProviderState(
                 base_url=base_url,
                 api_key=api_key,
                 provider=provider,
                 models=models,
+<<<<<<< HEAD
                 selected_model=models[0],
+=======
+                selected_model=selected_model,
+                model_verified=verified,
+                discovery_warning=warning,
+>>>>>>> 18cf7be
             )
             setattr(self, _PROVIDER_STATE_ATTRIBUTE, state)
             return {"ok": True, **state.to_public_dict()}
         except DesktopPublicError as exc:
+<<<<<<< HEAD
             return exc.to_public_dict()
 
     def select_provider_model(self: Any, model: str) -> dict[str, object]:
+=======
+            return _provider_error_response(
+                exc,
+                previous,
+                original_get_defaults(self),
+            )
+
+    def select_provider_model(
+        self: Any,
+        model: str,
+        allow_unlisted: bool = False,
+    ) -> dict[str, object]:
+>>>>>>> 18cf7be
         state = _get_state(self)
         if state is None:
             return DesktopPublicError(
                 "provider_configuration_error",
                 "Connect to a provider before selecting a model.",
             ).to_public_dict()
+<<<<<<< HEAD
         normalized = str(model).strip() if isinstance(model, str) else ""
         if normalized not in state.models:
+=======
+        if not isinstance(allow_unlisted, bool):
+            return DesktopPublicError(
+                "validation_error",
+                "allow_unlisted must be a boolean.",
+            ).to_public_dict()
+        normalized = str(model).strip() if isinstance(model, str) else ""
+        if not normalized or len(normalized) > 256:
+            return DesktopPublicError(
+                "provider_configuration_error",
+                "Selected model must be non-empty text up to 256 characters.",
+            ).to_public_dict()
+        listed = normalized in state.models
+        if not listed and not allow_unlisted:
+>>>>>>> 18cf7be
             return DesktopPublicError(
                 "provider_configuration_error",
                 "Selected model is not available from the connected provider.",
             ).to_public_dict()
+<<<<<<< HEAD
+=======
+        models = state.models if listed else (normalized, *state.models)
+>>>>>>> 18cf7be
         updated = _ManualProviderState(
             base_url=state.base_url,
             api_key=state.api_key,
             provider=state.provider,
+<<<<<<< HEAD
             models=state.models,
             selected_model=normalized,
+=======
+            models=models,
+            selected_model=normalized,
+            model_verified=listed,
+            discovery_warning=(
+                None
+                if listed
+                else "The selected model is manually entered and unverified."
+            ),
+>>>>>>> 18cf7be
         )
         setattr(self, _PROVIDER_STATE_ATTRIBUTE, updated)
         return {"ok": True, **updated.to_public_dict()}
@@ -122,6 +247,7 @@ def install_provider_extension(app_module: Any) -> None:
         explicit = {
             name for name in _PROVIDER_FIELDS if hydrated.get(name) not in (None, "")
         }
+<<<<<<< HEAD
         # Preserve callers that already supplied a complete explicit provider.
         # The desktop UI supplies no provider fields, so the connected in-memory
         # configuration takes precedence over environment defaults.
@@ -134,6 +260,21 @@ def install_provider_extension(app_module: Any) -> None:
                     "provider": state.provider,
                 }
             )
+=======
+        # Never combine a partially explicit endpoint/model with an unrelated
+        # in-memory credential. Explicit provider fields are validated as one unit
+        # by the existing controller/runtime path.
+        if explicit:
+            return original_start_run(self, hydrated)
+        hydrated.update(
+            {
+                "base_url": state.base_url,
+                "api_key": state.api_key,
+                "model": state.selected_model,
+                "provider": state.provider,
+            }
+        )
+>>>>>>> 18cf7be
         return original_start_run(self, hydrated)
 
     desktop_api.connect_provider = connect_provider
@@ -145,7 +286,11 @@ def install_provider_extension(app_module: Any) -> None:
     app_module._BROWSER_API_ARITY.update(
         {
             "connect_provider": (1, 1),
+<<<<<<< HEAD
             "select_provider_model": (1, 1),
+=======
+            "select_provider_model": (1, 2),
+>>>>>>> 18cf7be
             "clear_provider_config": (0, 0),
         }
     )
@@ -169,13 +314,61 @@ def _get_state(api: Any) -> _ManualProviderState | None:
     return value if isinstance(value, _ManualProviderState) else None
 
 
+<<<<<<< HEAD
 def _validate_connection_request(value: Mapping[str, Any]) -> tuple[str, str, str]:
+=======
+def _provider_error_response(
+    exc: DesktopPublicError,
+    previous: _ManualProviderState | None,
+    environment_defaults: Mapping[str, Any],
+) -> dict[str, object]:
+    response = exc.to_public_dict()
+    if previous is not None:
+        response.update(
+            {
+                "active_configuration_preserved": True,
+                "active_provider_source": "manual",
+                "active_provider": previous.provider,
+                "active_base_url": previous.base_url,
+                "active_model": previous.selected_model,
+                "error_message": (
+                    f"{response['error_message']} Previous provider remains active."
+                ),
+            }
+        )
+    elif environment_defaults.get("ok") and environment_defaults.get("configured"):
+        response.update(
+            {
+                "active_configuration_preserved": True,
+                "active_provider_source": "env",
+                "active_provider": environment_defaults.get("provider"),
+                "active_base_url": environment_defaults.get("base_url"),
+                "active_model": environment_defaults.get("model"),
+                "error_message": (
+                    f"{response['error_message']} Previous environment "
+                    "configuration remains active."
+                ),
+            }
+        )
+    else:
+        response["active_configuration_preserved"] = False
+    return response
+
+
+def _validate_connection_request(
+    value: Mapping[str, Any],
+) -> tuple[str, str, str, str | None]:
+>>>>>>> 18cf7be
     if not isinstance(value, Mapping):
         raise DesktopPublicError(
             "validation_error",
             "Provider connection request must be an object.",
         )
+<<<<<<< HEAD
     allowed = {"base_url", "api_key", "provider"}
+=======
+    allowed = {"base_url", "api_key", "provider", "model"}
+>>>>>>> 18cf7be
     unknown = sorted(str(key) for key in value if key not in allowed)
     if unknown:
         raise DesktopPublicError(
@@ -202,7 +395,15 @@ def _validate_connection_request(value: Mapping[str, Any]) -> tuple[str, str, st
         "Provider",
         128,
     )
+<<<<<<< HEAD
     return base_url, api_key, provider
+=======
+    raw_model = value.get("model")
+    manual_model: str | None = None
+    if raw_model not in (None, ""):
+        manual_model = _required_text(raw_model, "Model", 256)
+    return base_url, api_key, provider, manual_model
+>>>>>>> 18cf7be
 
 
 def _required_text(value: Any, label: str, limit: int) -> str:
@@ -241,9 +442,15 @@ def _discover_models(base_url: str, api_key: str) -> tuple[str, ...]:
         if exc.code in {401, 403}:
             message = "Provider rejected the API key while listing models."
             code = "provider_authentication_error"
+<<<<<<< HEAD
         elif exc.code == 404:
             message = "Provider does not expose a compatible /models endpoint."
             code = "provider_models_not_found"
+=======
+        elif exc.code in {400, 404, 405}:
+            message = "Provider does not expose a compatible /models endpoint."
+            code = "provider_models_unavailable"
+>>>>>>> 18cf7be
         else:
             message = f"Provider model list failed with HTTP {exc.code}."
             code = "provider_connection_error"
@@ -291,4 +498,9 @@ def _extract_models(payload: Any) -> tuple[str, ...]:
             continue
         seen.add(normalized)
         result.append(normalized)
+<<<<<<< HEAD
+=======
+        if len(result) >= _MAX_DISCOVERED_MODELS:
+            break
+>>>>>>> 18cf7be
     return tuple(result)

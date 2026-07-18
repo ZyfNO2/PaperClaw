@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 """Installed console entry point with optional client and service shims."""
+=======
+"""Installed console entry point with optional desktop and service shims."""
+>>>>>>> 18cf7be
 
 from __future__ import annotations
 

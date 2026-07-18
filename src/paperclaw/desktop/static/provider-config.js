@@ -17,9 +17,16 @@
     for (const id of [
       "config-source", "config-provider", "config-base-url", "config-model",
       "config-credential", "provider-base-url", "provider-api-key",
+<<<<<<< HEAD
       "provider-key-toggle", "provider-connect", "provider-model",
       "provider-reset", "provider-connect-status", "provider-summary",
       "env-badge", "model-label", "verification-enabled", "gate-mode-status"
+=======
+      "provider-manual-model", "provider-key-toggle", "provider-connect",
+      "provider-model", "provider-reset", "provider-connect-status",
+      "provider-summary", "env-badge", "model-label", "verification-enabled",
+      "gate-mode-status"
+>>>>>>> 18cf7be
     ]) ui[toCamel(id)] = byId(id);
 
     ui.providerKeyToggle.addEventListener("click", toggleKeyVisibility);
@@ -41,6 +48,10 @@
   }
 
   async function maybeLoadDefaults() {
+<<<<<<< HEAD
+=======
+    if (!initialized) return;
+>>>>>>> 18cf7be
     const api = backendApi();
     if (!api || typeof api.get_defaults !== "function") return;
     try {
@@ -55,6 +66,10 @@
     if (connecting) return;
     const baseUrl = ui.providerBaseUrl.value.trim();
     const apiKey = ui.providerApiKey.value.trim();
+<<<<<<< HEAD
+=======
+    const manualModel = ui.providerManualModel.value.trim();
+>>>>>>> 18cf7be
     if (!baseUrl || !apiKey) {
       setStatus("Base URL 和 API Key 均不能为空。", "error");
       return;
@@ -71,11 +86,21 @@
     ui.providerModel.disabled = true;
     setStatus("正在连接并读取模型列表……", "pending");
     try {
+<<<<<<< HEAD
       const response = await api.connect_provider({
         base_url: baseUrl,
         api_key: apiKey,
         provider: "openai-compatible"
       });
+=======
+      const payload = {
+        base_url: baseUrl,
+        api_key: apiKey,
+        provider: "openai-compatible"
+      };
+      if (manualModel) payload.model = manualModel;
+      const response = await api.connect_provider(payload);
+>>>>>>> 18cf7be
       if (!response || !response.ok) {
         renderError(response);
         return;
@@ -84,7 +109,15 @@
       ui.providerApiKey.type = "password";
       ui.providerKeyToggle.textContent = "显示";
       renderProviderState(response);
+<<<<<<< HEAD
       setStatus(`连接成功，可用模型 ${response.available_models.length} 个。`, "success");
+=======
+      if (response.discovery_warning) {
+        setStatus(response.discovery_warning, "warning");
+      } else {
+        setStatus(`连接成功，可用模型 ${response.available_models.length} 个。`, "success");
+      }
+>>>>>>> 18cf7be
     } catch (_error) {
       setStatus("连接失败：桌面桥接未返回有效结果。", "error");
     } finally {
@@ -130,6 +163,10 @@
       }
       ui.providerModel.replaceChildren();
       ui.providerModel.disabled = true;
+<<<<<<< HEAD
+=======
+      ui.providerManualModel.value = "";
+>>>>>>> 18cf7be
       setStatus("已恢复为环境变量配置。", "success");
       await maybeLoadDefaults();
     } catch (_error) {
@@ -143,23 +180,44 @@
     const baseUrl = text(response.base_url, "not configured");
     const model = text(response.model, "not configured");
     const configured = Boolean(response.configured);
+<<<<<<< HEAD
+=======
+    const verified = response.model_verified !== false;
+>>>>>>> 18cf7be
 
     ui.configSource.textContent = source;
     ui.configProvider.textContent = provider;
     ui.configBaseUrl.textContent = baseUrl;
+<<<<<<< HEAD
     ui.configModel.textContent = model;
     ui.configCredential.textContent = configured ? "Configured (hidden)" : `Missing: ${(response.missing || []).join(", ")}`;
     ui.providerBaseUrl.value = response.base_url || "";
+=======
+    ui.configModel.textContent = verified ? model : `${model} (unverified)`;
+    ui.configCredential.textContent = configured ? "Configured (hidden)" : `Missing: ${(response.missing || []).join(", ")}`;
+    ui.providerBaseUrl.value = response.base_url || "";
+    if (response.provider_source === "manual" && response.model_source === "manual") {
+      ui.providerManualModel.value = response.model || "";
+    }
+>>>>>>> 18cf7be
 
     if (Array.isArray(response.available_models)) {
       populateModels(response.available_models, response.model);
     }
 
     const prefix = response.provider_source === "manual" ? "MANUAL" : "ENV";
+<<<<<<< HEAD
     ui.providerSummary.textContent = configured
       ? `LLM · ${prefix} · ${provider} / ${model}`
       : `LLM · ${prefix} INCOMPLETE · ${(response.missing || []).join(", ")}`;
     ui.modelLabel.textContent = model;
+=======
+    const modelDisplay = verified ? model : `${model} · UNVERIFIED`;
+    ui.providerSummary.textContent = configured
+      ? `LLM · ${prefix} · ${provider} / ${modelDisplay}`
+      : `LLM · ${prefix} INCOMPLETE · ${(response.missing || []).join(", ")}`;
+    ui.modelLabel.textContent = modelDisplay;
+>>>>>>> 18cf7be
     ui.envBadge.textContent = response.provider_source === "manual" ? "API✓" : (configured ? "ENV✓" : "ENV!");
     ui.envBadge.dataset.configured = configured ? "true" : "false";
   }
@@ -197,6 +255,14 @@
   function renderError(response) {
     const code = response && response.error_code ? response.error_code : "runtime_error";
     const message = response && response.error_message ? response.error_message : "Provider connection failed.";
+<<<<<<< HEAD
+=======
+    if (response && response.active_configuration_preserved) {
+      const source = text(response.active_provider_source, "previous").toUpperCase();
+      setStatus(`${code}: ${message} · ${source} CONFIG STILL ACTIVE`, "warning");
+      return;
+    }
+>>>>>>> 18cf7be
     setStatus(`${code}: ${message}`, "error");
   }
 
@@ -224,13 +290,21 @@
         },
         body: JSON.stringify({args})
       });
+<<<<<<< HEAD
       const payload = await response.json();
       return payload;
+=======
+      return response.json();
+>>>>>>> 18cf7be
     }
     return {
       get_defaults: () => invoke("get_defaults", []),
       connect_provider: (request) => invoke("connect_provider", [request]),
+<<<<<<< HEAD
       select_provider_model: (model) => invoke("select_provider_model", [model]),
+=======
+      select_provider_model: (model, allowUnlisted = false) => invoke("select_provider_model", [model, allowUnlisted]),
+>>>>>>> 18cf7be
       clear_provider_config: () => invoke("clear_provider_config", [])
     };
   }

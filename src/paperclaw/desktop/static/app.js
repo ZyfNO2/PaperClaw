@@ -5,7 +5,10 @@
   const MAX_TIMELINE_ROWS = 300;
   const POLL_INTERVAL_MS = 250;
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 18cf7be
   const THEME_STORAGE_KEY = "paperclaw.theme.v1";
   const THEMES = new Map([
     ["neo-brutalist", "Neo Brutalist"],
@@ -17,7 +20,10 @@
   const bootstrap = readBrowserBootstrap();
   const bridgeClientId = createClientId();
   const httpApi = bootstrap.token ? createHttpApi(bootstrap.token) : null;
+<<<<<<< HEAD
 >>>>>>> edf37eb
+=======
+>>>>>>> 18cf7be
   const ui = {};
   const trace = [];
   let domReady = false;
@@ -32,6 +38,7 @@
   let toastTimer = null;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
   let currentTheme = resolveInitialTheme(bootstrap.theme);
   document.documentElement.dataset.theme = currentTheme;
@@ -39,6 +46,10 @@
 =======
   let providerSource = "env";
 >>>>>>> f189121
+=======
+  let currentTheme = resolveInitialTheme(bootstrap.theme);
+  document.documentElement.dataset.theme = currentTheme;
+>>>>>>> 18cf7be
 
   function byId(id) {
     return document.getElementById(id);
@@ -59,6 +70,7 @@
       "settings-panel", "close-settings", "config-provider", "config-base-url", "config-model",
       "config-credential", "max-steps", "max-model-calls", "max-tool-calls",
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
       "settings-panel", "close-settings", "config-source", "config-provider", "config-base-url",
       "config-model", "config-credential", "provider-input", "provider-base-url",
@@ -71,6 +83,10 @@
       "verification-enabled", "theme-select", "open-browser", "toast", "toast-message",
       "close-toast"
 >>>>>>> edf37eb
+=======
+      "verification-enabled", "theme-select", "open-browser", "toast", "toast-message",
+      "close-toast"
+>>>>>>> 18cf7be
     ]) ui[toCamel(id)] = byId(id);
 
     ui.sidebarToggle.addEventListener("click", toggleSidebar);
@@ -82,10 +98,15 @@
     ui.exportButton.addEventListener("click", exportTrace);
     ui.newRunButton.addEventListener("click", resetForNewRun);
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     ui.themeSelect.addEventListener("change", () => applyTheme(ui.themeSelect.value, true));
     ui.openBrowser.addEventListener("click", openInBrowser);
 >>>>>>> edf37eb
+=======
+    ui.themeSelect.addEventListener("change", () => applyTheme(ui.themeSelect.value, true));
+    ui.openBrowser.addEventListener("click", openInBrowser);
+>>>>>>> 18cf7be
     ui.clearTask.addEventListener("click", clearTask);
     ui.task.addEventListener("input", updateTaskInput);
     ui.task.addEventListener("keydown", onTaskKeydown);
@@ -113,7 +134,10 @@
     bindNavigation();
     bindToolChips();
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 18cf7be
     ui.themeSelect.value = currentTheme;
     if (httpApi) {
       bridgeReady = true;
@@ -121,7 +145,10 @@
       ui.openBrowser.textContent = "◎ BROWSER MODE";
       ui.openBrowser.title = "当前已在系统浏览器中运行";
     }
+<<<<<<< HEAD
 >>>>>>> edf37eb
+=======
+>>>>>>> 18cf7be
     updateTaskInput();
     maybeInitialize();
   }
@@ -132,15 +159,21 @@
 
   function backendApi() {
 <<<<<<< HEAD
+<<<<<<< HEAD
     return window.pywebview && window.pywebview.api ? window.pywebview.api : null;
 =======
+=======
+>>>>>>> 18cf7be
     if (window.pywebview && window.pywebview.api) return window.pywebview.api;
     return httpApi;
   }
 
   function backendMode() {
     return httpApi && !(window.pywebview && window.pywebview.api) ? "browser" : "desktop";
+<<<<<<< HEAD
 >>>>>>> edf37eb
+=======
+>>>>>>> 18cf7be
   }
 
   function markBridgeReady() {
@@ -162,6 +195,7 @@
     if (!api || typeof api.get_defaults !== "function") {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
       showError("gui_dependency_missing", "Desktop bridge does not expose environment defaults.");
 =======
       showError("gui_dependency_missing", "PaperClaw bridge does not expose environment defaults.");
@@ -169,6 +203,9 @@
 =======
       showError("gui_dependency_missing", "Desktop bridge does not expose model defaults.");
 >>>>>>> f189121
+=======
+      showError("gui_dependency_missing", "PaperClaw bridge does not expose environment defaults.");
+>>>>>>> 18cf7be
       return;
     }
     try {
@@ -191,6 +228,7 @@
       ui.envBadge.textContent = response.configured ? "ENV✓" : "ENV!";
       ui.envBadge.dataset.configured = response.configured ? "true" : "false";
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
       if (!THEMES.has(bootstrap.theme) && response.theme && THEMES.has(response.theme)) {
         applyTheme(response.theme, false);
@@ -199,6 +237,11 @@
 =======
       renderProviderConfiguration(response);
 >>>>>>> f189121
+=======
+      if (!THEMES.has(bootstrap.theme) && response.theme && THEMES.has(response.theme)) {
+        applyTheme(response.theme, false);
+      }
+>>>>>>> 18cf7be
     } catch (_error) {
       showError("runtime_error", "Model defaults could not be loaded.");
     }
@@ -556,7 +599,10 @@
   }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 18cf7be
   async function openInBrowser() {
     if (backendMode() === "browser") {
       showToast("当前已在系统浏览器中运行。");
@@ -669,7 +715,10 @@
     };
   }
 
+<<<<<<< HEAD
 >>>>>>> edf37eb
+=======
+>>>>>>> 18cf7be
   function renderWorkspace(value) {
     const normalized = stringValue(value, "not selected");
     const segments = normalized.split(/[\\/]/).filter(Boolean);

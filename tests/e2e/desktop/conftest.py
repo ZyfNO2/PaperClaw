@@ -9,12 +9,18 @@ from playwright.sync_api import Browser, Page, sync_playwright
 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 ASSET_DIR = Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
 =======
 ASSET_DIR = (
     Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
 )
 >>>>>>> edf37eb
+=======
+ASSET_DIR = (
+    Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
+)
+>>>>>>> 18cf7be
 
 
 def load_app(page: Page) -> None:
@@ -28,16 +34,22 @@ def load_app(page: Page) -> None:
         flags=re.IGNORECASE,
     )
 <<<<<<< HEAD
+<<<<<<< HEAD
     html = html.replace('<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>")
     html = html.replace('<script src="app.js"></script>', f"<script>{javascript}</script>")
 =======
+=======
+>>>>>>> 18cf7be
     html = html.replace(
         '<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>"
     )
     html = html.replace(
         '<script src="app.js"></script>', f"<script>{javascript}</script>"
     )
+<<<<<<< HEAD
 >>>>>>> edf37eb
+=======
+>>>>>>> 18cf7be
     page.set_content(html, wait_until="load")
     page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
 
@@ -60,12 +72,18 @@ def browser() -> Browser:
 @pytest.fixture
 def page(browser: Browser) -> Page:
 <<<<<<< HEAD
+<<<<<<< HEAD
     page = browser.new_page(viewport={"width": 1440, "height": 900}, accept_downloads=True)
 =======
     page = browser.new_page(
         viewport={"width": 1440, "height": 900}, accept_downloads=True
     )
 >>>>>>> edf37eb
+=======
+    page = browser.new_page(
+        viewport={"width": 1440, "height": 900}, accept_downloads=True
+    )
+>>>>>>> 18cf7be
     yield page
     page.close()
 
@@ -76,6 +94,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
         (() => {{
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
           const calls = {{ start: [], cancel: 0, select: 0, polls: 0 }};
 =======
           const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
@@ -83,6 +102,9 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
 =======
           const calls = {{ start: [], cancel: 0, select: 0, polls: 0, connect: [], models: [] }};
 >>>>>>> f189121
+=======
+          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
+>>>>>>> 18cf7be
           let state = {{
             run_id: null, status: 'idle', model_calls: 0, tool_calls: 0,
             last_sequence: 0, terminal: false, verification_status: null,
@@ -91,9 +113,13 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
           }};
           let queue = [];
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
           let theme = 'neo-brutalist';
 >>>>>>> edf37eb
+=======
+          let theme = 'neo-brutalist';
+>>>>>>> 18cf7be
           const autoComplete = {str(auto_complete).lower()};
           window.__bridgeCalls = calls;
           window.__mockState = () => state;
@@ -108,6 +134,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
                 model: 'env-model',
                 models: ['env-model'],
                 configured: true,
+<<<<<<< HEAD
 <<<<<<< HEAD
                 missing: []
 =======
@@ -136,6 +163,10 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
                 provider: 'openai-compatible',
                 base_url: 'https://manual.example/v1',
                 model
+=======
+                missing: [],
+                theme
+>>>>>>> 18cf7be
               }};
             }},
             async get_state() {{ return {{ ok: true, state }}; }},
@@ -178,7 +209,10 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
               calls.select += 1;
               return {{ ok: true, workspace: '/tmp/selected-workspace' }};
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 18cf7be
             }},
             async set_theme(theme) {{
               calls.themes.push(theme);
@@ -187,7 +221,10 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             async open_in_browser(theme) {{
               calls.browser.push(theme);
               return {{ ok: true, opened: true, mode: 'browser', origin: 'http://127.0.0.1:4455' }};
+<<<<<<< HEAD
 >>>>>>> edf37eb
+=======
+>>>>>>> 18cf7be
             }}
           }} }};
         }})();
