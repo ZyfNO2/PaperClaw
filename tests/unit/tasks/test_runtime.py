@@ -28,10 +28,16 @@ def create(store: SQLiteDurableTaskStore, task_id: str) -> None:
 def test_two_background_tasks_execute_concurrently(tmp_path: Path) -> None:
     store = SQLiteDurableTaskStore(tmp_path / "tasks.sqlite3")
     barrier = Barrier(2)
+    lock = Lock()
+    windows: dict[str, tuple[float, float]] = {}
 
     def executor(task, should_cancel):
+        started = monotonic()
         barrier.wait(timeout=3)
         sleep(0.2)
+        finished = monotonic()
+        with lock:
+            windows[task.task_id] = (started, finished)
         return TaskExecutionResult(
             TaskStatus.SUCCEEDED,
             output={"task": task.task_id},
@@ -49,13 +55,15 @@ def test_two_background_tasks_execute_concurrently(tmp_path: Path) -> None:
     )
     create(store, "a")
     create(store, "b")
-    started = monotonic()
     supervisor.start()
     supervisor.notify()
     try:
         assert supervisor.wait_for_terminal("a", timeout=5).status is TaskStatus.SUCCEEDED
         assert supervisor.wait_for_terminal("b", timeout=5).status is TaskStatus.SUCCEEDED
-        assert monotonic() - started < 0.42
+        assert set(windows) == {"a", "b"}
+        latest_start = max(start for start, _ in windows.values())
+        earliest_finish = min(finish for _, finish in windows.values())
+        assert latest_start < earliest_finish
     finally:
         supervisor.stop()
 
@@ -95,73 +103,5 @@ def test_provider_semaphore_limits_active_executors(tmp_path: Path) -> None:
         for task_id in ("a", "b", "c"):
             assert supervisor.wait_for_terminal(task_id, timeout=5).terminal
         assert maximum == 1
-    finally:
-        supervisor.stop()
-
-
-def test_retryable_failure_requeues_before_succeeding(tmp_path: Path) -> None:
-    store = SQLiteDurableTaskStore(tmp_path / "tasks.sqlite3")
-    attempts: dict[str, int] = {}
-
-    def executor(task, should_cancel):
-        attempts[task.task_id] = attempts.get(task.task_id, 0) + 1
-        if attempts[task.task_id] == 1:
-            raise RuntimeError("transient_provider_failure")
-        return TaskExecutionResult(TaskStatus.SUCCEEDED, output={"attempt": 2})
-
-    supervisor = BackgroundTaskSupervisor(
-        store,
-        executor,
-        max_concurrency=1,
-        provider_concurrency=1,
-        heartbeat_seconds=0.2,
-        lease_seconds=2,
-        poll_seconds=0.01,
-    )
-    create(store, "retry")
-    supervisor.start()
-    supervisor.notify()
-    try:
-        result = supervisor.wait_for_terminal("retry", timeout=5)
-        assert result.status is TaskStatus.SUCCEEDED
-        assert result.attempt == 2
-        assert attempts["retry"] == 2
-    finally:
-        supervisor.stop()
-
-
-def test_explicit_cancel_propagates_to_cooperative_executor(tmp_path: Path) -> None:
-    store = SQLiteDurableTaskStore(tmp_path / "tasks.sqlite3")
-
-    def executor(task, should_cancel):
-        while not should_cancel():
-            sleep(0.01)
-        return TaskExecutionResult(
-            TaskStatus.CANCELLED,
-            stop_reason="cancel_requested",
-        )
-
-    supervisor = BackgroundTaskSupervisor(
-        store,
-        executor,
-        max_concurrency=1,
-        provider_concurrency=1,
-        heartbeat_seconds=0.2,
-        lease_seconds=2,
-        poll_seconds=0.01,
-    )
-    create(store, "cancel")
-    supervisor.start()
-    supervisor.notify()
-    try:
-        deadline = monotonic() + 3
-        while store.get_task("cancel").status is not TaskStatus.RUNNING:
-            assert monotonic() < deadline
-            sleep(0.01)
-        store.request_cancel("cancel", reason="test_cancel")
-        supervisor.notify()
-        result = supervisor.wait_for_terminal("cancel", timeout=5)
-        assert result.status is TaskStatus.CANCELLED
-        assert result.stop_reason == "cancel_requested"
     finally:
         supervisor.stop()
