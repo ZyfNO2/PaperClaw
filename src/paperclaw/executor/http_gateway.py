@@ -9,6 +9,7 @@ import urllib.request
 
 from .contracts import ExecutionRequest
 from .gateway import (
+    GatewayCapacityError,
     GatewayConflictError,
     GatewayError,
     GatewayExecutionSnapshot,
@@ -57,6 +58,8 @@ def create_worker_gateway_app(
             return HTTPException(status_code=409, detail={"code": exc.code})
         if isinstance(exc, GatewayPayloadTooLargeError):
             return HTTPException(status_code=413, detail={"code": exc.code})
+        if isinstance(exc, GatewayCapacityError):
+            return HTTPException(status_code=429, detail={"code": exc.code})
         if isinstance(exc, GatewayPolicyError):
             return HTTPException(status_code=403, detail={"code": exc.code})
         if isinstance(exc, (ValueError, TypeError, json.JSONDecodeError)):
@@ -245,6 +248,8 @@ def _raise_http_error(exc: urllib.error.HTTPError) -> None:
         raise GatewayConflictError("execution conflict") from exc
     if status == 413:
         raise GatewayPayloadTooLargeError("gateway payload too large") from exc
+    if status == 429:
+        raise GatewayCapacityError("gateway capacity exhausted") from exc
     if status in {401, 403}:
         raise GatewayPolicyError("gateway authorization denied") from exc
     if 400 <= status < 500:
