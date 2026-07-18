@@ -21,21 +21,39 @@ def install_native_workspace_extension(app_module: Any) -> None:
         except ImportError:
             return _native_window_required(app_module)
 
-        window = _resolve_native_window(webview, getattr(self, "_window", None))
-        if window is None:
+        candidates = _native_window_candidates(
+            webview,
+            getattr(self, "_window", None),
+        )
+        if not candidates:
             return _native_window_required(app_module)
 
-        self._window = window
-        _prepare_native_window(window)
         try:
             dialog_type = app_module._folder_dialog_type(webview)
-            selected = window.create_file_dialog(dialog_type)
         except Exception:
             return app_module.DesktopPublicError(
                 "runtime_error",
                 "Workspace picker could not be opened.",
             ).to_public_dict()
 
+        selected = None
+        selected_window = None
+        for window in candidates:
+            _prepare_native_window(window)
+            try:
+                selected = window.create_file_dialog(dialog_type)
+            except Exception:
+                continue
+            selected_window = window
+            break
+
+        if selected_window is None:
+            return app_module.DesktopPublicError(
+                "runtime_error",
+                "Workspace picker could not be opened.",
+            ).to_public_dict()
+
+        self._window = selected_window
         if not selected:
             return {"ok": True, "workspace": None}
         try:
@@ -63,30 +81,38 @@ def _native_window_required(app_module: Any) -> dict[str, object]:
     ).to_public_dict()
 
 
-def _resolve_native_window(webview_module: Any, bound_window: Any | None) -> Any | None:
-    """Resolve a live pywebview window for native-only operations."""
+def _native_window_candidates(
+    webview_module: Any,
+    bound_window: Any | None,
+) -> list[Any]:
+    """Return distinct pywebview windows in preferred retry order."""
 
-    if _supports_folder_dialog(bound_window):
-        return bound_window
+    candidates: list[Any] = []
+
+    def add(candidate: Any | None) -> None:
+        if not _supports_folder_dialog(candidate):
+            return
+        if any(existing is candidate for existing in candidates):
+            return
+        candidates.append(candidate)
+
+    add(bound_window)
 
     active_window = getattr(webview_module, "active_window", None)
     if callable(active_window):
         try:
-            candidate = active_window()
+            add(active_window())
         except Exception:
-            candidate = None
-        if _supports_folder_dialog(candidate):
-            return candidate
+            pass
 
     windows = getattr(webview_module, "windows", ())
     try:
-        candidates = list(windows)
+        registered = list(windows)
     except TypeError:
-        candidates = []
-    for candidate in candidates:
-        if _supports_folder_dialog(candidate):
-            return candidate
-    return None
+        registered = []
+    for candidate in registered:
+        add(candidate)
+    return candidates
 
 
 def _supports_folder_dialog(window: Any | None) -> bool:
