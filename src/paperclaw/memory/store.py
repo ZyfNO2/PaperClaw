@@ -12,13 +12,17 @@ excluded from prompt snapshots until the user removes or replaces them.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import wraps
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import threading
+import time
 from typing import Iterable, Literal
 from uuid import uuid4
 
@@ -42,6 +46,20 @@ _SECRET_PATTERNS = (
 
 class MemoryStoreError(RuntimeError):
     """Base error for persistent-memory operations."""
+
+
+class MemoryLockTimeout(MemoryStoreError):
+    """Raised when another process holds the memory writer lock too long."""
+
+
+def _serialized_write(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._lock:
+            with self._process_lock():
+                return method(self, *args, **kwargs)
+
+    return wrapped
 
 
 class MemoryCapacityError(MemoryStoreError):
@@ -146,6 +164,45 @@ class FileMemoryStore:
         self.policy = policy or MemoryPolicy()
         self._lock = threading.RLock()
 
+    @contextmanager
+    def _process_lock(self):
+        self.root.mkdir(parents=True, exist_ok=True)
+        lock_path = self.root / ".paperclaw-memory.lock"
+        deadline = time.monotonic() + 5.0
+        descriptor: int | None = None
+        while descriptor is None:
+            try:
+                descriptor = os.open(
+                    lock_path,
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    0o600,
+                )
+            except FileExistsError:
+                try:
+                    stale = time.time() - lock_path.stat().st_mtime > 60.0
+                except OSError:
+                    stale = False
+                if stale:
+                    try:
+                        lock_path.unlink()
+                    except OSError:
+                        pass
+                    continue
+                if time.monotonic() >= deadline:
+                    raise MemoryLockTimeout(
+                        "timed out waiting for the cross-process memory writer lock"
+                    )
+                time.sleep(0.05)
+        try:
+            os.write(descriptor, f"pid={os.getpid()} created={time.time()}\n".encode())
+            yield
+        finally:
+            os.close(descriptor)
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                pass
+
     def path_for(self, target: MemoryTarget) -> Path:
         self._validate_target(target)
         return self.root / ("MEMORY.md" if target == "memory" else "USER.md")
@@ -186,6 +243,7 @@ class FileMemoryStore:
             fingerprint=fingerprint,
         )
 
+    @_serialized_write
     def add(
         self,
         target: MemoryTarget,
@@ -234,6 +292,7 @@ class FileMemoryStore:
             self._write(target, updated)
             return entry
 
+    @_serialized_write
     def replace(
         self,
         target: MemoryTarget,
@@ -278,6 +337,7 @@ class FileMemoryStore:
             self._write(target, updated)
             return replacement
 
+    @_serialized_write
     def remove(self, target: MemoryTarget, old_text: str) -> MemoryEntry:
         with self._lock:
             entries = self._read(target)
@@ -386,6 +446,8 @@ class FileMemoryStore:
         normalized = "\n".join(line.rstrip() for line in content.strip().splitlines())
         if not normalized:
             raise ValueError("memory content must not be empty")
+        if any(line.strip() == "§" for line in normalized.splitlines()) or _METADATA_PREFIX in normalized:
+            raise ValueError("memory content contains a reserved storage delimiter")
         if len(normalized) > self.policy.max_entry_chars:
             raise ValueError(
                 f"memory entry exceeds max_entry_chars={self.policy.max_entry_chars}"
@@ -467,6 +529,7 @@ __all__ = [
     "FileMemoryStore",
     "MemoryCapacityError",
     "MemoryEntry",
+    "MemoryLockTimeout",
     "MemoryMatchError",
     "MemoryPolicy",
     "MemoryPrivacyError",
