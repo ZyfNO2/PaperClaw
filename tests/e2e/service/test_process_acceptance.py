@@ -13,10 +13,21 @@ from typing import Any, Iterator
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import pytest
+
+
+pytestmark = pytest.mark.process_acceptance
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PROVIDER_SCRIPT = _REPO_ROOT / "tests" / "helpers" / "mock_openai_provider.py"
-_TERMINAL = {"completed", "failed", "stopped", "blocked", "budget_exhausted", "recovery_required"}
+_TERMINAL = {
+    "completed",
+    "failed",
+    "stopped",
+    "blocked",
+    "budget_exhausted",
+    "recovery_required",
+}
 
 
 @dataclass
@@ -51,16 +62,25 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _start_process(command: list[str], *, env: dict[str, str], log_path: Path) -> ManagedProcess:
+def _start_process(
+    command: list[str],
+    *,
+    env: dict[str, str],
+    log_path: Path,
+) -> ManagedProcess:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_handle = log_path.open("wb")
-    process = subprocess.Popen(
-        command,
-        cwd=_REPO_ROOT,
-        env=env,
-        stdout=log_handle,
-        stderr=subprocess.STDOUT,
-    )
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=_REPO_ROOT,
+            env=env,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+        )
+    except Exception:
+        log_handle.close()
+        raise
     return ManagedProcess(process, log_path, log_handle)
 
 
@@ -143,7 +163,11 @@ def _start_service(
         log_path=tmp_path / f"service-{label}.log",
     )
     origin = f"http://127.0.0.1:{port}"
-    _wait_health(f"{origin}/health", managed)
+    try:
+        _wait_health(f"{origin}/health", managed)
+    except Exception:
+        managed.stop(force=True)
+        raise
     return managed, origin
 
 
@@ -203,7 +227,13 @@ def _run_payload(workspace: Path) -> dict[str, Any]:
     }
 
 
-def _wait_terminal(origin: str, run_id: str, process: ManagedProcess, *, timeout: float = 25) -> dict[str, Any]:
+def _wait_terminal(
+    origin: str,
+    run_id: str,
+    process: ManagedProcess,
+    *,
+    timeout: float = 25,
+) -> dict[str, Any]:
     deadline = time.monotonic() + timeout
     last_view: dict[str, Any] | None = None
     while time.monotonic() < deadline:
@@ -220,7 +250,12 @@ def _wait_terminal(origin: str, run_id: str, process: ManagedProcess, *, timeout
     )
 
 
-def _wait_for_path(path: Path, process: ManagedProcess, *, timeout: float = 15) -> None:
+def _wait_for_path(
+    path: Path,
+    process: ManagedProcess,
+    *,
+    timeout: float = 15,
+) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if path.exists():
@@ -233,7 +268,12 @@ def _wait_for_path(path: Path, process: ManagedProcess, *, timeout: float = 15) 
     raise AssertionError(f"marker was not created: {path}\n{process.diagnostics()}")
 
 
-def _read_sse(origin: str, run_id: str, *, after: int = 0) -> list[dict[str, Any]]:
+def _read_sse(
+    origin: str,
+    run_id: str,
+    *,
+    after: int = 0,
+) -> list[dict[str, Any]]:
     request = Request(
         f"{origin}/v1/runs/{run_id}/events",
         headers={"Last-Event-ID": str(after)},
@@ -258,7 +298,9 @@ def _read_sse(origin: str, run_id: str, *, after: int = 0) -> list[dict[str, Any
     return events
 
 
-def test_real_uvicorn_provider_sse_and_idempotency_round_trip(tmp_path: Path) -> None:
+def test_real_uvicorn_provider_sse_and_idempotency_round_trip(
+    tmp_path: Path,
+) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     database = tmp_path / "service.sqlite3"
@@ -312,29 +354,37 @@ def test_real_uvicorn_provider_sse_and_idempotency_round_trip(tmp_path: Path) ->
             service.stop()
 
 
-def test_kill_restart_reconciles_inflight_provider_request(tmp_path: Path) -> None:
+def test_kill_restart_reconciles_inflight_provider_request(
+    tmp_path: Path,
+) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     database = tmp_path / "service.sqlite3"
 
-    with _provider_process(tmp_path, mode="block-once") as (_, provider_port, state_file):
+    with _provider_process(tmp_path, mode="block-once") as (
+        _,
+        provider_port,
+        state_file,
+    ):
         first_service, first_origin = _start_service(
             tmp_path,
             provider_port=provider_port,
             database=database,
             label="before-kill",
         )
-        payload = _run_payload(workspace)
-        submitted = _json_request(
-            "POST",
-            f"{first_origin}/v1/runs",
-            payload,
-            headers={"Idempotency-Key": "process-restart"},
-        )
-        run_id = submitted["run"]["service_run_id"]
-        _wait_for_path(state_file.with_suffix(".blocked"), first_service)
+        try:
+            payload = _run_payload(workspace)
+            submitted = _json_request(
+                "POST",
+                f"{first_origin}/v1/runs",
+                payload,
+                headers={"Idempotency-Key": "process-restart"},
+            )
+            run_id = submitted["run"]["service_run_id"]
+            _wait_for_path(state_file.with_suffix(".blocked"), first_service)
+        finally:
+            first_service.stop(force=True)
 
-        first_service.stop(force=True)
         time.sleep(1.2)
 
         second_service, second_origin = _start_service(
