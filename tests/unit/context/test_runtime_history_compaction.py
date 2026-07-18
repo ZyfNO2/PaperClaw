@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from paperclaw.agent.prompts import build_prompt
@@ -85,6 +86,28 @@ def test_prompt_switches_to_summary_and_emits_auditable_event(tmp_path: Path) ->
     assert payload["covered_steps"]
     assert payload["recent_steps"]
     assert payload["rendered_tokens"] < payload["original_tokens"]
+
+
+def test_oversized_recent_output_is_bounded_with_hash_reference(tmp_path: Path) -> None:
+    history = [_entry(index) for index in range(1, 8)]
+    history[-1] = _entry(7, output="RECENT-START-" + "中" * 20_000 + "-RECENT-END")
+    shared = _shared(tmp_path, history)
+    view = build_runtime_history_view(
+        shared,
+        policy=RuntimeCompactionPolicy(
+            trigger_tokens=500,
+            target_tokens=1_500,
+            recent_entries=3,
+            max_recent_output_chars=500,
+        ),
+    )
+
+    records = json.loads(view.recent_history_json)
+    latest = records[-1]["result"]
+    assert latest["output_truncated"] is True
+    assert latest["output_sha256"]
+    assert "RECENT-END" not in latest["output"]
+    assert len(shared["history"][-1].result.output) > 20_000
 
 
 def test_small_history_preserves_legacy_prompt_shape(tmp_path: Path) -> None:
