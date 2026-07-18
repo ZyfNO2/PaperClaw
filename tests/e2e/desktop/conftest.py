@@ -21,23 +21,61 @@ _MARKERS = {
 }
 
 
+def _marker_statement(name: str) -> str:
+    return (
+        "window.__paperclawTestStages = window.__paperclawTestStages || [];"
+        f"window.__paperclawTestStages.push('{name}');"
+    )
+
+
 class _QuietStaticHandler(SimpleHTTPRequestHandler):
     def log_message(self, format: str, *args) -> None:
         return
 
     def do_GET(self) -> None:
         path = self.path.split("?", 1)[0].lstrip("/")
+        print(f"PAPERCLAW_HTTP_GET={path}", flush=True)
         marker = _MARKERS.get(path)
         if marker is not None:
-            body = (
-                "window.__paperclawTestStages = window.__paperclawTestStages || [];"
-                f"window.__paperclawTestStages.push('{marker}');"
-            ).encode("utf-8")
+            body = _marker_statement(marker).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/javascript; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            print(f"PAPERCLAW_HTTP_DONE={path}", flush=True)
+            return
+        if path == "app.js":
+            javascript = (ASSET_DIR / "app.js").read_text(encoding="utf-8")
+            replacements = [
+                (
+                    "const bootstrap = readBrowserBootstrap();",
+                    "const bootstrap = readBrowserBootstrap();" + _marker_statement("app-bootstrap"),
+                ),
+                (
+                    "const bridgeClientId = createClientId();",
+                    "const bridgeClientId = createClientId();" + _marker_statement("app-client-id"),
+                ),
+                (
+                    "let currentTheme = resolveInitialTheme(bootstrap.theme);",
+                    "let currentTheme = resolveInitialTheme(bootstrap.theme);" + _marker_statement("app-theme"),
+                ),
+                (
+                    "document.documentElement.dataset.theme = currentTheme;",
+                    "document.documentElement.dataset.theme = currentTheme;" + _marker_statement("app-dataset"),
+                ),
+            ]
+            for original, replacement in replacements:
+                if original not in javascript:
+                    raise RuntimeError(f"missing app instrumentation target: {original}")
+                javascript = javascript.replace(original, replacement, 1)
+            body = javascript.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            print("PAPERCLAW_HTTP_DONE=app.js", flush=True)
             return
         if path in {"", "index.html"}:
             html = (ASSET_DIR / "index.html").read_text(encoding="utf-8")
@@ -59,8 +97,10 @@ class _QuietStaticHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            print(f"PAPERCLAW_HTTP_DONE={path or 'index.html'}", flush=True)
             return
         super().do_GET()
+        print(f"PAPERCLAW_HTTP_DONE={path}", flush=True)
 
 
 def _stage(name: str) -> None:
@@ -86,7 +126,8 @@ def load_app(page: Page) -> None:
     _stage("goto-commit")
     _wait_marker(page, "i18n")
     _wait_marker(page, "provider")
-    _wait_marker(page, "app")
+    for marker in ("app-bootstrap", "app-client-id", "app-theme", "app-dataset", "app"):
+        _wait_marker(page, marker)
     page.evaluate(
         """() => {
           document.dispatchEvent(new Event('DOMContentLoaded'));
