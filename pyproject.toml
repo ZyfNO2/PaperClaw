@@ -11,9 +11,13 @@ dependencies = []
 
 [project.scripts]
 paperclaw = "paperclaw.entrypoint:main"
+<<<<<<< HEAD
 paperclaw-gui = "paperclaw.desktop.app:main"
 paperclaw-api = "paperclaw.service.entrypoint:main"
 paperclaw-research-eval = "paperclaw.research_eval.cli:main"
+=======
+paperclaw-gui = "paperclaw.desktop.bootstrap:main"
+>>>>>>> edf37eb
 
 [project.optional-dependencies]
 tui = [
@@ -37,9 +41,12 @@ dev = [
     "ruff>=0.7",
     "textual>=1.0,<8",
     "playwright>=1.50,<2",
+<<<<<<< HEAD
     "fastapi>=0.115,<1",
     "uvicorn>=0.34,<1",
     "httpx>=0.28,<1",
+=======
+>>>>>>> edf37eb
 ]
 
 [tool.setuptools.packages.find]

@@ -8,7 +8,13 @@ import pytest
 from playwright.sync_api import Browser, Page, sync_playwright
 
 
+<<<<<<< HEAD
 ASSET_DIR = Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
+=======
+ASSET_DIR = (
+    Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
+)
+>>>>>>> edf37eb
 
 
 def load_app(page: Page) -> None:
@@ -21,8 +27,17 @@ def load_app(page: Page) -> None:
         html,
         flags=re.IGNORECASE,
     )
+<<<<<<< HEAD
     html = html.replace('<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>")
     html = html.replace('<script src="app.js"></script>', f"<script>{javascript}</script>")
+=======
+    html = html.replace(
+        '<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>"
+    )
+    html = html.replace(
+        '<script src="app.js"></script>', f"<script>{javascript}</script>"
+    )
+>>>>>>> edf37eb
     page.set_content(html, wait_until="load")
     page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
 
@@ -44,7 +59,13 @@ def browser() -> Browser:
 
 @pytest.fixture
 def page(browser: Browser) -> Page:
+<<<<<<< HEAD
     page = browser.new_page(viewport={"width": 1440, "height": 900}, accept_downloads=True)
+=======
+    page = browser.new_page(
+        viewport={"width": 1440, "height": 900}, accept_downloads=True
+    )
+>>>>>>> edf37eb
     yield page
     page.close()
 
@@ -53,7 +74,11 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
     page.evaluate(
         f"""
         (() => {{
+<<<<<<< HEAD
           const calls = {{ start: [], cancel: 0, select: 0, polls: 0 }};
+=======
+          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
+>>>>>>> edf37eb
           let state = {{
             run_id: null, status: 'idle', model_calls: 0, tool_calls: 0,
             last_sequence: 0, terminal: false, verification_status: null,
@@ -61,6 +86,10 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             error_code: null, error_message: null
           }};
           let queue = [];
+<<<<<<< HEAD
+=======
+          let theme = 'neo-brutalist';
+>>>>>>> edf37eb
           const autoComplete = {str(auto_complete).lower()};
           window.__bridgeCalls = calls;
           window.__mockState = () => state;
@@ -74,7 +103,12 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
                 base_url: 'https://provider.example/v1',
                 model: 'env-model',
                 configured: true,
+<<<<<<< HEAD
                 missing: []
+=======
+                missing: [],
+                theme
+>>>>>>> edf37eb
               }};
             }},
             async get_state() {{ return {{ ok: true, state }}; }},
@@ -116,6 +150,17 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             async select_workspace() {{
               calls.select += 1;
               return {{ ok: true, workspace: '/tmp/selected-workspace' }};
+<<<<<<< HEAD
+=======
+            }},
+            async set_theme(theme) {{
+              calls.themes.push(theme);
+              return {{ ok: true, theme }};
+            }},
+            async open_in_browser(theme) {{
+              calls.browser.push(theme);
+              return {{ ok: true, opened: true, mode: 'browser', origin: 'http://127.0.0.1:4455' }};
+>>>>>>> edf37eb
             }}
           }} }};
         }})();

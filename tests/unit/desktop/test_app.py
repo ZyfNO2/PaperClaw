@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 import sys
+from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -22,10 +26,21 @@ class FakeController:
         return {"ok": True, "accepted": True}
 
     def poll_events(self, limit):
-        return {"ok": True, "items": [], "limit": limit}
+        return {"ok": True, "items": [], "limit": limit, "dropped_count": 0}
 
     def get_state(self):
         return {"ok": True, "state": {"status": "idle"}}
+
+
+class QueueController(FakeController):
+    def __init__(self, items) -> None:
+        super().__init__()
+        self.items = list(items)
+
+    def poll_events(self, limit):
+        selected = self.items[:limit]
+        del self.items[:limit]
+        return {"ok": True, "items": selected, "dropped_count": 0}
 
 
 class FakeWindow:
@@ -44,7 +59,13 @@ def _set_provider_env(monkeypatch) -> None:
     monkeypatch.setenv("PAPERCLAW_PROVIDER", "test-provider")
 
 
+<<<<<<< HEAD
 def test_desktop_api_hydrates_default_run_from_environment(tmp_path, monkeypatch) -> None:
+=======
+def test_desktop_api_hydrates_default_run_from_environment(
+    tmp_path, monkeypatch
+) -> None:
+>>>>>>> edf37eb
     _set_provider_env(monkeypatch)
     controller = FakeController()
     api = app.DesktopAPI(controller)
@@ -64,6 +85,10 @@ def test_desktop_api_hydrates_default_run_from_environment(tmp_path, monkeypatch
 
 def test_environment_defaults_never_expose_api_key(tmp_path, monkeypatch) -> None:
     _set_provider_env(monkeypatch)
+<<<<<<< HEAD
+=======
+    monkeypatch.setenv("PAPERCLAW_DESKTOP_CONFIG_DIR", str(tmp_path / "config"))
+>>>>>>> edf37eb
     monkeypatch.chdir(tmp_path)
     api = app.DesktopAPI(FakeController())
 
@@ -78,11 +103,33 @@ def test_environment_defaults_never_expose_api_key(tmp_path, monkeypatch) -> Non
         "model": "test-model",
         "configured": True,
         "missing": [],
+<<<<<<< HEAD
+=======
+        "theme": "neo-brutalist",
+>>>>>>> edf37eb
     }
     assert "secret-value" not in repr(defaults)
     assert "api_key" not in defaults
 
 
+<<<<<<< HEAD
+=======
+def test_theme_preference_is_validated_and_persisted(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("PAPERCLAW_DESKTOP_CONFIG_DIR", str(tmp_path))
+    api = app.DesktopAPI(FakeController())
+
+    assert api.set_theme("terminal-dark") == {"ok": True, "theme": "terminal-dark"}
+    assert api.get_defaults()["theme"] == "terminal-dark"
+    invalid = api.set_theme("unknown-theme")
+    assert invalid["ok"] is False
+    assert invalid["error_code"] == "validation_error"
+    assert (
+        json.loads((tmp_path / "desktop-preferences.json").read_text())["theme"]
+        == "terminal-dark"
+    )
+
+
+>>>>>>> edf37eb
 def test_missing_environment_is_a_typed_public_error(tmp_path, monkeypatch) -> None:
     for name in app._REQUIRED_ENV:
         monkeypatch.delenv(name, raising=False)
@@ -97,7 +144,13 @@ def test_missing_environment_is_a_typed_public_error(tmp_path, monkeypatch) -> N
     assert controller.last_request is None
 
 
+<<<<<<< HEAD
 def test_workspace_dotenv_is_loaded_without_overriding_process_env(tmp_path, monkeypatch) -> None:
+=======
+def test_workspace_dotenv_is_loaded_without_overriding_process_env(
+    tmp_path, monkeypatch
+) -> None:
+>>>>>>> edf37eb
     monkeypatch.setenv("PAPERCLAW_MODEL", "process-model")
     monkeypatch.delenv("PAPERCLAW_API_KEY", raising=False)
     monkeypatch.delenv("PAPERCLAW_BASE_URL", raising=False)
@@ -118,7 +171,13 @@ def test_workspace_dotenv_is_loaded_without_overriding_process_env(tmp_path, mon
     assert controller.last_request["model"] == "process-model"
 
 
+<<<<<<< HEAD
 def test_explicit_provider_configuration_remains_supported(tmp_path, monkeypatch) -> None:
+=======
+def test_explicit_provider_configuration_remains_supported(
+    tmp_path, monkeypatch
+) -> None:
+>>>>>>> edf37eb
     for name in app._REQUIRED_ENV:
         monkeypatch.delenv(name, raising=False)
     controller = FakeController()
@@ -138,17 +197,92 @@ def test_explicit_provider_configuration_remains_supported(tmp_path, monkeypatch
     assert controller.last_request == request
 
 
+<<<<<<< HEAD
 def test_desktop_api_exposes_controller_operations_and_workspace_picker(tmp_path, monkeypatch) -> None:
+=======
+def test_desktop_api_exposes_controller_operations_and_workspace_picker(
+    tmp_path, monkeypatch
+) -> None:
+>>>>>>> edf37eb
     _set_provider_env(monkeypatch)
     api = app.DesktopAPI(FakeController())
     assert api.cancel_run() == {"ok": True, "accepted": True}
-    assert api.poll_events(7) == {"ok": True, "items": [], "limit": 7}
+    assert api.poll_events(7) == {"ok": True, "items": [], "dropped_count": 0}
     assert api.get_state()["state"]["status"] == "idle"
 
     fake_webview = SimpleNamespace(FOLDER_DIALOG="folder")
     monkeypatch.setitem(sys.modules, "webview", fake_webview)
     api.bind_window(FakeWindow((str(tmp_path),)))
     assert api.select_workspace() == {"ok": True, "workspace": str(tmp_path.resolve())}
+
+
+def test_poll_events_fans_out_to_desktop_and_browser_clients() -> None:
+    items = [
+        {"kind": "event", "event": {"sequence": 1, "event_type": "run.started"}},
+        {"kind": "snapshot", "snapshot": {"status": "running"}},
+    ]
+    api = app.DesktopAPI(QueueController(items))
+
+    assert api.poll_events(10, "desktop")["items"] == items
+    assert api.poll_events(10, "browser-1")["items"] == items
+    assert api.poll_events(10, "desktop")["items"] == []
+    assert api.poll_events(10, "browser-1")["items"] == []
+
+
+def test_browser_host_serves_assets_and_requires_fragment_token(
+    tmp_path, monkeypatch
+) -> None:
+    _set_provider_env(monkeypatch)
+    monkeypatch.setenv("PAPERCLAW_DESKTOP_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.chdir(tmp_path)
+    opened_urls = []
+    monkeypatch.setattr(
+        app.webbrowser,
+        "open_new_tab",
+        lambda value: opened_urls.append(value) or True,
+    )
+    api = app.DesktopAPI(FakeController())
+
+    try:
+        response = api.open_in_browser("paper-light")
+        assert response["ok"] is True
+        assert response["origin"].startswith("http://127.0.0.1:")
+        opened = urlsplit(opened_urls[0])
+        fragment = parse_qs(opened.fragment)
+        assert fragment["theme"] == ["paper-light"]
+        token = fragment["token"][0]
+
+        with urlopen(response["origin"] + "/", timeout=3) as page:
+            assert page.status == 200
+            assert b"PaperClaw Console" in page.read()
+
+        unauthorized = Request(
+            response["origin"] + "/api/get_defaults",
+            data=b'{"args":[]}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as denied:
+            urlopen(unauthorized, timeout=3)
+        assert denied.value.code == 403
+
+        authorized = Request(
+            response["origin"] + "/api/get_defaults",
+            data=b'{"args":[]}',
+            headers={
+                "Content-Type": "application/json",
+                "X-PaperClaw-Token": token,
+            },
+            method="POST",
+        )
+        with urlopen(authorized, timeout=3) as api_response:
+            payload = json.loads(api_response.read())
+        assert payload["ok"] is True
+        assert payload["configured"] is True
+        assert "api_key" not in payload
+        assert "secret-value" not in repr(payload)
+    finally:
+        api.shutdown_browser()
 
 
 def test_workspace_picker_cancel_is_not_an_error(monkeypatch) -> None:
@@ -167,7 +301,9 @@ def test_run_desktop_fails_cleanly_without_optional_dependency(monkeypatch) -> N
     assert "pywebview" not in str(raised.value).lower()
 
 
-def test_console_entrypoint_routes_gui_and_preserves_legacy_commands(monkeypatch) -> None:
+def test_console_entrypoint_routes_gui_and_preserves_legacy_commands(
+    monkeypatch,
+) -> None:
     observed = []
 
     def desktop_main(argv):

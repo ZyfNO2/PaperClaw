@@ -1,4 +1,5 @@
 <!doctype html>
+<<<<<<< HEAD
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -6,6 +7,16 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>PaperClaw Console</title>
   <link rel="stylesheet" href="styles.css">
+=======
+<html lang="zh-CN" data-theme="neo-brutalist">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>PaperClaw Console</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="provider-config.css">
+>>>>>>> edf37eb
 </head>
 <body>
   <main id="app" data-viewport-mode="app-shell">
@@ -60,6 +71,20 @@
           <button class="btn destructive" id="cancel-button" type="button" disabled>■ STOP</button>
           <button class="btn" id="export-button" type="button">⇩ EXPORT TRACE</button>
           <button class="btn" id="select-workspace" type="button">▣ WORKSPACE</button>
+<<<<<<< HEAD
+=======
+          <label class="theme-picker" for="theme-select">
+            <span>THEME</span>
+            <select id="theme-select" aria-label="选择界面主题">
+              <option value="neo-brutalist">Neo Brutalist</option>
+              <option value="soft-minimal">Soft Minimal</option>
+              <option value="terminal-dark">Terminal Dark</option>
+              <option value="clean-mono">Clean Mono</option>
+              <option value="paper-light">Paper Light</option>
+            </select>
+          </label>
+          <button class="btn" id="open-browser" type="button">◎ OPEN IN BROWSER</button>
+>>>>>>> edf37eb
         </div>
         <span class="tiny" id="provider-summary">LLM · ENV NOT CHECKED</span>
       </div>
@@ -78,7 +103,11 @@
           <div class="log-messages" id="mission-log" aria-live="polite">
             <article class="msg msg-system" data-log-type="system">
               <div class="msg-head"><span class="msg-marker sys"></span><span>SYSTEM</span><span class="msg-meta push-right">READY</span></div>
+<<<<<<< HEAD
               <div class="msg-body">PaperClaw v0.11 desktop bridge is initializing. LLM configuration is loaded from environment variables at run time.</div>
+=======
+              <div class="msg-body">PaperClaw v0.11 desktop bridge is initializing. LLM configuration can use environment variables or a manual provider connection.</div>
+>>>>>>> edf37eb
             </article>
           </div>
 
@@ -133,6 +162,7 @@
             <div class="timeline-list" id="timeline" aria-live="polite"></div>
           </div>
         </div>
+<<<<<<< HEAD
       </section>
     </div>
   </main>
@@ -158,6 +188,58 @@
   </section>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-message"></span><button id="close-toast" type="button" aria-label="关闭提示">×</button></div>
+=======
+      </section>
+    </div>
+  </main>
+
+  <section class="settings-panel" id="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+    <div class="settings-card">
+      <div class="panel-head"><h2 class="panel-title" id="settings-title">MODEL CONNECTION &amp; RUNTIME CONFIG</h2><button class="icon-btn" id="close-settings" type="button" aria-label="关闭设置">×</button></div>
+      <dl class="config-list">
+        <div><dt>Source</dt><dd id="config-source">Environment variables</dd></div>
+        <div><dt>Provider</dt><dd id="config-provider">—</dd></div>
+        <div><dt>Base URL</dt><dd id="config-base-url">—</dd></div>
+        <div><dt>Model</dt><dd id="config-model">—</dd></div>
+        <div><dt>Credential</dt><dd id="config-credential">Not checked</dd></div>
+      </dl>
+
+      <section class="provider-connect-card" aria-labelledby="provider-connect-title">
+        <h3 class="provider-connect-title" id="provider-connect-title">MANUAL PROVIDER CONNECTION</h3>
+        <div class="provider-form-grid">
+          <label class="provider-field full" for="provider-base-url">BASE URL
+            <input id="provider-base-url" type="url" inputmode="url" placeholder="https://provider.example/v1" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="provider-field full" for="provider-api-key">API KEY
+            <span class="provider-key-row">
+              <input id="provider-api-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="provider-connect-status">
+              <button class="btn" id="provider-key-toggle" type="button">显示</button>
+            </span>
+          </label>
+          <label class="provider-field full" for="provider-model">AVAILABLE MODEL
+            <select id="provider-model" disabled aria-label="选择当前 API 可访问的模型"></select>
+          </label>
+        </div>
+        <div class="provider-actions">
+          <button class="btn primary" id="provider-connect" type="button">CONNECT &amp; LOAD MODELS</button>
+          <button class="btn" id="provider-reset" type="button">USE ENV</button>
+        </div>
+        <p class="provider-status" id="provider-connect-status" data-state="idle" role="status" aria-live="polite">填写 Base URL 与 API Key 后连接。凭据仅保存在本次 Python 进程内存中。</p>
+      </section>
+
+      <div class="budget-grid">
+        <label>MAX STEPS<input id="max-steps" type="number" min="1" max="200" value="12"></label>
+        <label>MODEL CALLS<input id="max-model-calls" type="number" min="1" max="100" value="10"></label>
+        <label>TOOL CALLS<input id="max-tool-calls" type="number" min="1" max="1000" value="20"></label>
+      </div>
+      <label class="verify-toggle"><input id="verification-enabled" type="checkbox" checked> Enable verification &amp; reflection gate</label>
+      <p class="gate-mode-status" id="gate-mode-status">Verify 与 Reflection Gate 已开启。</p>
+    </div>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-message"></span><button id="close-toast" type="button" aria-label="关闭提示">×</button></div>
+  <script src="provider-config.js"></script>
+>>>>>>> edf37eb
   <script src="app.js"></script>
 </body>
 </html>
