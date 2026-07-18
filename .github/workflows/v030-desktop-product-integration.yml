@@ -44,13 +44,11 @@ jobs:
           tests/unit/artifacts
           tests/unit/capabilities
           tests/unit/projects/test_project_knowledge_runtime.py
-      - name: Run v0.29 and desktop compatibility slices
+      - name: Run desktop compatibility selection
         run: >-
           python -m pytest -q
-          tests/unit/test_product_cli.py
-          tests/unit/test_desktop_bridge.py
-          tests/unit/test_desktop_app.py
-          tests/unit/test_desktop_runtime_factory.py
+          -k "desktop or product_cli"
+          tests/unit
       - name: Run correctness lint
         run: >-
           python -m ruff check
