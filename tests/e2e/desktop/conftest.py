@@ -20,6 +20,11 @@ def load_app(page: Page) -> None:
     module referenced by index.html must be inlined. Keeping this loader aligned
     with production prevents false failures and false positives when Desktop UI
     assets are split into modules.
+
+    ``domcontentloaded`` is the correct readiness boundary for this synthetic
+    document. Waiting for ``window.load`` can hang because the real app lifecycle
+    is completed by the explicit ``pywebviewready`` event below, not by a file-host
+    navigation in Playwright.
     """
 
     html = (ASSET_DIR / "index.html").read_text(encoding="utf-8")
@@ -47,7 +52,7 @@ def load_app(page: Page) -> None:
             f'<script src="{name}"></script>',
             f"<script>{javascript}</script>",
         )
-    page.set_content(html, wait_until="load")
+    page.set_content(html, wait_until="domcontentloaded")
     page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
 
 
