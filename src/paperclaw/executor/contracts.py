@@ -31,6 +31,22 @@ TERMINAL_EXECUTOR_STATUSES = frozenset(
     }
 )
 
+_SENSITIVE_FIELD_NAMES = frozenset(
+    {
+        "api_key",
+        "apikey",
+        "token",
+        "access_token",
+        "refresh_token",
+        "password",
+        "secret",
+        "authorization",
+        "cookie",
+        "client_secret",
+        "private_key",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ExecutionRequest:
@@ -63,6 +79,8 @@ class ExecutionRequest:
         object.__setattr__(self, "workspace", str(workspace))
         _ensure_json_object(self.payload, "payload")
         _ensure_json_object(self.metadata, "metadata")
+        _reject_sensitive_fields(self.payload, "payload")
+        _reject_sensitive_fields(self.metadata, "metadata")
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -155,6 +173,21 @@ def _ensure_json_object(value: Mapping[str, Any], name: str) -> None:
         raise ValueError(f"{name} must be JSON-serializable") from exc
     if not isinstance(decoded, dict):
         raise ValueError(f"{name} must serialize to a JSON object")
+
+
+def _reject_sensitive_fields(value: object, path: str) -> None:
+    if isinstance(value, Mapping):
+        for raw_key, child in value.items():
+            key = str(raw_key).strip().lower().replace("-", "_")
+            child_path = f"{path}.{raw_key}"
+            if key in _SENSITIVE_FIELD_NAMES:
+                raise ValueError(
+                    f"executor request contains credential-shaped field: {child_path}"
+                )
+            _reject_sensitive_fields(child, child_path)
+    elif isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            _reject_sensitive_fields(child, f"{path}[{index}]")
 
 
 def _mapping(value: object) -> dict[str, Any]:
