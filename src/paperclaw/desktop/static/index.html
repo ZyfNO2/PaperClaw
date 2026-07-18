@@ -181,9 +181,12 @@
         </div>
         <div class="provider-actions">
           <button class="btn primary" id="provider-connect" type="button">CONNECT &amp; LOAD MODELS</button>
+          <button class="btn" id="use-manual-model" type="button">USE MANUAL MODEL</button>
           <button class="btn" id="provider-reset" type="button">USE ENV</button>
+          <button class="btn destructive" id="disconnect-provider" type="button" disabled>DISCONNECT</button>
         </div>
         <p class="provider-status" id="provider-connect-status" data-state="idle" role="status" aria-live="polite">填写 Base URL 与 API Key 后连接。若服务不支持 /models，可填写可选模型名；凭据仅保存在本次 Python 进程内存中。</p>
+        <div class="settings-note" id="active-config-status" aria-live="polite">ACTIVE · NOT CHECKED</div>
       </section>
 
       <div class="budget-grid">
