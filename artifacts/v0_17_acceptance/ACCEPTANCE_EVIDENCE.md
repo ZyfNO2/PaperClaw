@@ -24,7 +24,7 @@ It remains valid historical evidence for unchanged subsystems, but it is not exa
 |------|--------|
 | Native candidate resolution, stale-window retry, and picker extension | `e29067cff6b05dd536081c22b092e00d0a529d5a` |
 | Desktop bootstrap installation | `a2c044d5647e251120b09abc5e3a7edf3574b8b3` |
-| Focused regression coverage, including stale-window fallback | `d80b5ff2528009aca59d12d01002a2a45b760486` |
+| Focused regression and bootstrap integration coverage | `0142e163cee80702e9334837177fccd65c96a857` |
 | Native revalidation procedure | `c0c00319ffe790c6eac0bb494a13a784bc48d67a` |
 
 Exact-head automated results are recorded in PR #42 after CI completion. Automated tests use fake native-window objects and cannot replace the required real Windows interaction.
