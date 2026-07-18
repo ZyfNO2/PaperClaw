@@ -186,16 +186,15 @@ def canonical_draft_bytes(draft: MessageDraft) -> bytes:
 def normalize_json_object(value: Mapping[str, Any], name: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{name} must be a mapping")
+    _validate_string_keys(value, name)
     try:
         decoded = json.loads(
-            json.dumps(dict(value), ensure_ascii=False, allow_nan=False)
+            json.dumps(thaw_json(value), ensure_ascii=False, allow_nan=False)
         )
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{name} must be JSON-serializable") from exc
     if not isinstance(decoded, dict):
         raise ValueError(f"{name} must serialize to an object")
-    if any(not isinstance(key, str) for key in decoded):
-        raise ValueError(f"{name} keys must be strings")
     return decoded
 
 
@@ -233,6 +232,17 @@ def _topic(value: str) -> str:
     if not isinstance(value, str) or _TOPIC.fullmatch(value) is None:
         raise ValueError(f"topic must match {_TOPIC.pattern}")
     return value
+
+
+def _validate_string_keys(value: object, path: str) -> None:
+    if isinstance(value, Mapping):
+        for raw_key, child in value.items():
+            if not isinstance(raw_key, str):
+                raise ValueError(f"{path} keys must be strings")
+            _validate_string_keys(child, f"{path}.{raw_key}")
+    elif isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            _validate_string_keys(child, f"{path}[{index}]")
 
 
 def _reject_sensitive_fields(value: object, path: str) -> None:
