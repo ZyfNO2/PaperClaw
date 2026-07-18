@@ -12,7 +12,9 @@ EXPECTED_IDS = {
     "summary-status", "model-calls", "tool-calls", "last-sequence", "event-meta",
     "model-label", "verification-status", "verification-summary", "progress-label",
     "progress-bar", "timeline-filters", "timeline", "settings-panel", "close-settings",
-    "config-provider", "config-base-url", "config-model", "config-credential",
+    "config-source", "config-provider", "config-base-url", "config-model",
+    "config-credential", "provider-input", "provider-base-url", "provider-api-key",
+    "toggle-api-key", "connect-provider", "connection-status", "provider-model",
     "max-steps", "max-model-calls", "max-tool-calls", "verification-enabled",
     "toast", "toast-message", "close-toast",
 =======
@@ -126,12 +128,20 @@ def test_html_has_expected_controls_and_security_policy() -> None:
 >>>>>>> edf37eb
     assert '<label class="sr-only" for="task">' in html
     assert 'aria-live="polite"' in html
+<<<<<<< HEAD
     assert html.index('src="provider-config.js"') < html.index('src="app.js"')
     assert "Enable verification &amp; reflection gate" in html
 
 
 <<<<<<< HEAD
 def test_frontend_uses_no_secret_field_persistence_remote_code_or_unsafe_execution() -> None:
+=======
+    assert 'id="provider-api-key" type="password"' in html
+    assert 'id="provider-model" disabled' in html
+
+
+def test_frontend_uses_no_secret_persistence_remote_code_or_unsafe_execution() -> None:
+>>>>>>> f189121
     html = _asset("index.html").lower()
     javascript = _asset("app.js").lower()
     combined = "\n".join((html, javascript))
@@ -151,8 +161,12 @@ def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_executi
         "eval(",
         "new function",
         ".innerhtml",
+        "console.log",
+        "fetch(",
+        "xmlhttprequest",
     ):
         assert forbidden not in combined
+<<<<<<< HEAD
     assert 'id="api-key"' not in html
     assert "api_key" not in javascript
 <<<<<<< HEAD
@@ -161,6 +175,11 @@ def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_executi
     assert "paperclaw_api_key" not in combined
 >>>>>>> edf37eb
     assert "console.log" not in combined
+=======
+    assert javascript.count("api_key") == 1
+    assert 'ui.providerapikey.value = ""' in javascript
+    assert "paperclaw_api_key" not in javascript
+>>>>>>> f189121
     assert not re.search(r"sk-[a-z0-9_-]{16,}", combined, flags=re.IGNORECASE)
     assert 'const theme_storage_key = "paperclaw.theme.v1"' in javascript
     assert "localstorage.setitem(theme_storage_key" in javascript
@@ -195,6 +214,14 @@ def test_browser_transport_is_loopback_token_aware_and_provider_secret_safe() ->
     assert 'invoke("connect_provider"' in provider_javascript
     assert 'invoke("select_provider_model"' in provider_javascript
     assert "localstorage" not in provider_javascript.lower()
+
+
+def test_manual_provider_flow_uses_only_the_python_bridge() -> None:
+    javascript = _asset("app.js")
+    assert "api.connect_provider" in javascript
+    assert "api.select_provider_model" in javascript
+    assert "CONNECT &amp; LOAD MODELS" in _asset("index.html")
+    assert "window.pywebview.api" in javascript
 
 
 def test_uploaded_neobrutalist_visual_language_is_preserved() -> None:

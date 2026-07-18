@@ -38,6 +38,43 @@ def test_shell_navigation_workspace_settings_and_sidebar_controls(page: Page) ->
 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+def test_manual_provider_connects_loads_models_and_clears_key(page: Page) -> None:
+    install_bridge(page)
+    load_app(page)
+
+    page.get_by_role("button", name="Settings", exact=False).click()
+    page.locator("#provider-base-url").fill("https://manual.example/v1")
+    page.locator("#provider-api-key").fill("temporary-secret")
+    page.locator("#connect-provider").click()
+
+    expect(page.locator("#connection-status")).to_have_text("CONNECTED")
+    expect(page.locator("#provider-api-key")).to_have_value("")
+    expect(page.locator("#provider-api-key")).to_have_attribute("type", "password")
+    expect(page.locator("#provider-model")).to_be_enabled()
+    expect(page.locator("#provider-model option")).to_have_count(2)
+    expect(page.locator("#provider-model")).to_have_value("manual-model-a")
+    expect(page.locator("#config-source")).to_have_text("Manual in-memory connection")
+    expect(page.locator("#provider-summary")).to_contain_text("MANUAL")
+
+    connect_calls = page.evaluate("window.__bridgeCalls.connect")
+    assert connect_calls == [
+        {
+            "provider": "openai-compatible",
+            "base_url": "https://manual.example/v1",
+            "api_key": "temporary-secret",
+        }
+    ]
+
+    page.locator("#provider-model").select_option("manual-model-b")
+    expect(page.locator("#config-model")).to_have_text("manual-model-b")
+    expect(page.locator("#model-label")).to_have_text("manual-model-b")
+    expect(page.locator("#provider-summary")).to_contain_text("manual-model-b")
+    assert page.evaluate("window.__bridgeCalls.models") == ["manual-model-b"]
+
+
+>>>>>>> f189121
 def test_execute_flow_uses_env_payload_and_renders_events_and_result(page: Page) -> None:
 =======
 def test_theme_switch_persists_and_browser_mode_receives_selected_theme(

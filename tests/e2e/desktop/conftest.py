@@ -75,10 +75,14 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
         f"""
         (() => {{
 <<<<<<< HEAD
+<<<<<<< HEAD
           const calls = {{ start: [], cancel: 0, select: 0, polls: 0 }};
 =======
           const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
 >>>>>>> edf37eb
+=======
+          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, connect: [], models: [] }};
+>>>>>>> f189121
           let state = {{
             run_id: null, status: 'idle', model_calls: 0, tool_calls: 0,
             last_sequence: 0, terminal: false, verification_status: null,
@@ -102,6 +106,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
                 provider: 'openai-compatible',
                 base_url: 'https://provider.example/v1',
                 model: 'env-model',
+                models: ['env-model'],
                 configured: true,
 <<<<<<< HEAD
                 missing: []
@@ -109,6 +114,28 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
                 missing: [],
                 theme
 >>>>>>> edf37eb
+              }};
+            }},
+            async connect_provider(payload) {{
+              calls.connect.push(JSON.parse(JSON.stringify(payload)));
+              return {{
+                ok: true,
+                provider_source: 'manual',
+                provider: payload.provider,
+                base_url: payload.base_url,
+                models: ['manual-model-a', 'manual-model-b'],
+                selected_model: 'manual-model-a',
+                configured: true
+              }};
+            }},
+            async select_provider_model(model) {{
+              calls.models.push(model);
+              return {{
+                ok: true,
+                provider_source: 'manual',
+                provider: 'openai-compatible',
+                base_url: 'https://manual.example/v1',
+                model
               }};
             }},
             async get_state() {{ return {{ ok: true, state }}; }},
