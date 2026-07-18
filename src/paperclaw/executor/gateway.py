@@ -34,6 +34,10 @@ class GatewayPayloadTooLargeError(GatewayError):
     code = "gateway_payload_too_large"
 
 
+class GatewayCapacityError(GatewayError):
+    code = "gateway_capacity_exhausted"
+
+
 class GatewayTransportError(GatewayError):
     code = "gateway_transport_error"
 
@@ -60,7 +64,10 @@ class GatewayExecutionSnapshot:
             raise ValueError("running gateway snapshot must not contain result")
         if self.state == "terminal" and self.result is None:
             raise ValueError("terminal gateway snapshot requires result")
-        if len(self.request_digest) != 64:
+        if (
+            len(self.request_digest) != 64
+            or any(char not in "0123456789abcdef" for char in self.request_digest.lower())
+        ):
             raise ValueError("request_digest must be sha256 hex")
 
     def to_dict(self) -> dict[str, Any]:
@@ -105,7 +112,14 @@ class _GatewayExecution:
 
 
 class WorkerGatewayService:
-    """Own active execution handles and expose idempotent submit/poll/cancel."""
+    """Own active execution handles and expose idempotent submit/poll/cancel.
+
+    Idempotency is guaranteed for the lifetime of this service process. Used
+    execution IDs are never evicted and therefore can never be restarted within
+    the same process. When capacity is exhausted, new IDs are rejected rather
+    than deleting old idempotency tombstones. Durable idempotency across gateway
+    restarts belongs to the external ownership/store layer introduced later.
+    """
 
     def __init__(
         self,
@@ -114,18 +128,21 @@ class WorkerGatewayService:
         allowed_workspace_roots: list[str | Path] | tuple[str | Path, ...],
         max_request_bytes: int = 1_048_576,
         max_result_bytes: int = 4_194_304,
-        max_terminal_records: int = 1_000,
+        max_execution_records: int = 10_000,
     ) -> None:
-        roots = tuple(Path(root).expanduser().resolve(strict=True) for root in allowed_workspace_roots)
+        roots = tuple(
+            Path(root).expanduser().resolve(strict=True)
+            for root in allowed_workspace_roots
+        )
         if not roots or any(not root.is_dir() for root in roots):
             raise ValueError("allowed_workspace_roots must contain existing directories")
-        if max_request_bytes < 1 or max_result_bytes < 1 or max_terminal_records < 1:
+        if max_request_bytes < 1 or max_result_bytes < 1 or max_execution_records < 1:
             raise ValueError("gateway bounds must be positive")
         self._executor = executor
         self._roots = roots
         self._max_request_bytes = max_request_bytes
         self._max_result_bytes = max_result_bytes
-        self._max_terminal_records = max_terminal_records
+        self._max_execution_records = max_execution_records
         self._executions: dict[str, _GatewayExecution] = {}
         self._lock = threading.RLock()
 
@@ -144,6 +161,11 @@ class WorkerGatewayService:
                         "execution_id is already bound to another request"
                     )
                 return self._snapshot_locked(request.execution_id, existing), False
+
+            if len(self._executions) >= self._max_execution_records:
+                raise GatewayCapacityError(
+                    "gateway execution record capacity is exhausted"
+                )
 
             handle = self._executor.start(request)
             record = _GatewayExecution(
@@ -164,7 +186,12 @@ class WorkerGatewayService:
                 raise GatewayNotFoundError("execution not found")
             return self._snapshot_locked(normalized, record)
 
-    def cancel(self, execution_id: str, *, reason: str = "remote_cancel_requested") -> GatewayExecutionSnapshot:
+    def cancel(
+        self,
+        execution_id: str,
+        *,
+        reason: str = "remote_cancel_requested",
+    ) -> GatewayExecutionSnapshot:
         normalized = _execution_id(execution_id)
         with self._lock:
             record = self._executions.get(normalized)
@@ -195,8 +222,10 @@ class WorkerGatewayService:
             if result is not None:
                 self._store_terminal_locked(record, result)
         state = "terminal" if record.result is not None else "running"
-        pid = record.result.pid if record.result is not None else (
-            record.handle.pid if record.handle is not None else None
+        pid = (
+            record.result.pid
+            if record.result is not None
+            else (record.handle.pid if record.handle is not None else None)
         )
         return GatewayExecutionSnapshot(
             execution_id=execution_id,
@@ -220,7 +249,6 @@ class WorkerGatewayService:
         if record.handle is not None:
             record.handle.close()
             record.handle = None
-        self._evict_terminal_locked()
 
     def _bound_result(self, result: ExecutionResult) -> ExecutionResult:
         encoded = json.dumps(
@@ -246,18 +274,6 @@ class WorkerGatewayService:
         path = Path(workspace).resolve(strict=True)
         if not any(path == root or path.is_relative_to(root) for root in self._roots):
             raise GatewayPolicyError("workspace is outside configured worker roots")
-
-    def _evict_terminal_locked(self) -> None:
-        terminals = [
-            (execution_id, record)
-            for execution_id, record in self._executions.items()
-            if record.result is not None
-        ]
-        if len(terminals) <= self._max_terminal_records:
-            return
-        terminals.sort(key=lambda item: (item[1].updated_at, item[0]))
-        for execution_id, _ in terminals[: len(terminals) - self._max_terminal_records]:
-            self._executions.pop(execution_id, None)
 
 
 class WorkerGatewayTransport(Protocol):
@@ -287,7 +303,12 @@ class DirectWorkerGatewayTransport:
 class RemoteWorkerExecutor:
     """WorkerExecutor implementation backed by a remote gateway transport."""
 
-    def __init__(self, transport: WorkerGatewayTransport, *, poll_seconds: float = 0.05) -> None:
+    def __init__(
+        self,
+        transport: WorkerGatewayTransport,
+        *,
+        poll_seconds: float = 0.05,
+    ) -> None:
         if poll_seconds <= 0:
             raise ValueError("poll_seconds must be positive")
         self._transport = transport
@@ -300,7 +321,9 @@ class RemoteWorkerExecutor:
             # The caller may safely retry the exact same ExecutionRequest because
             # execution_id submit is idempotent. We must not synthesize failure.
             raise
-        return RemoteExecutionHandle(request, self._transport, snapshot, self._poll_seconds)
+        return RemoteExecutionHandle(
+            request, self._transport, snapshot, self._poll_seconds
+        )
 
 
 class RemoteExecutionHandle:
@@ -311,8 +334,13 @@ class RemoteExecutionHandle:
         initial: GatewayExecutionSnapshot,
         poll_seconds: float,
     ) -> None:
-        if initial.execution_id != request.execution_id or initial.task_id != request.task_id:
-            raise GatewayTransportError("gateway returned mismatched execution identity")
+        if (
+            initial.execution_id != request.execution_id
+            or initial.task_id != request.task_id
+        ):
+            raise GatewayTransportError(
+                "gateway returned mismatched execution identity"
+            )
         self.request = request
         self._transport = transport
         self._snapshot = initial
@@ -378,7 +406,11 @@ class RemoteExecutionHandle:
 
 def _canonical_request_bytes(request: ExecutionRequest) -> bytes:
     return json.dumps(
-        request.to_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        request.to_dict(),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
     ).encode("utf-8")
 
 
@@ -390,6 +422,7 @@ def _execution_id(value: str) -> str:
 
 __all__ = [
     "DirectWorkerGatewayTransport",
+    "GatewayCapacityError",
     "GatewayConflictError",
     "GatewayError",
     "GatewayExecutionSnapshot",
