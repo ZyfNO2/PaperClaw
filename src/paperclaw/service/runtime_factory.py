@@ -10,7 +10,6 @@ from uuid import uuid4
 
 from paperclaw.agent.flow import default_registry
 from paperclaw.harness import (
-    AgentRuntimeExecutor,
     ContextOrchestratedAgentRuntimeExecutor,
     QueryEngine,
 )
@@ -25,20 +24,15 @@ from paperclaw.policy import (
     ToolAuthorizationPolicy,
     authorize_registry,
 )
+from paperclaw.tasks.bootstrap import TaskRuntimeComponents
+from paperclaw.tasks.tools import register_task_tools
 from paperclaw.tui.bridge import TUIEventBridge
 
 from .contracts import ServiceRunRequest
 
 
 class ServiceRuntimeFactory:
-    """Build one environment-backed QueryEngine per service submission.
-
-    Context orchestration and deterministic in-run compaction are enabled by
-    default. Personal ``USER.md``/``MEMORY.md`` injection and writes are disabled
-    for the unauthenticated HTTP service unless trusted deployment configuration
-    explicitly enables them. Supplying ``executor_factory`` preserves the legacy
-    injectable boundary used by offline tests and custom runtimes.
-    """
+    """Build one environment-backed QueryEngine per service submission."""
 
     def __init__(
         self,
@@ -48,6 +42,7 @@ class ServiceRuntimeFactory:
         engine_factory: Callable[..., Any] = QueryEngine,
         tool_policy: ToolAuthorizationPolicy | None = None,
         enable_personal_memory: bool | None = None,
+        task_runtime: TaskRuntimeComponents | None = None,
     ) -> None:
         self._model_factory = model_factory
         self._executor_factory = (
@@ -61,6 +56,7 @@ class ServiceRuntimeFactory:
             if enable_personal_memory is None
             else bool(enable_personal_memory)
         )
+        self._task_runtime = task_runtime
 
     def create(
         self,
@@ -69,6 +65,20 @@ class ServiceRuntimeFactory:
     ) -> QueryEngine:
         bridge = TUIEventBridge(event_handler)
         model = self._model_factory()
+        registry = authorize_registry(
+            default_registry(),
+            workspace=request.workspace,
+            policy=self._tool_policy,
+        )
+        if self._task_runtime is not None:
+            # Service deployment explicitly enables durable background tasks. The
+            # child runtime still applies scoped Worker permissions independently.
+            register_task_tools(
+                registry,
+                self._task_runtime.store,
+                self._task_runtime.supervisor,
+            )
+
         if self._context_enabled:
             settings = MemoryRuntimeSettings.from_env()
             if not self._enable_personal_memory:
@@ -79,18 +89,11 @@ class ServiceRuntimeFactory:
                     memory_tool_enabled=False,
                 )
             components = build_memory_runtime(request.workspace, settings=settings)
-            registry = authorize_registry(
-                default_registry(),
-                workspace=request.workspace,
-                policy=self._tool_policy,
-            )
             if (
                 self._enable_personal_memory
                 and components.settings.memory_enabled
                 and components.settings.memory_tool_enabled
             ):
-                # Explicit deployment opt-in is required because the current API
-                # has no authenticated tenant ownership boundary.
                 registry.register(MemoryTool(components.store))
             executor = self._executor_factory(
                 model,
@@ -102,11 +105,6 @@ class ServiceRuntimeFactory:
                 context_source_registry=components.source_registry,
             )
         else:
-            registry = authorize_registry(
-                default_registry(),
-                workspace=request.workspace,
-                policy=self._tool_policy,
-            )
             executor = self._executor_factory(
                 model,
                 request.workspace,

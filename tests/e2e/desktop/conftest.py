@@ -16,9 +16,6 @@ ASSET_DIR = (
 def load_app(page: Page) -> None:
     html = (ASSET_DIR / "index.html").read_text(encoding="utf-8")
     css = (ASSET_DIR / "styles.css").read_text(encoding="utf-8")
-    provider_javascript = (ASSET_DIR / "provider-config.js").read_text(
-        encoding="utf-8"
-    )
     javascript = (ASSET_DIR / "app.js").read_text(encoding="utf-8")
     html = re.sub(
         r'<meta\s+http-equiv="Content-Security-Policy"[^>]*>',
@@ -28,10 +25,6 @@ def load_app(page: Page) -> None:
     )
     html = html.replace(
         '<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>"
-    )
-    html = html.replace(
-        '<script src="provider-config.js"></script>',
-        f"<script>{provider_javascript}</script>",
     )
     html = html.replace(
         '<script src="app.js"></script>', f"<script>{javascript}</script>"
@@ -68,7 +61,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
     page.evaluate(
         f"""
         (() => {{
-          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [], models: [] }};
+          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
           let state = {{
             run_id: null, status: 'idle', model_calls: 0, tool_calls: 0,
             last_sequence: 0, terminal: false, verification_status: null,
@@ -89,45 +82,9 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
                 provider: 'openai-compatible',
                 base_url: 'https://provider.example/v1',
                 model: 'env-model',
-                models: ['env-model'],
-                available_models: ['env-model'],
                 configured: true,
                 missing: [],
                 theme
-              }};
-            }},
-            async connect_provider(payload) {{
-              calls.provider = JSON.parse(JSON.stringify(payload));
-              return {{
-                ok: true,
-                provider_source: 'manual',
-                provider: payload.provider || 'openai-compatible',
-                base_url: payload.base_url,
-                model: 'manual-model-a',
-                selected_model: 'manual-model-a',
-                models: ['manual-model-a', 'manual-model-b'],
-                available_models: ['manual-model-a', 'manual-model-b'],
-                configured: true,
-                model_source: 'discovered',
-                model_verified: true
-              }};
-            }},
-            async select_provider_model(model) {{
-              calls.models.push(model);
-              return {{
-                ok: true, provider_source: 'manual', provider: 'openai-compatible',
-                base_url: 'https://manual.example/v1', model,
-                selected_model: model, models: [model], available_models: [model],
-                configured: true, model_source: 'discovered', model_verified: true
-              }};
-            }},
-            async clear_provider_config() {{ return {{ ok: true, provider_source: 'env' }}; }},
-            async clear_manual_provider() {{
-              return {{
-                ok: true, workspace: '/tmp/paperclaw-workspace', provider_source: 'env',
-                provider: 'openai-compatible', base_url: 'https://provider.example/v1',
-                model: 'env-model', models: ['env-model'], available_models: ['env-model'],
-                configured: true, missing: [], manual_provider_cleared: true
               }};
             }},
             async get_state() {{ return {{ ok: true, state }}; }},
@@ -170,9 +127,12 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
               calls.select += 1;
               return {{ ok: true, workspace: '/tmp/selected-workspace' }};
             }},
-            async set_theme(nextTheme) {{ calls.themes.push(nextTheme); theme = nextTheme; return {{ ok: true, theme }}; }},
-            async open_in_browser(selectedTheme) {{
-              calls.browser.push(selectedTheme);
+            async set_theme(theme) {{
+              calls.themes.push(theme);
+              return {{ ok: true, theme }};
+            }},
+            async open_in_browser(theme) {{
+              calls.browser.push(theme);
               return {{ ok: true, opened: true, mode: 'browser', origin: 'http://127.0.0.1:4455' }};
             }}
           }} }};

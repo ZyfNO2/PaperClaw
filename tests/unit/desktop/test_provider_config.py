@@ -126,10 +126,11 @@ def test_manual_provider_errors_are_typed_and_never_echo_credentials(monkeypatch
         }
     )
 
-    assert response["ok"] is False
-    assert response["error_code"] == "provider_authentication_error"
-    assert response["error_message"] == "Provider rejected the API key while listing models."
-    assert response["active_configuration_preserved"] is False
+    assert response == {
+        "ok": False,
+        "error_code": "provider_authentication_error",
+        "error_message": "Provider rejected the API key while listing models.",
+    }
     assert "manual-secret" not in repr(response)
 
 

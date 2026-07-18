@@ -11,6 +11,8 @@ from paperclaw.memory import build_memory_runtime
 from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.models.reliability import RetryPolicy
 from paperclaw.multiagent.tool import SubagentTaskTool
+from paperclaw.tasks.bootstrap import get_or_create_task_runtime
+from paperclaw.tasks.tools import register_task_tools
 from paperclaw.tui.bridge import TUIEventBridge
 
 from .contracts import DesktopRunRequest
@@ -19,11 +21,7 @@ DesktopEventHandler = Callable[[str, dict], None]
 
 
 class DesktopRuntimeFactory:
-    """Build the runtime from explicit run-scoped desktop values.
-
-    Production defaults enable frozen project/user memory and Context orchestration.
-    Supplying a custom executor keeps the legacy injectable call shape for tests.
-    """
+    """Build one parent runtime and reuse a process-scoped background task pool."""
 
     def __init__(
         self,
@@ -44,8 +42,6 @@ class DesktopRuntimeFactory:
         )
 
     def _create_model(self, request: DesktopRunRequest) -> Any:
-        """Create one provider adapter per parent or subagent execution context."""
-
         return self._model_factory(
             api_key=request.api_key,
             base_url=request.base_url,
@@ -64,11 +60,24 @@ class DesktopRuntimeFactory:
         model = self._create_model(request)
         if self._context_enabled:
             components = build_memory_runtime(request.workspace)
+            model_factory = lambda _agent_id: self._create_model(request)
             components.tool_registry.register(
                 SubagentTaskTool(
-                    lambda _agent_id: self._create_model(request),
+                    model_factory,
                     enable_verification_gate=request.enable_verification_gate,
                 )
+            )
+            task_runtime = get_or_create_task_runtime(
+                model_factory,
+                cache_key=(
+                    f"desktop:{request.provider}:{request.base_url}:{request.model}"
+                ),
+                worker_id="desktop-task-worker",
+            )
+            register_task_tools(
+                components.tool_registry,
+                task_runtime.store,
+                task_runtime.supervisor,
             )
             executor = self._executor_factory(
                 model,
