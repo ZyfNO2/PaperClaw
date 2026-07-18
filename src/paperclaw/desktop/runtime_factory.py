@@ -10,6 +10,7 @@ from paperclaw.harness import ContextOrchestratedAgentRuntimeExecutor, QueryEngi
 from paperclaw.memory import build_memory_runtime
 from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.models.reliability import RetryPolicy
+from paperclaw.multiagent.tool import SubagentTaskTool
 from paperclaw.tui.bridge import TUIEventBridge
 
 from .contracts import DesktopRunRequest
@@ -42,13 +43,10 @@ class DesktopRuntimeFactory:
             lambda: f"desktop-{uuid4().hex[:12]}"
         )
 
-    def create(
-        self,
-        request: DesktopRunRequest,
-        event_handler: DesktopEventHandler,
-    ) -> Any:
-        bridge = TUIEventBridge(event_handler)
-        model = self._model_factory(
+    def _create_model(self, request: DesktopRunRequest) -> Any:
+        """Create one provider adapter per parent or subagent execution context."""
+
+        return self._model_factory(
             api_key=request.api_key,
             base_url=request.base_url,
             model=request.model,
@@ -56,8 +54,22 @@ class DesktopRuntimeFactory:
             provider=request.provider,
             retry_policy=RetryPolicy(max_attempts=3),
         )
+
+    def create(
+        self,
+        request: DesktopRunRequest,
+        event_handler: DesktopEventHandler,
+    ) -> Any:
+        bridge = TUIEventBridge(event_handler)
+        model = self._create_model(request)
         if self._context_enabled:
             components = build_memory_runtime(request.workspace)
+            components.tool_registry.register(
+                SubagentTaskTool(
+                    lambda _agent_id: self._create_model(request),
+                    enable_verification_gate=request.enable_verification_gate,
+                )
+            )
             executor = self._executor_factory(
                 model,
                 request.workspace,

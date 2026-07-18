@@ -120,10 +120,17 @@ def _build_engine_factory(
         )
         from paperclaw.memory import build_memory_runtime
         from paperclaw.models.adapters import OpenAICompatibleModel
+        from paperclaw.multiagent.tool import SubagentTaskTool
 
         model = OpenAICompatibleModel.from_env()
         if session_runtime is None:
             components = build_memory_runtime(resolved_workspace)
+            components.tool_registry.register(
+                SubagentTaskTool(
+                    lambda _agent_id: OpenAICompatibleModel.from_env(),
+                    enable_verification_gate=enable_verification_gate,
+                )
+            )
             executor = ContextOrchestratedAgentRuntimeExecutor(
                 model,
                 resolved_workspace,
