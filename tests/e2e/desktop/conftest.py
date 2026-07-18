@@ -46,32 +46,35 @@ class _QuietStaticHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
 
-def load_app(page: Page) -> None:
-    """Load production Desktop modules over local HTTP with explicit readiness.
+def _stage(name: str) -> None:
+    print(f"PAPERCLAW_PLAYWRIGHT_STAGE={name}", flush=True)
 
-    The test-only same-origin sentinel is appended after the three production
-    scripts. Once it executes, all production modules have been fetched and run,
-    so the harness can dispatch the DOM/pywebview lifecycle explicitly instead of
-    depending on Playwright's navigation lifecycle heuristics.
-    """
+
+def load_app(page: Page) -> None:
+    """Load production Desktop modules over local HTTP with explicit readiness."""
 
     if not _TEST_ORIGIN:
         raise RuntimeError("desktop test HTTP origin is not initialized")
+    _stage("goto-start")
     page.goto(f"{_TEST_ORIGIN}/index.html", wait_until="commit", timeout=5_000)
+    _stage("goto-commit")
     page.wait_for_function(
         "() => window.__paperclawTestAssetsLoaded === true",
         timeout=5_000,
     )
+    _stage("assets-ready")
     page.evaluate(
         """() => {
           document.dispatchEvent(new Event('DOMContentLoaded'));
           window.dispatchEvent(new Event('pywebviewready'));
         }"""
     )
+    _stage("lifecycle-dispatched")
     page.wait_for_function(
         "() => document.querySelector('#workspace-path')?.textContent === '/tmp/paperclaw-workspace'",
         timeout=5_000,
     )
+    _stage("workspace-ready")
 
 
 @pytest.fixture(scope="session")
