@@ -137,8 +137,11 @@ class LSPManager:
     def _client(self, config: LanguageServerConfig) -> LSPClient:
         with self._lock:
             existing = self._clients.get(config.name)
-            if existing is not None:
+            if existing is not None and existing.returncode is None:
                 return existing
+            if existing is not None:
+                existing.close()
+                self._clients.pop(config.name, None)
             client = LSPClient(
                 config.command,
                 workspace=self.workspace,
