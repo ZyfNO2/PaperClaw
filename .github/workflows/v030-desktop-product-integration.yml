@@ -13,6 +13,8 @@ on:
       - "tests/e2e/desktop/**"
       - ".github/workflows/v030-desktop-product-integration.yml"
       - "Plan/PaperClaw_v0.30_Desktop_Product_Integration.md"
+      - "artifacts/v0_30/HANDOFF.md"
+      - "README.md"
   workflow_dispatch:
 
 permissions:
