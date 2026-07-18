@@ -43,19 +43,29 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+          python -m pip install pytest-reportlog
+          python -c "from pathlib import Path; Path('tmp').mkdir(exist_ok=True)"
       - name: Run v0.27 focused acceptance
         run: >-
           python -m pytest -q
+          --report-log=tmp/v027-focused-${{ runner.os }}.jsonl
           tests/unit/message_bus
           tests/unit/capabilities
           tests/unit/projects
           tests/unit/test_product_cli.py
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v027-focused-${{ runner.os }}-${{ github.run_id }}
+          path: tmp/v027-focused-${{ runner.os }}.jsonl
+          retention-days: 30
+          if-no-files-found: warn
       - name: Run context and retrieval compatibility
         run: >-
           python -m pytest -q
-          tests/unit/test_memory_runtime.py
-          tests/unit/test_memory_project_instructions.py
-          tests/unit/test_rag_contextsource_grounding.py
+          -k "memory or project_instruction or rag or retrieval"
+          tests/unit
           tests/integration/test_v0_09_1_rag_demo.py
       - name: Run v0.25-v0.26 regression slices
         run: >-
