@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import subprocess
 import threading
+import traceback
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -123,10 +124,22 @@ class Worker:
             )
         except Exception as exc:  # defensive: single Worker failure must not crash Coordinator
             self._lease_manager.release_all_for_task(task.task_id)
+            location = _exception_location(exc)
+            emit_team_event(
+                self._team_state,
+                "worker.crashed",
+                self.agent_id,
+                task.task_id,
+                error_type=type(exc).__name__,
+                error_location=location,
+            )
+            message = str(exc).strip()
+            detail = f": {message[:300]}" if message else ""
+            where = f" at {location}" if location else ""
             return WorkerResult(
                 task_id=task.task_id,
                 status=WorkerStatus.FAILED,
-                summary=f"Worker crashed: {type(exc).__name__}: {exc}",
+                summary=f"Worker crashed: {type(exc).__name__}{detail}{where}",
                 unresolved_items=["internal worker error"],
             )
 
@@ -351,7 +364,22 @@ def _render_task_context(task: AgentTask) -> str:
             "allowed_paths": task.allowed_paths,
             "writable_paths": task.writable_paths,
             "allowed_tools": task.allowed_tools,
+            "completion_result_contract": [
+                "done.arguments.result must be a self-contained evidence-backed deliverable, not a status-only sentence",
+                "explicitly address every acceptance criterion before proposing done",
+                "for read-only analysis, cite exact inspected module paths and concrete findings derived from tool evidence",
+                "do not claim criteria that were not supported by observed tool results",
+            ],
         },
         ensure_ascii=False,
         sort_keys=True,
     )
+
+
+def _exception_location(exc: Exception) -> str | None:
+    """Return a bounded traceback location without serializing locals or prompts."""
+    frames = traceback.extract_tb(exc.__traceback__)
+    if not frames:
+        return None
+    frame = frames[-1]
+    return f"{Path(frame.filename).name}:{frame.name}:{frame.lineno}"[:300]
