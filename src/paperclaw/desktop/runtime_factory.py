@@ -6,7 +6,8 @@ from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
-from paperclaw.harness import AgentRuntimeExecutor, QueryEngine
+from paperclaw.harness import ContextOrchestratedAgentRuntimeExecutor, QueryEngine
+from paperclaw.memory import build_memory_runtime
 from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.models.reliability import RetryPolicy
 from paperclaw.tui.bridge import TUIEventBridge
@@ -17,22 +18,25 @@ DesktopEventHandler = Callable[[str, dict], None]
 
 
 class DesktopRuntimeFactory:
-    """Build the existing runtime from explicit run-scoped desktop values.
+    """Build the runtime from explicit run-scoped desktop values.
 
-    Dependencies are injectable for offline tests. No environment variable is
-    mutated and ``OpenAICompatibleModel.from_env`` remains untouched.
+    Production defaults enable frozen project/user memory and Context orchestration.
+    Supplying a custom executor keeps the legacy injectable call shape for tests.
     """
 
     def __init__(
         self,
         *,
         model_factory: Callable[..., Any] = OpenAICompatibleModel,
-        executor_factory: Callable[..., Any] = AgentRuntimeExecutor,
+        executor_factory: Callable[..., Any] | None = None,
         engine_factory: Callable[..., Any] = QueryEngine,
         conversation_id_factory: Callable[[], str] | None = None,
     ) -> None:
         self._model_factory = model_factory
-        self._executor_factory = executor_factory
+        self._executor_factory = (
+            executor_factory or ContextOrchestratedAgentRuntimeExecutor
+        )
+        self._context_enabled = executor_factory is None
         self._engine_factory = engine_factory
         self._conversation_id_factory = conversation_id_factory or (
             lambda: f"desktop-{uuid4().hex[:12]}"
@@ -52,12 +56,24 @@ class DesktopRuntimeFactory:
             provider=request.provider,
             retry_policy=RetryPolicy(max_attempts=3),
         )
-        executor = self._executor_factory(
-            model,
-            request.workspace,
-            enable_verification_gate=request.enable_verification_gate,
-            legacy_event_handler=bridge.handle_legacy_event,
-        )
+        if self._context_enabled:
+            components = build_memory_runtime(request.workspace)
+            executor = self._executor_factory(
+                model,
+                request.workspace,
+                registry=components.tool_registry,
+                enable_verification_gate=request.enable_verification_gate,
+                legacy_event_handler=bridge.handle_legacy_event,
+                context_policy=components.context_policy,
+                context_source_registry=components.source_registry,
+            )
+        else:
+            executor = self._executor_factory(
+                model,
+                request.workspace,
+                enable_verification_gate=request.enable_verification_gate,
+                legacy_event_handler=bridge.handle_legacy_event,
+            )
         return self._engine_factory(
             executor,
             conversation_id=self._conversation_id_factory(),

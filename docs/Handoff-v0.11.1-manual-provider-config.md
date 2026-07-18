@@ -1,7 +1,10 @@
 # PaperClaw v0.11.1 Manual Provider Configuration Handoff
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 70e7334
 ## Status
 
 - Repository: `ZyfNO2/PaperClaw`
@@ -10,7 +13,10 @@
 - Base: `amend/v0.11-frontend-playwright` (follow-up to PR #34)
 - Current state: implementation complete; focused offline validation passed; live provider and native Windows acceptance pending
 
+<<<<<<< HEAD
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
 ## Scope
 
 This change adds two desktop controls requested after the v0.11 UI acceptance:
@@ -22,11 +28,16 @@ This change adds two desktop controls requested after the v0.11 UI acceptance:
 
 - `paperclaw.desktop.provider_config` installs a narrow extension before the desktop host starts.
 <<<<<<< HEAD
+<<<<<<< HEAD
 - Credentials remain in Python process memory only and are never returned to JavaScript, snapshots, traces, or exported events.
 =======
 - The API Key necessarily exists briefly in the password input and bridge request. After a successful connection, the input is cleared and the connected credential is retained only in Python process memory.
 - The credential is never returned in public desktop/browser responses and is not persisted to localStorage, sessionStorage, cookies, IndexedDB, traces, or exported events.
 >>>>>>> 18cf7be
+=======
+- The API Key necessarily exists briefly in the password input and bridge request. After a successful connection, the input is cleared and the connected credential is retained only in Python process memory.
+- The credential is never returned in public desktop/browser responses and is not persisted to localStorage, sessionStorage, cookies, IndexedDB, traces, or exported events.
+>>>>>>> 70e7334
 - Model discovery uses `GET {base_url}/models` with a bounded 15 second timeout.
 - Manual configuration overrides ENV for new desktop runs; callers that supply a complete explicit provider remain unchanged.
 - `USE ENV` clears the in-memory manual configuration and restores existing environment-backed behavior.
@@ -47,10 +58,13 @@ This change adds two desktop controls requested after the v0.11 UI acceptance:
 - `tests/unit/desktop/test_runtime_factory.py`
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 ## Verification
 
 Automated verification is expected to include:
 =======
+=======
+>>>>>>> 70e7334
 ## Verification performed
 
 Focused offline validation performed in the available execution environment:
@@ -65,7 +79,10 @@ Focused offline validation performed in the available execution environment:
 The repository workflows are filtered to pull requests targeting `main`. This PR intentionally targets the active v0.11 frontend branch, so GitHub Actions did not execute for this exact head. Full repository regression and Windows package CI therefore remain `NOT VERIFIED` for PR #36.
 
 Recommended validation after PR #34 is merged or the workflow base filter is expanded:
+<<<<<<< HEAD
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
 
 ```bash
 python -m pytest -q tests/unit/desktop/test_provider_config.py

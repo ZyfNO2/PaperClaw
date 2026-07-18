@@ -1,0 +1,119 @@
+name: v0.16 process acceptance
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feat/consolidated-v0.11-v0.15
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v016-process-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  process-acceptance:
+    name: real Uvicorn and restart acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUTF8: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run process acceptance
+        run: |
+          mkdir -p tmp/process_pytest
+          python -m pytest \
+            tests/e2e/service/test_process_acceptance.py \
+            --basetemp=tmp/process_pytest \
+            --report-log=tmp/process_reportlog.jsonl \
+            -q
+
+      - name: Upload process evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v016-process-acceptance-${{ github.run_id }}
+          path: |
+            tmp/process_reportlog.jsonl
+            tmp/process_pytest/**
+          retention-days: 30
+          if-no-files-found: warn
+
+  windows-regression:
+    name: Windows non-live regression
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      TEMP: ${{ github.workspace }}\tmp\pytest_temp
+      TMP: ${{ github.workspace }}\tmp\pytest_temp
+      PYTHONUTF8: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Prepare temp directories
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path tmp\pytest_temp | Out-Null
+          New-Item -ItemType Directory -Force -Path tmp\pytest | Out-Null
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run existing regression
+        shell: pwsh
+        run: |
+          python -m pytest `
+            --basetemp=tmp/pytest `
+            --report-log=tmp/pytest_reportlog.jsonl `
+            --ignore=tests/e2e/service/test_process_acceptance.py `
+            -q `
+            -m "not real_llm"
+
+      - name: Upload regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v016-windows-regression-${{ github.run_id }}
+          path: tmp/pytest_reportlog.jsonl
+          retention-days: 30
+          if-no-files-found: warn
+
+  ruff:
+    name: Ruff correctness gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "ruff>=0.7"
+      - run: >-
+          python -m ruff check src/paperclaw tests
+          --select E9,F63,F7,F82
+          --ignore F821

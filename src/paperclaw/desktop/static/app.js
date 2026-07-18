@@ -6,9 +6,12 @@
   const POLL_INTERVAL_MS = 250;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
   const THEME_STORAGE_KEY = "paperclaw.theme.v1";
   const THEMES = new Map([
     ["neo-brutalist", "Neo Brutalist"],
@@ -21,9 +24,12 @@
   const bridgeClientId = createClientId();
   const httpApi = bootstrap.token ? createHttpApi(bootstrap.token) : null;
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> edf37eb
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
   const ui = {};
   const trace = [];
   let domReady = false;
@@ -39,6 +45,7 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
   let currentTheme = resolveInitialTheme(bootstrap.theme);
   document.documentElement.dataset.theme = currentTheme;
@@ -50,6 +57,10 @@
   let currentTheme = resolveInitialTheme(bootstrap.theme);
   document.documentElement.dataset.theme = currentTheme;
 >>>>>>> 18cf7be
+=======
+  let currentTheme = resolveInitialTheme(bootstrap.theme);
+  document.documentElement.dataset.theme = currentTheme;
+>>>>>>> 70e7334
 
   function byId(id) {
     return document.getElementById(id);
@@ -71,6 +82,7 @@
       "config-credential", "max-steps", "max-model-calls", "max-tool-calls",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
       "settings-panel", "close-settings", "config-source", "config-provider", "config-base-url",
       "config-model", "config-credential", "provider-input", "provider-base-url",
@@ -87,6 +99,10 @@
       "verification-enabled", "theme-select", "open-browser", "toast", "toast-message",
       "close-toast"
 >>>>>>> 18cf7be
+=======
+      "verification-enabled", "theme-select", "open-browser", "toast", "toast-message",
+      "close-toast"
+>>>>>>> 70e7334
     ]) ui[toCamel(id)] = byId(id);
 
     ui.sidebarToggle.addEventListener("click", toggleSidebar);
@@ -99,6 +115,7 @@
     ui.newRunButton.addEventListener("click", resetForNewRun);
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     ui.themeSelect.addEventListener("change", () => applyTheme(ui.themeSelect.value, true));
     ui.openBrowser.addEventListener("click", openInBrowser);
@@ -107,6 +124,10 @@
     ui.themeSelect.addEventListener("change", () => applyTheme(ui.themeSelect.value, true));
     ui.openBrowser.addEventListener("click", openInBrowser);
 >>>>>>> 18cf7be
+=======
+    ui.themeSelect.addEventListener("change", () => applyTheme(ui.themeSelect.value, true));
+    ui.openBrowser.addEventListener("click", openInBrowser);
+>>>>>>> 70e7334
     ui.clearTask.addEventListener("click", clearTask);
     ui.task.addEventListener("input", updateTaskInput);
     ui.task.addEventListener("keydown", onTaskKeydown);
@@ -135,9 +156,12 @@
     bindToolChips();
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
     ui.themeSelect.value = currentTheme;
     if (httpApi) {
       bridgeReady = true;
@@ -146,9 +170,12 @@
       ui.openBrowser.title = "当前已在系统浏览器中运行";
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> edf37eb
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
     updateTaskInput();
     maybeInitialize();
   }
@@ -160,10 +187,13 @@
   function backendApi() {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     return window.pywebview && window.pywebview.api ? window.pywebview.api : null;
 =======
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
     if (window.pywebview && window.pywebview.api) return window.pywebview.api;
     return httpApi;
   }
@@ -171,9 +201,12 @@
   function backendMode() {
     return httpApi && !(window.pywebview && window.pywebview.api) ? "browser" : "desktop";
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> edf37eb
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
   }
 
   function markBridgeReady() {
@@ -196,6 +229,7 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
       showError("gui_dependency_missing", "Desktop bridge does not expose environment defaults.");
 =======
       showError("gui_dependency_missing", "PaperClaw bridge does not expose environment defaults.");
@@ -206,6 +240,9 @@
 =======
       showError("gui_dependency_missing", "PaperClaw bridge does not expose environment defaults.");
 >>>>>>> 18cf7be
+=======
+      showError("gui_dependency_missing", "PaperClaw bridge does not expose environment defaults.");
+>>>>>>> 70e7334
       return;
     }
     try {
@@ -229,6 +266,7 @@
       ui.envBadge.dataset.configured = response.configured ? "true" : "false";
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
       if (!THEMES.has(bootstrap.theme) && response.theme && THEMES.has(response.theme)) {
         applyTheme(response.theme, false);
@@ -242,6 +280,11 @@
         applyTheme(response.theme, false);
       }
 >>>>>>> 18cf7be
+=======
+      if (!THEMES.has(bootstrap.theme) && response.theme && THEMES.has(response.theme)) {
+        applyTheme(response.theme, false);
+      }
+>>>>>>> 70e7334
     } catch (_error) {
       showError("runtime_error", "Model defaults could not be loaded.");
     }
@@ -600,9 +643,12 @@
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
   async function openInBrowser() {
     if (backendMode() === "browser") {
       showToast("当前已在系统浏览器中运行。");
@@ -716,9 +762,12 @@
   }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> edf37eb
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
   function renderWorkspace(value) {
     const normalized = stringValue(value, "not selected");
     const segments = normalized.split(/[\\/]/).filter(Boolean);

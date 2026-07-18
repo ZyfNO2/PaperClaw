@@ -114,16 +114,24 @@ def _build_engine_factory(
         bridge = TUIEventBridge(event_handler)
         # Imports remain below the fallback gate so missing Textual never changes
         # the existing CLI import path or its dependency surface.
-        from paperclaw.harness import AgentRuntimeExecutor, QueryEngine
+        from paperclaw.harness import (
+            ContextOrchestratedAgentRuntimeExecutor,
+            QueryEngine,
+        )
+        from paperclaw.memory import build_memory_runtime
         from paperclaw.models.adapters import OpenAICompatibleModel
 
         model = OpenAICompatibleModel.from_env()
         if session_runtime is None:
-            executor = AgentRuntimeExecutor(
+            components = build_memory_runtime(resolved_workspace)
+            executor = ContextOrchestratedAgentRuntimeExecutor(
                 model,
                 resolved_workspace,
+                registry=components.tool_registry,
                 enable_verification_gate=enable_verification_gate,
                 legacy_event_handler=bridge.handle_legacy_event,
+                context_policy=components.context_policy,
+                context_source_registry=components.source_registry,
             )
         else:
             executor = session_runtime.create_executor(

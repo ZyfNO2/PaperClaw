@@ -13,6 +13,7 @@ dependencies = []
 paperclaw = "paperclaw.entrypoint:main"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 paperclaw-gui = "paperclaw.desktop.app:main"
 paperclaw-api = "paperclaw.service.entrypoint:main"
 paperclaw-research-eval = "paperclaw.research_eval.cli:main"
@@ -24,6 +25,11 @@ paperclaw-gui = "paperclaw.desktop.bootstrap:main"
 paperclaw-api = "paperclaw.service.entrypoint:main"
 paperclaw-research-eval = "paperclaw.research_eval.cli:main"
 >>>>>>> 18cf7be
+=======
+paperclaw-gui = "paperclaw.desktop.bootstrap:main"
+paperclaw-api = "paperclaw.service.entrypoint:main"
+paperclaw-research-eval = "paperclaw.research_eval.cli:main"
+>>>>>>> 70e7334
 
 [project.optional-dependencies]
 tui = [
@@ -49,6 +55,7 @@ dev = [
     "playwright>=1.50,<2",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     "fastapi>=0.115,<1",
     "uvicorn>=0.34,<1",
     "httpx>=0.28,<1",
@@ -59,6 +66,11 @@ dev = [
     "uvicorn>=0.34,<1",
     "httpx>=0.28,<1",
 >>>>>>> 18cf7be
+=======
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.34,<1",
+    "httpx>=0.28,<1",
+>>>>>>> 70e7334
 ]
 
 [tool.setuptools.packages.find]
@@ -73,6 +85,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "real_llm: tests that call a live LLM provider (slow, costly, non-deterministic)",
+    "process_acceptance: tests that launch real service/provider processes and HTTP sockets",
 ]
 
 [tool.ruff]

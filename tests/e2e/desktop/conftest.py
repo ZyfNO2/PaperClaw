@@ -10,6 +10,7 @@ from playwright.sync_api import Browser, Page, sync_playwright
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 ASSET_DIR = Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
 =======
 ASSET_DIR = (
@@ -21,6 +22,11 @@ ASSET_DIR = (
     Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
 )
 >>>>>>> 18cf7be
+=======
+ASSET_DIR = (
+    Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
+)
+>>>>>>> 70e7334
 
 
 def load_app(page: Page) -> None:
@@ -35,11 +41,14 @@ def load_app(page: Page) -> None:
     )
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     html = html.replace('<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>")
     html = html.replace('<script src="app.js"></script>', f"<script>{javascript}</script>")
 =======
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
     html = html.replace(
         '<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>"
     )
@@ -47,9 +56,12 @@ def load_app(page: Page) -> None:
         '<script src="app.js"></script>', f"<script>{javascript}</script>"
     )
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> edf37eb
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
     page.set_content(html, wait_until="load")
     page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
 
@@ -73,6 +85,7 @@ def browser() -> Browser:
 def page(browser: Browser) -> Page:
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     page = browser.new_page(viewport={"width": 1440, "height": 900}, accept_downloads=True)
 =======
     page = browser.new_page(
@@ -84,6 +97,11 @@ def page(browser: Browser) -> Page:
         viewport={"width": 1440, "height": 900}, accept_downloads=True
     )
 >>>>>>> 18cf7be
+=======
+    page = browser.new_page(
+        viewport={"width": 1440, "height": 900}, accept_downloads=True
+    )
+>>>>>>> 70e7334
     yield page
     page.close()
 
@@ -92,6 +110,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
     page.evaluate(
         f"""
         (() => {{
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -105,6 +124,9 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
 =======
           const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
 >>>>>>> 18cf7be
+=======
+          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
+>>>>>>> 70e7334
           let state = {{
             run_id: null, status: 'idle', model_calls: 0, tool_calls: 0,
             last_sequence: 0, terminal: false, verification_status: null,
@@ -114,12 +136,16 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
           let queue = [];
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
           let theme = 'neo-brutalist';
 >>>>>>> edf37eb
 =======
           let theme = 'neo-brutalist';
 >>>>>>> 18cf7be
+=======
+          let theme = 'neo-brutalist';
+>>>>>>> 70e7334
           const autoComplete = {str(auto_complete).lower()};
           window.__bridgeCalls = calls;
           window.__mockState = () => state;
@@ -134,6 +160,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
                 model: 'env-model',
                 models: ['env-model'],
                 configured: true,
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
                 missing: []
@@ -167,6 +194,10 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
                 missing: [],
                 theme
 >>>>>>> 18cf7be
+=======
+                missing: [],
+                theme
+>>>>>>> 70e7334
               }};
             }},
             async get_state() {{ return {{ ok: true, state }}; }},
@@ -210,9 +241,12 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
               return {{ ok: true, workspace: '/tmp/selected-workspace' }};
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
             }},
             async set_theme(theme) {{
               calls.themes.push(theme);
@@ -222,9 +256,12 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
               calls.browser.push(theme);
               return {{ ok: true, opened: true, mode: 'browser', origin: 'http://127.0.0.1:4455' }};
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> edf37eb
 =======
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
             }}
           }} }};
         }})();

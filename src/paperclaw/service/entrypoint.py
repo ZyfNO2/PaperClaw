@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import argparse
 <<<<<<< HEAD
+<<<<<<< HEAD
 from typing import Sequence
 
 from .application import RunApplicationService
 from .fastapi_app import create_app
 =======
+=======
+>>>>>>> 70e7334
 from pathlib import Path
 from typing import Sequence
 
@@ -16,23 +19,50 @@ from paperclaw.durability import SQLiteDurableServiceStore
 
 from .fastapi_app import create_app
 from .production_application import DurableRunApplicationService
+<<<<<<< HEAD
 >>>>>>> 18cf7be
 from .runtime_factory import ServiceRuntimeFactory
 
 
+=======
+from .resilience import TimeoutPolicy
+from .runtime_factory import ServiceRuntimeFactory
+
+
+def _positive_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be numeric") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be positive")
+    return parsed
+
+
+>>>>>>> 70e7334
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="paperclaw-api")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--max-active-runs", type=int, default=4)
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+    parser.add_argument("--lease-seconds", type=_positive_float, default=30.0)
+    parser.add_argument("--heartbeat-seconds", type=_positive_float, default=5.0)
+    parser.add_argument("--queue-timeout-seconds", type=_positive_float, default=300.0)
+    parser.add_argument("--run-timeout-seconds", type=_positive_float, default=600.0)
+>>>>>>> 70e7334
     parser.add_argument(
         "--database",
         default=str(Path.home() / ".paperclaw" / "service.sqlite3"),
         help="SQLite durable service database path",
     )
+<<<<<<< HEAD
 >>>>>>> 18cf7be
+=======
+>>>>>>> 70e7334
     return parser
 
 
@@ -40,6 +70,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.max_active_runs < 1:
         raise SystemExit("--max-active-runs must be positive")
+<<<<<<< HEAD
+=======
+    if args.heartbeat_seconds >= args.lease_seconds:
+        raise SystemExit("--heartbeat-seconds must be less than --lease-seconds")
+>>>>>>> 70e7334
     try:
         import uvicorn
     except ImportError as exc:  # pragma: no cover - optional install
@@ -48,10 +83,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         ) from exc
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     runtime_factory = ServiceRuntimeFactory()
     service = RunApplicationService(
         runtime_factory.create, max_active_runs=args.max_active_runs
 =======
+=======
+>>>>>>> 70e7334
     database_path = Path(args.database).expanduser()
     database_path.parent.mkdir(parents=True, exist_ok=True)
     runtime_factory = ServiceRuntimeFactory()
@@ -60,7 +98,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         runtime_factory.create,
         store,
         max_active_runs=args.max_active_runs,
+<<<<<<< HEAD
 >>>>>>> 18cf7be
+=======
+        lease_seconds=args.lease_seconds,
+        heartbeat_seconds=args.heartbeat_seconds,
+        timeout_policy=TimeoutPolicy(
+            queue_timeout_seconds=args.queue_timeout_seconds,
+            run_timeout_seconds=args.run_timeout_seconds,
+        ),
+>>>>>>> 70e7334
     )
     app = create_app(service)
     try:
