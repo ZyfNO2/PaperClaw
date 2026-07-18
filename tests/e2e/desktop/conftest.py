@@ -14,7 +14,11 @@ ASSET_DIR = (
     Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
 )
 _TEST_ORIGIN = ""
-_TEST_READY_SCRIPT = "__paperclaw_test_ready.js"
+_MARKERS = {
+    "__paperclaw_after_i18n.js": "i18n",
+    "__paperclaw_after_provider.js": "provider",
+    "__paperclaw_after_app.js": "app",
+}
 
 
 class _QuietStaticHandler(SimpleHTTPRequestHandler):
@@ -22,19 +26,32 @@ class _QuietStaticHandler(SimpleHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:
-        if self.path.split("?", 1)[0] == f"/{_TEST_READY_SCRIPT}":
-            body = b"window.__paperclawTestAssetsLoaded = true;"
+        path = self.path.split("?", 1)[0].lstrip("/")
+        marker = _MARKERS.get(path)
+        if marker is not None:
+            body = (
+                "window.__paperclawTestStages = window.__paperclawTestStages || [];"
+                f"window.__paperclawTestStages.push('{marker}');"
+            ).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/javascript; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
             return
-        if self.path.split("?", 1)[0] in {"/", "/index.html"}:
+        if path in {"", "index.html"}:
             html = (ASSET_DIR / "index.html").read_text(encoding="utf-8")
             html = html.replace(
-                "</body>",
-                f'<script src="{_TEST_READY_SCRIPT}"></script></body>',
+                '<script src="i18n.js"></script>',
+                '<script src="i18n.js"></script><script src="__paperclaw_after_i18n.js"></script>',
+            )
+            html = html.replace(
+                '<script src="provider-config.js"></script>',
+                '<script src="provider-config.js"></script><script src="__paperclaw_after_provider.js"></script>',
+            )
+            html = html.replace(
+                '<script src="app.js"></script>',
+                '<script src="app.js"></script><script src="__paperclaw_after_app.js"></script>',
             )
             body = html.encode("utf-8")
             self.send_response(200)
@@ -50,19 +67,26 @@ def _stage(name: str) -> None:
     print(f"PAPERCLAW_PLAYWRIGHT_STAGE={name}", flush=True)
 
 
+def _wait_marker(page: Page, marker: str) -> None:
+    page.wait_for_function(
+        "marker => (window.__paperclawTestStages || []).includes(marker)",
+        arg=marker,
+        timeout=3_000,
+    )
+    _stage(f"after-{marker}")
+
+
 def load_app(page: Page) -> None:
-    """Load production Desktop modules over local HTTP with explicit readiness."""
+    """Load production Desktop modules and identify the exact script boundary."""
 
     if not _TEST_ORIGIN:
         raise RuntimeError("desktop test HTTP origin is not initialized")
     _stage("goto-start")
     page.goto(f"{_TEST_ORIGIN}/index.html", wait_until="commit", timeout=5_000)
     _stage("goto-commit")
-    page.wait_for_function(
-        "() => window.__paperclawTestAssetsLoaded === true",
-        timeout=5_000,
-    )
-    _stage("assets-ready")
+    _wait_marker(page, "i18n")
+    _wait_marker(page, "provider")
+    _wait_marker(page, "app")
     page.evaluate(
         """() => {
           document.dispatchEvent(new Event('DOMContentLoaded'));
