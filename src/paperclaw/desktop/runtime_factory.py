@@ -11,6 +11,7 @@ from paperclaw.memory import build_memory_runtime
 from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.models.reliability import RetryPolicy
 from paperclaw.multiagent.tool import SubagentTaskTool
+from paperclaw.planning.bootstrap import compose_plan_and_skills
 from paperclaw.tasks.bootstrap import get_or_create_task_runtime
 from paperclaw.tasks.tools import register_task_tools
 from paperclaw.tui.bridge import TUIEventBridge
@@ -21,7 +22,7 @@ DesktopEventHandler = Callable[[str, dict], None]
 
 
 class DesktopRuntimeFactory:
-    """Build one parent runtime and reuse a process-scoped background task pool."""
+    """Build one scoped parent runtime and reuse background task workers."""
 
     def __init__(
         self,
@@ -58,6 +59,7 @@ class DesktopRuntimeFactory:
     ) -> Any:
         bridge = TUIEventBridge(event_handler)
         model = self._create_model(request)
+        conversation_id = self._conversation_id_factory()
         if self._context_enabled:
             components = build_memory_runtime(request.workspace)
             model_factory = lambda _agent_id: self._create_model(request)
@@ -79,6 +81,11 @@ class DesktopRuntimeFactory:
                 task_runtime.store,
                 task_runtime.supervisor,
             )
+            components, _plan_controller, _skills = compose_plan_and_skills(
+                components,
+                workspace=request.workspace,
+                scope_id=conversation_id,
+            )
             executor = self._executor_factory(
                 model,
                 request.workspace,
@@ -97,6 +104,6 @@ class DesktopRuntimeFactory:
             )
         return self._engine_factory(
             executor,
-            conversation_id=self._conversation_id_factory(),
+            conversation_id=conversation_id,
             event_handler=bridge.handle_query_event,
         )
