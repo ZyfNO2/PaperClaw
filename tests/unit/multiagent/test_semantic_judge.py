@@ -119,6 +119,28 @@ def test_semantic_judge_retries_only_retriable_provider_failure() -> None:
     assert model.calls == 2
 
 
+def test_semantic_judge_does_not_treat_post_transient_lone_rejection_as_confirmed() -> None:
+    transient = ProviderError(
+        "temporarily unavailable",
+        code="PROVIDER_TEMPORARILY_UNAVAILABLE",
+        retriable=True,
+        status_code=503,
+    )
+    model = SequenceModel(
+        [
+            transient,
+            {"status": "rejected", "reason_code": "missing_path", "summary": "Path is unclear."},
+        ]
+    )
+
+    result = _evaluate(model)
+
+    assert result.status == "inconclusive"
+    assert result.reason_code == "rejection_unconfirmed"
+    assert result.attempt_count == 2
+    assert model.calls == 2
+
+
 def test_semantic_judge_does_not_retry_non_retriable_provider_failure() -> None:
     auth = ProviderError(
         "authentication failed",
