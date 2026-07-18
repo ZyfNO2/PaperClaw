@@ -1,0 +1,92 @@
+name: v0.17 context and long memory
+
+on:
+  pull_request:
+    branches: [feat/v0.16-process-acceptance-recovery]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v017-context-memory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused:
+    name: context and memory focused tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Run focused tests
+        run: >-
+          python -m pytest -q
+          tests/unit/context/test_runtime_history_compaction.py
+          tests/unit/memory
+          tests/unit/service
+          tests/unit/desktop
+          tests/unit/tui
+
+  regression:
+    name: Windows non-live regression
+    runs-on: windows-latest
+    env:
+      TEMP: ${{ github.workspace }}\tmp\pytest_temp
+      TMP: ${{ github.workspace }}\tmp\pytest_temp
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Prepare temp directories
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path tmp\pytest_temp | Out-Null
+          New-Item -ItemType Directory -Force -Path tmp\pytest | Out-Null
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install pytest-reportlog
+      - name: Run regression
+        shell: pwsh
+        run: |
+          python -m pytest `
+            --basetemp=tmp/pytest `
+            --report-log=tmp/v017_reportlog.jsonl `
+            -q `
+            -m "not real_llm and not process_acceptance"
+      - name: Upload regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v017-windows-regression-${{ github.run_id }}
+          path: tmp/v017_reportlog.jsonl
+          retention-days: 30
+          if-no-files-found: warn
+
+  lint:
+    name: Ruff correctness gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "ruff>=0.7"
+      - run: >-
+          python -m ruff check src/paperclaw tests
+          --select E9,F63,F7,F82
+          --ignore F821
