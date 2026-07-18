@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -42,6 +44,17 @@ def _request(
         workspace=str(workspace),
         timeout_seconds=timeout,
     )
+
+
+def _digest(request: ExecutionRequest) -> str:
+    encoded = json.dumps(
+        request.to_dict(),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _service(root: Path, **kwargs) -> WorkerGatewayService:
@@ -175,7 +188,7 @@ class _CancelUncertainTransport:
         return GatewayExecutionSnapshot(
             execution_id=request.execution_id,
             task_id=request.task_id,
-            request_digest="0" * 64,
+            request_digest=_digest(request),
             state="running",
             pid=123,
             created_at=1.0,
@@ -189,6 +202,26 @@ class _CancelUncertainTransport:
     def cancel(self, execution_id: str, reason: str):
         del execution_id, reason
         raise GatewayTransportError("cancel response lost")
+
+
+class _WrongDigestTransport(_CancelUncertainTransport):
+    def submit(self, request: ExecutionRequest):
+        snapshot = super().submit(request)
+        return type(snapshot)(
+            execution_id=snapshot.execution_id,
+            task_id=snapshot.task_id,
+            request_digest="0" * 64,
+            state=snapshot.state,
+            pid=snapshot.pid,
+            created_at=snapshot.created_at,
+            updated_at=snapshot.updated_at,
+        )
+
+
+def test_remote_handle_rejects_snapshot_for_different_request_digest(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    with pytest.raises(GatewayTransportError, match="different execution request"):
+        RemoteWorkerExecutor(_WrongDigestTransport()).start(request)  # type: ignore[arg-type]
 
 
 def test_remote_cancel_transport_uncertainty_never_claims_cancelled(tmp_path: Path) -> None:
