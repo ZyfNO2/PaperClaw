@@ -41,6 +41,7 @@ jobs:
           python -m pytest -q \
             tests/unit/multiagent/test_semantic_judge.py \
             tests/unit/multiagent/test_judge_factory.py \
+            tests/unit/multiagent/test_verification_halt.py \
             tests/unit/multiagent/test_subagent_tool.py \
             tests/unit/multiagent/test_subagent_runtime_integration.py \
             tests/unit/tasks \
@@ -63,11 +64,12 @@ jobs:
           # v0.22 Verification Reliability acceptance
 
           This gate verifies deterministic Verify remains separate from semantic acceptance,
-          semantic rejection confirmation/disagreement behavior, typed Provider/protocol
-          failures, bounded retry, separate judge-model composition, and model-call budget
-          accounting. It is deterministic automated evidence and is not a live Provider test.
-          Ruff uses the repository correctness policy (E9/F63/F7/F82); unrelated style/dead-import
-          cleanup is intentionally outside this release scope.
+          non-proposal cancel/timeout/invalid-output halt routing, semantic rejection
+          confirmation/disagreement behavior, typed Provider/protocol failures, bounded retry,
+          separate judge-model composition, evidence-backed Worker completion contracts, and
+          model-call budget accounting. It is deterministic automated evidence and is not a
+          live Provider test. Ruff uses the repository correctness policy (E9/F63/F7/F82);
+          unrelated style/dead-import cleanup is intentionally outside this release scope.
           EOF
       - uses: actions/upload-artifact@v4
         if: always()
