@@ -10,6 +10,8 @@ from uuid import uuid4
 
 from paperclaw.agent.flow import default_registry
 from paperclaw.harness import ContextOrchestratedAgentRuntimeExecutor, QueryEngine
+from paperclaw.lsp.bootstrap import get_lsp_manager
+from paperclaw.lsp.tools import register_lsp_tools
 from paperclaw.memory import MemoryRuntimeSettings, MemoryTool, build_memory_runtime
 from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.planning.bootstrap import default_plan_database
@@ -82,6 +84,7 @@ class ServiceRuntimeFactory:
         skills = SkillRegistry(workspace=request.workspace)
         registry.register(SkillListTool(skills))
         registry.register(SkillTool(skills))
+        register_lsp_tools(registry, get_lsp_manager(request.workspace))
 
         if self._context_enabled:
             settings = MemoryRuntimeSettings.from_env()
