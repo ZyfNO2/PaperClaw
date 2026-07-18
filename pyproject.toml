@@ -13,6 +13,7 @@ dependencies = []
 paperclaw = "paperclaw.entrypoint:main"
 paperclaw-gui = "paperclaw.desktop.bootstrap:main"
 paperclaw-api = "paperclaw.service.entrypoint:main"
+paperclaw-worker-gateway = "paperclaw.service.worker_gateway_entrypoint:main"
 paperclaw-research-eval = "paperclaw.research_eval.cli:main"
 
 [project.optional-dependencies]
