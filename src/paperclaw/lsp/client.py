@@ -245,6 +245,7 @@ class LSPClient:
         self.language_id = language_id
         self.request_timeout = request_timeout
         self._diagnostics: dict[str, list[dict[str, Any]]] = {}
+        self._diagnostic_generations: dict[str, int] = {}
         self._diagnostic_condition = Condition()
         self._opened_versions: dict[str, int] = {}
         self._transport = JsonRpcTransport(
@@ -274,12 +275,28 @@ class LSPClient:
         ) or {}
         self._transport.notify("initialized", {})
 
+    @property
+    def returncode(self) -> int | None:
+        """Current language-server process status for manager health checks."""
+
+        return self._transport.returncode
+
     def diagnostics(self, path: Path, *, wait_seconds: float = 1.0) -> list[dict[str, Any]]:
-        uri = self.open_document(path)
+        resolved = path.resolve(strict=True)
+        uri = resolved.as_uri()
+        with self._diagnostic_condition:
+            previous_generation = self._diagnostic_generations.get(uri, 0)
+        self.open_document(resolved)
         deadline = time.monotonic() + max(0.0, wait_seconds)
         with self._diagnostic_condition:
-            while uri not in self._diagnostics and time.monotonic() < deadline:
-                self._diagnostic_condition.wait(timeout=deadline - time.monotonic())
+            while (
+                self._diagnostic_generations.get(uri, 0) <= previous_generation
+                and time.monotonic() < deadline
+            ):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._diagnostic_condition.wait(timeout=remaining)
             return list(self._diagnostics.get(uri, []))
 
     def definition(self, path: Path, line: int, character: int) -> Any:
@@ -384,6 +401,7 @@ class LSPClient:
         safe = [item for item in diagnostics if isinstance(item, dict)]
         with self._diagnostic_condition:
             self._diagnostics[uri] = safe
+            self._diagnostic_generations[uri] = self._diagnostic_generations.get(uri, 0) + 1
             self._diagnostic_condition.notify_all()
 
 

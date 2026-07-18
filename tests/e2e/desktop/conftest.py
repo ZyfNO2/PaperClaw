@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
-import re
+from threading import Thread
 
 import pytest
 from playwright.sync_api import Browser, Page, sync_playwright
@@ -11,26 +13,46 @@ from playwright.sync_api import Browser, Page, sync_playwright
 ASSET_DIR = (
     Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
 )
+_TEST_ORIGIN = ""
+
+
+class _QuietStaticHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args) -> None:
+        return
 
 
 def load_app(page: Page) -> None:
-    html = (ASSET_DIR / "index.html").read_text(encoding="utf-8")
-    css = (ASSET_DIR / "styles.css").read_text(encoding="utf-8")
-    javascript = (ASSET_DIR / "app.js").read_text(encoding="utf-8")
-    html = re.sub(
-        r'<meta\s+http-equiv="Content-Security-Policy"[^>]*>',
-        "",
-        html,
-        flags=re.IGNORECASE,
-    )
-    html = html.replace(
-        '<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>"
-    )
-    html = html.replace(
-        '<script src="app.js"></script>', f"<script>{javascript}</script>"
-    )
-    page.set_content(html, wait_until="load")
+    """Navigate to the real modular Desktop assets over local HTTP.
+
+    A real local HTTP origin avoids ``document.write`` and request-routing
+    lifecycle artifacts while preserving the production CSP, stylesheet/script
+    ordering, and browser loading model. The bridge is injected before navigation
+    by ``install_bridge`` and the pywebview lifecycle event is dispatched after
+    the production scripts have bound their listeners.
+    """
+
+    if not _TEST_ORIGIN:
+        raise RuntimeError("desktop test HTTP origin is not initialized")
+    page.goto(f"{_TEST_ORIGIN}/index.html", wait_until="domcontentloaded")
     page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
+
+
+@pytest.fixture(scope="session")
+def desktop_origin() -> str:
+    global _TEST_ORIGIN
+    handler = partial(_QuietStaticHandler, directory=str(ASSET_DIR))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = Thread(target=server.serve_forever, name="paperclaw-playwright-http", daemon=True)
+    thread.start()
+    host, port = server.server_address[:2]
+    _TEST_ORIGIN = f"http://{host}:{port}"
+    try:
+        yield _TEST_ORIGIN
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        _TEST_ORIGIN = ""
 
 
 @pytest.fixture(scope="session")
@@ -49,7 +71,7 @@ def browser() -> Browser:
 
 
 @pytest.fixture
-def page(browser: Browser) -> Page:
+def page(browser: Browser, desktop_origin: str) -> Page:
     page = browser.new_page(
         viewport={"width": 1440, "height": 900}, accept_downloads=True
     )
@@ -58,10 +80,15 @@ def page(browser: Browser) -> Page:
 
 
 def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
-    page.evaluate(
-        f"""
+    """Install the pywebview bridge before the local HTTP page is created."""
+
+    page.add_init_script(
+        script=f"""
         (() => {{
-          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
+          const calls = {{
+            start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [],
+            providerConnect: [], models: [], manual: [], clear: 0
+          }};
           let state = {{
             run_id: null, status: 'idle', model_calls: 0, tool_calls: 0,
             last_sequence: 0, terminal: false, verification_status: null,
@@ -70,26 +97,44 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
           }};
           let queue = [];
           let theme = 'neo-brutalist';
+          let providerState = {{
+            ok: true,
+            workspace: '/tmp/paperclaw-workspace',
+            provider_source: 'env',
+            provider: 'openai-compatible',
+            base_url: 'https://provider.example/v1',
+            model: 'env-model',
+            available_models: ['env-model'],
+            models: ['env-model'],
+            configured: true,
+            model_verified: true,
+            model_source: 'environment',
+            missing: []
+          }};
           const autoComplete = {str(auto_complete).lower()};
+          const clone = value => JSON.parse(JSON.stringify(value));
+          const envProviderState = () => ({{
+            ok: true,
+            workspace: '/tmp/paperclaw-workspace',
+            provider_source: 'env',
+            provider: 'openai-compatible',
+            base_url: 'https://provider.example/v1',
+            model: 'env-model',
+            available_models: ['env-model'],
+            models: ['env-model'],
+            configured: true,
+            model_verified: true,
+            model_source: 'environment',
+            missing: [],
+            manual_provider_cleared: true
+          }});
           window.__bridgeCalls = calls;
           window.__mockState = () => state;
           window.pywebview = {{ api: {{
-            async get_defaults() {{
-              return {{
-                ok: true,
-                workspace: '/tmp/paperclaw-workspace',
-                provider_source: 'env',
-                provider: 'openai-compatible',
-                base_url: 'https://provider.example/v1',
-                model: 'env-model',
-                configured: true,
-                missing: [],
-                theme
-              }};
-            }},
+            async get_defaults() {{ return {{ ...clone(providerState), theme }}; }},
             async get_state() {{ return {{ ok: true, state }}; }},
             async start_run(payload) {{
-              calls.start.push(JSON.parse(JSON.stringify(payload)));
+              calls.start.push(clone(payload));
               state = {{ ...state, status: 'starting', terminal: false, final_result: null }};
               queue.push(
                 {{ kind: 'event', event: {{ sequence: 1, event_type: 'run.started', label: 'run.started' }} }},
@@ -127,13 +172,61 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
               calls.select += 1;
               return {{ ok: true, workspace: '/tmp/selected-workspace' }};
             }},
-            async set_theme(theme) {{
-              calls.themes.push(theme);
+            async set_theme(nextTheme) {{
+              theme = nextTheme;
+              calls.themes.push(nextTheme);
               return {{ ok: true, theme }};
             }},
-            async open_in_browser(theme) {{
-              calls.browser.push(theme);
+            async open_in_browser(nextTheme) {{
+              calls.browser.push(nextTheme);
               return {{ ok: true, opened: true, mode: 'browser', origin: 'http://127.0.0.1:4455' }};
+            }},
+            async connect_provider(payload) {{
+              calls.providerConnect.push(clone(payload));
+              const model = payload.model || 'manual-model-a';
+              providerState = {{
+                ok: true,
+                workspace: '/tmp/paperclaw-workspace',
+                provider_source: 'manual',
+                provider: payload.provider || 'openai-compatible',
+                base_url: payload.base_url,
+                model,
+                selected_model: model,
+                available_models: [model, 'manual-model-a', 'manual-model-b'],
+                models: [model, 'manual-model-a', 'manual-model-b'],
+                configured: true,
+                model_verified: true,
+                model_source: payload.model ? 'manual' : 'discovered',
+                missing: []
+              }};
+              return clone(providerState);
+            }},
+            async select_provider_model(model, allowUnlisted = false) {{
+              if (allowUnlisted) calls.manual.push(model);
+              else calls.models.push(model);
+              providerState = {{
+                ...providerState,
+                ok: true,
+                provider_source: 'manual',
+                model,
+                selected_model: model,
+                available_models: [model, 'manual-model-a', 'manual-model-b'],
+                models: [model, 'manual-model-a', 'manual-model-b'],
+                configured: true,
+                model_source: allowUnlisted ? 'manual' : 'discovered',
+                model_verified: !allowUnlisted
+              }};
+              return clone(providerState);
+            }},
+            async clear_provider_config() {{
+              calls.clear += 1;
+              providerState = envProviderState();
+              return clone(providerState);
+            }},
+            async clear_manual_provider() {{
+              calls.clear += 1;
+              providerState = envProviderState();
+              return clone(providerState);
             }}
           }} }};
         }})();

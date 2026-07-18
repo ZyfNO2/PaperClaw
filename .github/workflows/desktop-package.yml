@@ -7,6 +7,7 @@ on:
       - "src/paperclaw/desktop/**"
       - "src/paperclaw/entrypoint.py"
       - "tests/unit/desktop/**"
+      - "tests/e2e/desktop/**"
       - "scripts/build_desktop.py"
       - "scripts/paperclaw_desktop_entry.py"
       - "docs/handoff/**"
@@ -74,15 +75,23 @@ jobs:
           if (-not (Test-Path $exe -PathType Leaf)) {
             throw "Expected executable not found: $exe"
           }
+          $required = @(
+            "index.html",
+            "styles.css",
+            "provider-config.css",
+            "i18n.js",
+            "provider-config.js",
+            "app.js"
+          )
           $assets = Get-ChildItem "dist\PaperClaw" -Recurse -File |
-            Where-Object { $_.Name -in @("index.html", "styles.css", "app.js") }
+            Where-Object { $_.Name -in $required }
           $names = $assets.Name | Sort-Object -Unique
-          foreach ($required in @("index.html", "styles.css", "app.js")) {
-            if ($required -notin $names) {
-              throw "Packaged static asset not found: $required"
+          foreach ($asset in $required) {
+            if ($asset -notin $names) {
+              throw "Packaged static asset not found: $asset"
             }
           }
-          Write-Host "::notice::onedir executable and static assets produced"
+          Write-Host "::notice::onedir executable and all modular static assets produced"
 
       - name: Upload onedir artifact
         uses: actions/upload-artifact@v4

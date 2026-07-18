@@ -10,6 +10,7 @@
     "provider-connect-status", "active-config-status", "gate-mode-status",
     "toast-message", "public-error"
   ]);
+  const OBSERVER_OPTIONS = {subtree: true, childList: true, characterData: true};
 
   const messages = {
     en: {
@@ -210,6 +211,7 @@
   let locale = resolveInitialLocale();
   let applying = false;
   let observerQueued = false;
+  let observer = null;
   const dynamicLookup = new Map();
   for (const [english, chinese] of dynamicPairs) {
     const pair = {en: english, "zh-CN": chinese};
@@ -270,6 +272,8 @@
     const nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);
     for (const node of nodes) {
+      const parentTag = node.parentElement && node.parentElement.tagName;
+      if (parentTag === "SCRIPT" || parentTag === "STYLE" || parentTag === "NOSCRIPT") continue;
       const raw = node.nodeValue || "";
       const trimmed = raw.trim();
       if (!trimmed) continue;
@@ -320,6 +324,24 @@
     return true;
   }
 
+  function observeDocument() {
+    if (observer && document.body) observer.observe(document.body, OBSERVER_OPTIONS);
+  }
+
+  function scheduleDocumentRefresh() {
+    if (applying || observerQueued) return;
+    observerQueued = true;
+    window.setTimeout(() => {
+      observerQueued = false;
+      if (observer) observer.disconnect();
+      try {
+        applyDocument(document);
+      } finally {
+        observeDocument();
+      }
+    }, 0);
+  }
+
   function bind() {
     const selector = document.getElementById("language-select");
     if (selector) {
@@ -327,15 +349,8 @@
       selector.addEventListener("change", () => setLocale(selector.value, true));
     }
     applyDocument(document);
-    const observer = new MutationObserver(() => {
-      if (applying || observerQueued) return;
-      observerQueued = true;
-      window.queueMicrotask(() => {
-        observerQueued = false;
-        applyDocument(document);
-      });
-    });
-    observer.observe(document.body, {subtree: true, childList: true, characterData: true});
+    observer = new MutationObserver(scheduleDocumentRefresh);
+    observeDocument();
   }
 
   window.PaperClawI18n = {
