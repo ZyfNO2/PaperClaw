@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from paperclaw.context.repository import SQLiteRepository
 from paperclaw.context.session_picker import (
@@ -17,7 +17,8 @@ from paperclaw.context.session_picker import (
     SafeSessionPreview,
     SafeSessionSummary,
 )
-from paperclaw.harness import AgentRuntimeExecutor
+from paperclaw.harness import ContextOrchestratedAgentRuntimeExecutor
+from paperclaw.memory import build_memory_runtime
 from paperclaw.models.base import ChatModel
 
 
@@ -107,13 +108,17 @@ class PersistentSessionRuntime:
         *,
         enable_verification_gate: bool,
         legacy_event_handler,
-    ) -> AgentRuntimeExecutor:
-        return AgentRuntimeExecutor(
+    ) -> Any:
+        components = build_memory_runtime(workspace)
+        return ContextOrchestratedAgentRuntimeExecutor(
             model,
             workspace,
+            registry=components.tool_registry,
             enable_verification_gate=enable_verification_gate,
             repository=self._repository,
             legacy_event_handler=legacy_event_handler,
+            context_policy=components.context_policy,
+            context_source_registry=components.source_registry,
         )
 
     def close(self) -> None:
