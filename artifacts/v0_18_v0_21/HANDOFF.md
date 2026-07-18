@@ -1,13 +1,15 @@
-# PaperClaw v0.18-v0.21 Integration Handoff
+# PaperClaw v0.18-v0.21 Corrective Acceptance Handoff
 
-## Repository and branch
+## Repository and release line
 
 - Repository: `ZyfNO2/PaperClaw`
-- Integration branch: `feat/v0.18-v0.21-release-integration`
-- Base main after post-merge repair: `9f138da1be277b6ae4a0d74a2e1f88c4624d53ed`
-- Integration contains the stacked v0.18 Subagent, v0.19 durable background tasks, v0.20 Plan Mode/Skills, v0.21 LSP work, plus the independent v0.18 Desktop zh-CN/en i18n branch.
+- Main integration commit reviewed: `7b7de6e92eb2325f2fed57785cc0ed53814dd1c0`
+- Corrective branch: `fix/v0.18-v0.21-corrective-acceptance`
+- Corrective PR: #50
+- Exact validated code SHA: `7a9cca7d2c1a3290b857a46009c26318fa04c81d`
+- PR #50 remains Draft and must not be merged until the remaining live-provider acceptance is reviewed.
 
-## Included development
+## Included capabilities
 
 ### v0.18
 
@@ -19,12 +21,12 @@
 - compact structured result returned to the parent;
 - child model/tool usage accounted into the parent budget;
 - Desktop/CLI/TUI integration;
-- Desktop English/Simplified Chinese projection layer with persisted locale and protected browser asset registration.
+- Desktop English/Simplified Chinese projection layer with persisted locale.
 
 ### v0.19
 
 - durable SQLite task store and task state machine;
-- idempotency, dependency blocking, leases, heartbeat, expired-worker recovery;
+- idempotency, dependency blocking, leases, heartbeat and expired-worker recovery;
 - side-effect-aware recovery and `unknown_outcome` terminal handling;
 - bounded background supervisor and Provider concurrency semaphore;
 - task tools: create/get/list/stop/output;
@@ -33,7 +35,7 @@
 
 ### v0.20
 
-- Plan Mode phases and structured plan artifacts;
+- persistent Plan Mode phases and structured plan artifacts;
 - explicit approval before mutating tools can execute;
 - Plan Guard for file writes, edits and shell execution;
 - AskUserQuestion persisted interaction contract;
@@ -43,63 +45,94 @@
 
 ### v0.21
 
-- read-only LSP semantic tool surface: diagnostics, definition, references, symbols and hover;
-- stdio JSON-RPC framing, request IDs, timeout handling, diagnostics notifications and process lifecycle;
+- read-only LSP semantic tools: diagnostics, definition, references, symbols and hover;
+- stdio JSON-RPC framing, request IDs, timeout/error handling and diagnostics notifications;
 - workspace/path confinement;
-- language-server commands sourced from process configuration instead of Agent-controlled arbitrary commands;
-- CLI/Desktop/Service integration;
-- deterministic fake stdio LSP server fixture committed for protocol-level testing.
+- language-server commands sourced from process configuration instead of Agent-controlled commands;
+- dead language-server detection and restart;
+- fresh-generation diagnostics waiting after `didOpen`/`didChange`;
+- deterministic fake stdio protocol coverage plus a real local `python-lsp-server` (`pylsp`) semantic smoke test;
+- CLI/Desktop/Service integration.
 
-## Existing PR lineage
+## Corrective fixes after the main integration review
 
-- PR #43: v0.18 isolated Subagent delegation
-- PR #44: v0.18 Desktop zh-CN/en i18n
-- PR #46: v0.19 durable background task runtime
-- PR #47: v0.20 Plan Mode and Skills
-- PR #48: temporary integration-only merge of PR #44 content into this release integration branch
+1. **LSP diagnostics freshness**
+   - diagnostics now wait for a newer diagnostics generation after a document update instead of returning stale cached results.
 
-All remain separate historical/review units; this integration branch is the consolidated release-validation line.
+2. **LSP process recovery**
+   - cached dead language-server clients are detected and recreated.
 
-## Validation status
+3. **Dedicated v0.21 acceptance**
+   - added fake stdio protocol/tool tests for diagnostics refresh, definition, references, hover, symbols, timeout, confinement and restart;
+   - added real local `pylsp` smoke coverage;
+   - added `.github/workflows/v021-lsp.yml`.
 
-Verified before this integration:
+4. **Desktop i18n event-loop starvation**
+   - replaced self-triggering microtask refresh behavior with coalesced macrotask refresh;
+   - the MutationObserver is disconnected while applying translations and reattached afterward;
+   - SCRIPT/STYLE/NOSCRIPT text is excluded from dynamic translation.
 
-- post-merge conflict-marker hotfix was merged to `main`;
-- conflict-marker scan, full CI, Context/Memory, Desktop Playwright, Desktop package smoke and process acceptance were green on the repaired baseline;
-- v0.18 includes dedicated Fake/offline acceptance and a separate live Mistral workflow so Fake evidence is not represented as real Provider E2E.
+5. **Desktop browser acceptance harness**
+   - Playwright now exercises the real modular static assets through a deterministic local HTTP origin instead of `document.write`/`set_content` inlining;
+   - Provider E2E assertions were aligned with the current DOM/API contract.
 
-Still required on this consolidated branch:
+6. **v0.18 acceptance environment**
+   - the Subagent acceptance gate runs on Windows, matching the PowerShell-backed local command runtime.
 
-1. repository-wide conflict-marker scan;
-2. Ruff and full pytest regression;
-3. Desktop Playwright including language switching and Provider configuration;
-4. v0.18 Subagent offline acceptance;
-5. real Mistral two-worker Subagent acceptance;
-6. v0.19 durable task focused acceptance including restart/recovery/cancel/SSE replay;
-7. v0.20 Plan Mode/Skills focused acceptance;
-8. v0.21 fake-stdio protocol/tool tests and at least one real installed LSP server smoke test;
-9. Windows Desktop native smoke where applicable.
+7. **v0.19 concurrency test reliability**
+   - concurrency is proven by overlapping execution intervals rather than a machine-speed wall-clock threshold.
 
-## Known limits / not verified
+8. **Windows package verification**
+   - package smoke now verifies `index.html`, `styles.css`, `provider-config.css`, `i18n.js`, `provider-config.js`, and `app.js` are present in the packaged onedir artifact.
 
-- Real Mistral Subagent acceptance is pending until a live Provider run succeeds and evidence is captured.
-- v0.21 has the protocol implementation and fake server fixture, but the full dedicated exact-head LSP acceptance workflow and real language-server smoke evidence still need to be completed.
-- This branch is not approved for merge to `main` until consolidated exact-head CI and required real tests are complete.
+## Automated acceptance result
 
-## Next developer steps
+Exact validated code SHA: `7a9cca7d2c1a3290b857a46009c26318fa04c81d`.
 
-1. Work only on `feat/v0.18-v0.21-release-integration` for release-integration fixes.
-2. Do not re-merge the historical stacked branches into this branch.
-3. Add/fix only missing acceptance tests and integration defects discovered by CI.
-4. Preserve explicit distinction between Fake/offline evidence and real Provider/device/LSP evidence.
-5. Keep the integration PR Draft until consolidated acceptance is complete.
+The following GitHub Actions gates all completed with `SUCCESS` on that exact code SHA:
 
-Suggested local validation:
+1. Merge conflict marker scan;
+2. full CI, including Windows non-live pytest and Ruff correctness checks;
+3. Context and long memory acceptance;
+4. v0.16 process acceptance, including real Uvicorn/restart and Windows regression;
+5. v0.18 Subagent offline acceptance on Windows;
+6. v0.19 Durable background tasks acceptance;
+7. v0.20 Plan Mode and Skills acceptance;
+8. v0.21 LSP semantic tools acceptance, including a real local `pylsp` process;
+9. full Desktop Playwright interaction suite, including i18n and Provider flows;
+10. Windows Desktop package smoke with modular asset verification.
 
-```bash
-git grep -n -E '^(<<<<<<<|=======|>>>>>>>)'
-python -m ruff check src tests
-python -m pytest -q
-```
+Automated repository acceptance status: **PASS**.
 
-Status: **PARTIAL / CONSOLIDATED FOR ACCEPTANCE**.
+## Evidence boundaries
+
+The validation layers must remain distinct:
+
+- Fake/scripted-model Subagent tests are deterministic offline acceptance, not live-provider evidence.
+- The v0.21 `pylsp` test is a real local language-server process test, not a fake protocol-only claim.
+- Desktop Playwright is a real Chromium interaction test against local production assets, but it is not a manual native pywebview usability review.
+- Windows package smoke proves the executable/asset package is built and structurally complete; it is not a human UI sign-off.
+
+## Remaining manual/live acceptance
+
+### Real Mistral Subagent acceptance — PENDING
+
+The only release-level validation still intentionally pending is the live Mistral two-worker Subagent scenario.
+
+Workflow:
+
+- `.github/workflows/v018-mistral-live-acceptance.yml`
+- trigger: `workflow_dispatch`
+- required repository secret: `MISTRAL_API_KEY`
+
+A green live workflow must capture evidence from the real Provider call. Offline Fake/ScriptedModel results must not be substituted for this evidence.
+
+Do not commit API keys or copy credentials into repository artifacts.
+
+## Merge recommendation
+
+- Keep PR #50 Draft until the real Mistral workflow has been run and reviewed.
+- Do not re-merge historical PRs #43/#44/#46/#47/#48.
+- After live Mistral acceptance succeeds, review PR #50 once more and merge only the corrective PR.
+
+Status: **AUTOMATED ACCEPTANCE COMPLETE / LIVE MISTRAL PENDING**.
