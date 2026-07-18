@@ -40,12 +40,21 @@ jobs:
           mkdir -p tmp
           python -m pytest -q \
             tests/unit/multiagent/test_semantic_judge.py \
+            tests/unit/multiagent/test_judge_factory.py \
             tests/unit/multiagent/test_subagent_tool.py \
             tests/unit/multiagent/test_subagent_runtime_integration.py \
             tests/unit/tasks \
             --report-log=tmp/v022-verification-report.jsonl
       - name: Run Ruff
-        run: python -m ruff check src/paperclaw/multiagent src/paperclaw/tasks src/paperclaw/desktop tests/unit/multiagent
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m ruff check \
+            src/paperclaw/multiagent \
+            src/paperclaw/tasks \
+            src/paperclaw/desktop \
+            tests/unit/multiagent \
+            2>&1 | tee tmp/v022-ruff.log
       - name: Write acceptance summary
         if: always()
         run: |
@@ -64,5 +73,6 @@ jobs:
           path: |
             tmp/v022-verification-report.jsonl
             tmp/v022-verification-summary.md
+            tmp/v022-ruff.log
           retention-days: 30
           if-no-files-found: warn
