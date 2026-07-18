@@ -7,7 +7,7 @@ def _asset(name: str) -> str:
 
 def test_extended_provider_controls_are_packaged() -> None:
     html = _asset("index.html")
-    javascript = _asset("app.js")
+    javascript = _asset("provider-config.js")
 
     for element_id in (
         "provider-manual-model",
@@ -23,7 +23,9 @@ def test_extended_provider_controls_are_packaged() -> None:
 
 
 def test_extended_provider_controls_do_not_persist_credentials() -> None:
-    combined = "\n".join((_asset("index.html"), _asset("app.js"))).lower()
+    combined = "\n".join(
+        (_asset("index.html"), _asset("provider-config.js"))
+    ).lower()
     for forbidden in (
         "localstorage",
         "sessionstorage",
