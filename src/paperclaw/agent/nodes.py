@@ -60,7 +60,7 @@ class DecideActionNode(Node):
         if prep_res is None:
             if shared.get("stop_reason") == "cancelled":
                 emit_event(shared, "stop", reason="cancelled", step=shared["step_count"])
-                return "done"
+                return "halt"
             # Preserve a stop_reason already set in prep (e.g. "timeout"). Only
             # fall back to "max_steps" when prep returned None without setting a
             # specific reason. Previously this unconditionally overwrote timeout
@@ -68,7 +68,7 @@ class DecideActionNode(Node):
             if not shared.get("stop_reason"):
                 shared["stop_reason"] = "max_steps"
             emit_event(shared, "stop", reason=shared["stop_reason"], step=shared["step_count"])
-            return "done"
+            return "halt"
         shared["step_count"] += 1
         raw = exec_res.content
         # Reasoning is surfaced for debug visibility only; the runtime never treats it as trusted structured state.
@@ -84,7 +84,7 @@ class DecideActionNode(Node):
             if shared["invalid_output_count"] >= self.max_invalid_outputs:
                 shared["stop_reason"] = "invalid_model_output"
                 emit_event(shared, "stop", reason="invalid_model_output", step=shared["step_count"])
-                return "done"
+                return "halt"
             return "retry"
         shared["invalid_output_count"] = 0
         if isinstance(parsed, DoneProposal):
