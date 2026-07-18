@@ -43,16 +43,16 @@ jobs:
           python -m pip install pytest-timeout
           python -m playwright install --with-deps chromium
 
-      - name: Run Desktop readiness diagnostic
+      - name: Run desktop Playwright interactions
         shell: bash
         run: |
           set -o pipefail
           mkdir -p tmp/playwright
-          python -m pytest -s -vv \
-            tests/e2e/desktop/test_console.py::test_shell_navigation_workspace_settings_and_sidebar_controls \
-            --timeout=10 \
+          python -m pytest -q tests/e2e/desktop \
+            --timeout=30 \
             --timeout-method=thread \
             --basetemp=tmp/playwright/pytest \
+            --junitxml=tmp/playwright/junit.xml \
             2>&1 | tee tmp/playwright/pytest.log
 
       - name: Upload Playwright report
