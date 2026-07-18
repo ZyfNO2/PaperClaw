@@ -1,0 +1,38 @@
+name: v0.17 one-shot CLI patch
+
+on:
+  push:
+    branches: [feat/v0.17-context-long-memory]
+    paths:
+      - scripts/apply_v017_cli_patch.py
+      - .github/workflows/v017-cli-self-patch.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, 'apply CLI context integration') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.17-context-long-memory
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply exact patch
+        run: python scripts/apply_v017_cli_patch.py
+      - name: Commit patch
+        run: |
+          if git diff --quiet -- src/paperclaw/cli.py; then
+            echo "CLI already patched"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/paperclaw/cli.py
+          git commit -m "feat(context): apply CLI context integration"
+          git push origin HEAD:feat/v0.17-context-long-memory
