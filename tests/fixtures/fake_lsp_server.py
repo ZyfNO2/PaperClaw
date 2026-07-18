@@ -35,6 +35,31 @@ def response(request_id, result=None, error=None):
     send(payload)
 
 
+def publish_diagnostics(uri, version, code, message):
+    send(
+        {
+            "jsonrpc": "2.0",
+            "method": "textDocument/publishDiagnostics",
+            "params": {
+                "uri": uri,
+                "version": version,
+                "diagnostics": [
+                    {
+                        "range": {
+                            "start": {"line": 0, "character": 0},
+                            "end": {"line": 0, "character": 3},
+                        },
+                        "severity": 2,
+                        "code": code,
+                        "source": "fake-lsp",
+                        "message": message,
+                    }
+                ],
+            },
+        }
+    )
+
+
 def main():
     while True:
         message = read_message()
@@ -58,31 +83,23 @@ def main():
                     }
                 },
             )
-        elif method in {"initialized", "textDocument/didChange"}:
+        elif method == "initialized":
             continue
         elif method == "textDocument/didOpen":
             document = params["textDocument"]
-            send(
-                {
-                    "jsonrpc": "2.0",
-                    "method": "textDocument/publishDiagnostics",
-                    "params": {
-                        "uri": document["uri"],
-                        "version": document.get("version"),
-                        "diagnostics": [
-                            {
-                                "range": {
-                                    "start": {"line": 0, "character": 0},
-                                    "end": {"line": 0, "character": 3},
-                                },
-                                "severity": 2,
-                                "code": "FAKE001",
-                                "source": "fake-lsp",
-                                "message": "deterministic diagnostic",
-                            }
-                        ],
-                    },
-                }
+            publish_diagnostics(
+                document["uri"],
+                document.get("version"),
+                "FAKE001",
+                "deterministic diagnostic",
+            )
+        elif method == "textDocument/didChange":
+            document = params["textDocument"]
+            publish_diagnostics(
+                document["uri"],
+                document.get("version"),
+                "FAKE002",
+                "updated deterministic diagnostic",
             )
         elif method == "textDocument/definition":
             uri = params["textDocument"]["uri"]
