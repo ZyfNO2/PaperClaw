@@ -25,6 +25,8 @@ def create_worker_gateway_app(
     service: WorkerGatewayService,
     *,
     bearer_token: str,
+    max_request_bytes: int = 1_048_576,
+    max_cancel_bytes: int = 16_384,
 ) -> Any:
     try:
         from fastapi import FastAPI, Header, HTTPException, Request
@@ -34,6 +36,8 @@ def create_worker_gateway_app(
         ) from exc
 
     token = _required_token(bearer_token)
+    if max_request_bytes < 1 or max_cancel_bytes < 1:
+        raise ValueError("HTTP gateway request bounds must be positive")
     app = FastAPI(title="PaperClaw Worker Gateway", version="0.24.0")
     app.state.paperclaw_worker_gateway = service
 
@@ -54,9 +58,18 @@ def create_worker_gateway_app(
             return HTTPException(status_code=413, detail={"code": exc.code})
         if isinstance(exc, GatewayPolicyError):
             return HTTPException(status_code=403, detail={"code": exc.code})
-        if isinstance(exc, (ValueError, TypeError)):
+        if isinstance(exc, (ValueError, TypeError, json.JSONDecodeError)):
             return HTTPException(status_code=422, detail={"code": "invalid_request"})
         return HTTPException(status_code=500, detail={"code": "internal_error"})
+
+    async def bounded_json(request: Request, limit: int) -> Mapping[str, Any]:
+        raw = await request.body()
+        if len(raw) > limit:
+            raise GatewayPayloadTooLargeError("HTTP request body exceeds gateway limit")
+        decoded = json.loads(raw.decode("utf-8")) if raw else {}
+        if not isinstance(decoded, Mapping):
+            raise ValueError("request body must be an object")
+        return decoded
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -69,9 +82,7 @@ def create_worker_gateway_app(
     ) -> dict[str, Any]:
         authorize(authorization)
         try:
-            body = await request.json()
-            if not isinstance(body, Mapping):
-                raise ValueError("request body must be an object")
+            body = await bounded_json(request, max_request_bytes)
             execution = ExecutionRequest.from_dict(body)
             snapshot, created = service.submit(execution)
             return {"created": created, "execution": snapshot.to_dict()}
@@ -99,13 +110,10 @@ def create_worker_gateway_app(
     ) -> dict[str, Any]:
         authorize(authorization)
         try:
-            try:
-                body = await request.json()
-            except Exception:
-                body = {}
+            body = await bounded_json(request, max_cancel_bytes)
             reason = (
                 body.get("reason")
-                if isinstance(body, Mapping) and isinstance(body.get("reason"), str)
+                if isinstance(body.get("reason"), str)
                 else "remote_cancel_requested"
             )
             return service.cancel(execution_id, reason=reason[:120]).to_dict()
@@ -126,15 +134,19 @@ class HttpWorkerGatewayTransport:
         *,
         bearer_token: str,
         timeout_seconds: float = 30.0,
+        max_request_bytes: int = 1_048_576,
+        max_response_bytes: int = 4_194_304,
     ) -> None:
         normalized = base_url.rstrip("/")
         if not normalized.startswith(("http://", "https://")):
             raise ValueError("base_url must use http or https")
-        if timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
+        if timeout_seconds <= 0 or max_request_bytes < 1 or max_response_bytes < 1:
+            raise ValueError("HTTP transport bounds must be positive")
         self._base_url = normalized
         self._token = _required_token(bearer_token)
         self._timeout_seconds = timeout_seconds
+        self._max_request_bytes = max_request_bytes
+        self._max_response_bytes = max_response_bytes
 
     def submit(self, request: ExecutionRequest) -> GatewayExecutionSnapshot:
         payload = self._request("POST", "/v1/executions", request.to_dict())
@@ -175,6 +187,8 @@ class HttpWorkerGatewayTransport:
             body = json.dumps(
                 dict(payload), ensure_ascii=False, allow_nan=False, separators=(",", ":")
             ).encode("utf-8")
+            if len(body) > self._max_request_bytes:
+                raise GatewayPayloadTooLargeError("gateway request exceeds client limit")
             headers["Content-Type"] = "application/json"
         request = urllib.request.Request(
             f"{self._base_url}{path}",
@@ -184,10 +198,25 @@ class HttpWorkerGatewayTransport:
         )
         try:
             with urllib.request.urlopen(request, timeout=self._timeout_seconds) as response:
-                raw = response.read()
+                headers_obj = getattr(response, "headers", None)
+                if headers_obj is not None:
+                    content_length = headers_obj.get("Content-Length")
+                    if content_length is not None:
+                        try:
+                            if int(content_length) > self._max_response_bytes:
+                                raise GatewayTransportError(
+                                    "gateway response exceeds client limit"
+                                )
+                        except ValueError:
+                            pass
+                raw = response.read(self._max_response_bytes + 1)
+                if len(raw) > self._max_response_bytes:
+                    raise GatewayTransportError("gateway response exceeds client limit")
         except urllib.error.HTTPError as exc:
             _raise_http_error(exc)
             raise AssertionError("unreachable")
+        except GatewayTransportError:
+            raise
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
             raise GatewayTransportError(
                 "worker gateway transport unavailable", uncertain=True
