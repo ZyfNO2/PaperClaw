@@ -1,0 +1,334 @@
+name: Apply native workspace picker fix
+
+on:
+  push:
+    branches: [feat/v0.17-context-long-memory]
+    paths:
+      - ".github/workflows/apply-native-workspace-picker-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.17-context-long-memory
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Apply focused source, test, and acceptance corrections
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          app_path = Path("src/paperclaw/desktop/app.py")
+          app_text = app_path.read_text(encoding="utf-8")
+          old_method = '''    def select_workspace(self) -> dict[str, object]:
+              window = self._window
+              if window is None:
+                  return DesktopPublicError(
+                      "runtime_error",
+                      "Desktop window is not ready.",
+                  ).to_public_dict()
+              try:
+                  import webview
+
+                  dialog_type = _folder_dialog_type(webview)
+                  selected = window.create_file_dialog(dialog_type)
+              except Exception:
+                  return DesktopPublicError(
+                      "runtime_error",
+                      "Workspace picker could not be opened.",
+                  ).to_public_dict()
+          '''
+          new_method = '''    def select_workspace(self) -> dict[str, object]:
+              try:
+                  import webview
+              except ImportError:
+                  return DesktopPublicError(
+                      "native_window_required",
+                      "Workspace selection requires an active PaperClaw Desktop window.",
+                  ).to_public_dict()
+
+              window = _resolve_native_window(webview, self._window)
+              if window is None:
+                  return DesktopPublicError(
+                      "native_window_required",
+                      "Workspace selection requires an active PaperClaw Desktop window.",
+                  ).to_public_dict()
+              self._window = window
+              try:
+                  _prepare_native_window(window)
+                  dialog_type = _folder_dialog_type(webview)
+                  selected = window.create_file_dialog(dialog_type)
+              except Exception:
+                  return DesktopPublicError(
+                      "runtime_error",
+                      "Workspace picker could not be opened.",
+                  ).to_public_dict()
+          '''
+          if app_text.count(old_method) != 1:
+              raise SystemExit("select_workspace source block changed unexpectedly")
+          app_text = app_text.replace(old_method, new_method)
+
+          helper_anchor = '''def _folder_dialog_type(webview_module: Any) -> Any:
+              """Support pywebview 5 constants and the pywebview 6 enum."""
+          '''
+          helper_block = '''def _resolve_native_window(
+              webview_module: Any,
+              bound_window: Any | None,
+          ) -> Any | None:
+              """Resolve the real pywebview window for native-only operations."""
+
+              if bound_window is not None:
+                  return bound_window
+
+              active_window = getattr(webview_module, "active_window", None)
+              if callable(active_window):
+                  try:
+                      candidate = active_window()
+                  except Exception:
+                      candidate = None
+                  if candidate is not None:
+                      return candidate
+
+              windows = getattr(webview_module, "windows", ())
+              try:
+                  return windows[0] if windows else None
+              except (IndexError, TypeError):
+                  return None
+
+
+          def _prepare_native_window(window: Any) -> None:
+              """Make a hidden or minimized native host visible before opening a dialog."""
+
+              for operation_name in ("show", "restore"):
+                  operation = getattr(window, operation_name, None)
+                  if not callable(operation):
+                      continue
+                  try:
+                      operation()
+                  except Exception:
+                      # Dialog creation remains authoritative; window activation is best-effort.
+                      continue
+
+
+          def _folder_dialog_type(webview_module: Any) -> Any:
+              """Support pywebview 5 constants and the pywebview 6 enum."""
+          '''
+          if app_text.count(helper_anchor) != 1:
+              raise SystemExit("folder dialog helper anchor changed unexpectedly")
+          app_text = app_text.replace(helper_anchor, helper_block)
+          app_path.write_text(app_text, encoding="utf-8")
+
+          test_path = Path("tests/unit/desktop/test_app.py")
+          test_text = test_path.read_text(encoding="utf-8")
+          old_fake = '''class FakeWindow:
+              def __init__(self, result) -> None:
+                  self.result = result
+
+              def create_file_dialog(self, dialog_type):
+                  assert dialog_type == "folder"
+                  return self.result
+          '''
+          new_fake = '''class FakeWindow:
+              def __init__(self, result) -> None:
+                  self.result = result
+                  self.calls = []
+
+              def show(self):
+                  self.calls.append("show")
+
+              def restore(self):
+                  self.calls.append("restore")
+
+              def create_file_dialog(self, dialog_type):
+                  assert dialog_type == "folder"
+                  self.calls.append("dialog")
+                  return self.result
+          '''
+          if test_text.count(old_fake) != 1:
+              raise SystemExit("FakeWindow source block changed unexpectedly")
+          test_text = test_text.replace(old_fake, new_fake)
+
+          old_picker_test = '''    fake_webview = SimpleNamespace(FOLDER_DIALOG="folder")
+              monkeypatch.setitem(sys.modules, "webview", fake_webview)
+              api.bind_window(FakeWindow((str(tmp_path),)))
+              assert api.select_workspace() == {"ok": True, "workspace": str(tmp_path.resolve())}
+
+
+          def test_poll_events_fans_out_to_desktop_and_browser_clients() -> None:
+          '''
+          new_picker_test = '''    fake_webview = SimpleNamespace(FOLDER_DIALOG="folder")
+              monkeypatch.setitem(sys.modules, "webview", fake_webview)
+              fake_window = FakeWindow((str(tmp_path),))
+              api.bind_window(fake_window)
+              assert api.select_workspace() == {"ok": True, "workspace": str(tmp_path.resolve())}
+              assert fake_window.calls == ["show", "restore", "dialog"]
+
+
+          def test_workspace_picker_recovers_existing_native_window(
+              tmp_path, monkeypatch
+          ) -> None:
+              api = app.DesktopAPI(FakeController())
+              fake_window = FakeWindow((str(tmp_path),))
+              fake_webview = SimpleNamespace(
+                  FileDialog=SimpleNamespace(FOLDER="folder"),
+                  active_window=lambda: None,
+                  windows=[fake_window],
+              )
+              monkeypatch.setitem(sys.modules, "webview", fake_webview)
+
+              assert api.select_workspace() == {
+                  "ok": True,
+                  "workspace": str(tmp_path.resolve()),
+              }
+              assert fake_window.calls == ["show", "restore", "dialog"]
+
+
+          def test_workspace_picker_requires_a_native_window(monkeypatch) -> None:
+              api = app.DesktopAPI(FakeController())
+              fake_webview = SimpleNamespace(
+                  FileDialog=SimpleNamespace(FOLDER="folder"),
+                  active_window=lambda: None,
+                  windows=[],
+              )
+              monkeypatch.setitem(sys.modules, "webview", fake_webview)
+
+              response = api.select_workspace()
+
+              assert response["ok"] is False
+              assert response["error_code"] == "native_window_required"
+              assert "active PaperClaw Desktop window" in response["error_message"]
+
+
+          def test_poll_events_fans_out_to_desktop_and_browser_clients() -> None:
+          '''
+          if test_text.count(old_picker_test) != 1:
+              raise SystemExit("workspace picker test anchor changed unexpectedly")
+          test_text = test_text.replace(old_picker_test, new_picker_test)
+          test_path.write_text(test_text, encoding="utf-8")
+
+          evidence_path = Path("artifacts/v0_17_acceptance/ACCEPTANCE_EVIDENCE.md")
+          evidence = evidence_path.read_text(encoding="utf-8")
+          evidence = evidence.replace(
+              "| 1 | Desktop First-Run Provider Config | ✅ PASS | Manual verification with screenshots |",
+              "| 1 | Desktop First-Run Provider Config | ⏳ PENDING | Native pywebview workspace picker was not exercised in the original manual run; revalidation required |",
+          )
+          evidence = evidence.replace(
+              "**ACCEPT** — All automated gates pass, all manual scenarios pass, no open Critical or High issue.",
+              "**HOLD** — Automated gates and web/real-LLM paths passed, but native Desktop workspace selection requires revalidation after the fix documented in `DESKTOP_WORKSPACE_PICKER_REVALIDATION.md`.",
+          )
+          evidence_path.write_text(evidence, encoding="utf-8")
+
+          report_path = Path("artifacts/v0_17_acceptance/RELEASE_ACCEPTANCE_REPORT.md")
+          report = report_path.read_text(encoding="utf-8")
+          notice = '''> [!IMPORTANT]
+          > **Native Desktop revalidation notice (2026-07-18):** the original operator run covered the real LLM and protected browser interface, but did not exercise the native pywebview workspace picker. Scenario 1 and the release recommendation below are historical evidence for candidate `58e7900`; current release status is **HOLD** until `DESKTOP_WORKSPACE_PICKER_REVALIDATION.md` is completed and the Release Owner signs off.
+
+          '''
+          if not report.startswith("# PaperClaw v0.17 Consolidated Release Acceptance Report\n\n"):
+              raise SystemExit("release report header changed unexpectedly")
+          report = report.replace(
+              "# PaperClaw v0.17 Consolidated Release Acceptance Report\n\n",
+              "# PaperClaw v0.17 Consolidated Release Acceptance Report\n\n" + notice,
+              1,
+          )
+          report_path.write_text(report, encoding="utf-8")
+
+          revalidation = Path(
+              "artifacts/v0_17_acceptance/DESKTOP_WORKSPACE_PICKER_REVALIDATION.md"
+          )
+          revalidation.write_text(
+              '''# Native Desktop Workspace Picker Revalidation
+
+          ## Status
+
+          `PENDING REAL NATIVE DESKTOP TEST`
+
+          ## Reported gap
+
+          The original v0.17 acceptance run exercised the real LLM and protected browser interface, but did not exercise the packaged/native pywebview workspace selection path. The browser API can call `select_workspace()`, but that operation ultimately requires a live native pywebview `Window`.
+
+          ## Implemented correction
+
+          - resolve the bound pywebview window first;
+          - recover from `webview.active_window()` or `webview.windows[0]` when binding is absent/stale;
+          - show and restore the native host before opening the folder dialog;
+          - return the typed `native_window_required` error when no native window exists;
+          - preserve pywebview 5 and 6 folder-dialog compatibility.
+
+          ## Automated evidence
+
+          - focused unit coverage verifies bound-window selection;
+          - focused unit coverage verifies recovery from the pywebview window registry;
+          - focused unit coverage verifies a typed failure without a native window;
+          - these tests use fakes and do **not** constitute a real native GUI acceptance result.
+
+          ## Required local acceptance
+
+          On Windows, from the PR branch:
+
+          ```powershell
+          python -m pip install -e ".[gui,dev]"
+          python -m pytest -q tests/unit/desktop/test_app.py tests/unit/desktop/test_static_assets.py
+          paperclaw gui
+          ```
+
+          In the native PaperClaw window:
+
+          1. Click the workspace card or **Select Workspace**.
+          2. Confirm the native folder dialog appears in front of the PaperClaw window.
+          3. Select a real workspace containing a valid `.env`.
+          4. Confirm the displayed workspace path updates to the selected directory.
+          5. Start one real-LLM run and confirm it reaches a terminal state.
+          6. Open protected browser mode and repeat workspace selection; confirm the native PaperClaw window is restored and the folder dialog appears.
+          7. Cancel the folder dialog once; confirm no public error is shown and the previous workspace remains selected.
+
+          ## Pass criteria
+
+          - both native-window and protected-browser triggers open one visible native folder dialog;
+          - selected absolute path is reflected in the UI;
+          - cancellation is non-destructive;
+          - no `native_window_required`, `runtime_error`, hidden dialog, or frozen UI occurs while the native app is running;
+          - a real-LLM run succeeds using the selected workspace.
+
+          ## Return evidence
+
+          Return the console output, a screenshot of the native dialog in front of PaperClaw, the final UI state, and any local diagnostic log under `~/.paperclaw/` if a failure occurs.
+          ''',
+              encoding="utf-8",
+          )
+
+          Path(".github/workflows/apply-native-workspace-picker-fix.yml").unlink()
+          PY
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run focused regression
+        run: |
+          python -m pytest -q tests/unit/desktop/test_app.py
+          python -m ruff check src/paperclaw/desktop/app.py tests/unit/desktop/test_app.py \
+            --select E9,F63,F7,F82 --ignore F821
+
+      - name: Commit verified fix to PR branch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(desktop): restore native workspace picker"
+          git push origin HEAD:feat/v0.17-context-long-memory
