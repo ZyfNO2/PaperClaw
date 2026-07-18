@@ -48,7 +48,7 @@ def test_compaction_keeps_full_audit_history_but_bounds_prompt_view(tmp_path: Pa
     view = build_runtime_history_view(
         shared,
         policy=RuntimeCompactionPolicy(
-            trigger_tokens=500,
+            trigger_tokens=1_200,
             target_tokens=900,
             recent_entries=3,
         ),
@@ -67,7 +67,9 @@ def test_compaction_keeps_full_audit_history_but_bounds_prompt_view(tmp_path: Pa
 
 def test_prompt_switches_to_summary_and_emits_auditable_event(tmp_path: Path) -> None:
     old_payload = "OLD-EVIDENCE-" + "q" * 2_000 + "-SHOULD-NOT-BE-IN-PROMPT"
-    history = [_entry(1, output=old_payload)] + [_entry(index) for index in range(2, 10)]
+    history = [_entry(1, output=old_payload)] + [
+        _entry(index) for index in range(2, 18)
+    ]
     shared = _shared(tmp_path, history)
 
     prompt = build_prompt(shared, ToolRegistry())
@@ -95,7 +97,7 @@ def test_oversized_recent_output_is_bounded_with_hash_reference(tmp_path: Path) 
     view = build_runtime_history_view(
         shared,
         policy=RuntimeCompactionPolicy(
-            trigger_tokens=500,
+            trigger_tokens=2_000,
             target_tokens=1_500,
             recent_entries=3,
             max_recent_output_chars=500,
