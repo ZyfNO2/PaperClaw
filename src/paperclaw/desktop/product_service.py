@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -16,7 +17,8 @@ from paperclaw.projects import (
 from .contracts import DesktopPublicError
 
 _MAX_ARTIFACT_ROWS = 100
-_MAX_ARTIFACT_REVISIONS = 500
+_MAX_ARTIFACT_REVISIONS = 100
+_MAX_PUBLIC_JSON_BYTES = 1_048_576
 
 
 class DesktopProductService:
@@ -38,63 +40,69 @@ class DesktopProductService:
             )
         except ValueError as exc:
             raise DesktopPublicError("validation_error", str(exc)) from exc
-        return {"ok": True, "catalog": payload}
+        return self._public({"ok": True, "catalog": payload})
 
     def get_project_status(self, workspace: str) -> dict[str, object]:
         root = self._workspace(workspace)
         store = ProjectManifestStore(root)
         if not store.exists:
-            return {
-                "ok": True,
-                "project": {
-                    "state": "absent",
-                    "workspace": str(root),
-                    "manifest_path": str(store.path),
-                    "manifest": None,
-                    "validation": None,
-                    "index": None,
-                },
-            }
+            return self._public(
+                {
+                    "ok": True,
+                    "project": {
+                        "state": "absent",
+                        "workspace": str(root),
+                        "manifest_path": str(store.path),
+                        "manifest": None,
+                        "validation": None,
+                        "index": None,
+                    },
+                }
+            )
         try:
             manifest = store.load()
             validation = store.validate(manifest)
             index = inspect_project_index(store, manifest)
         except (OSError, ValueError) as exc:
-            return {
-                "ok": True,
-                "project": {
-                    "state": "invalid",
-                    "workspace": str(root),
-                    "manifest_path": str(store.path),
-                    "manifest": None,
-                    "validation": {
-                        "ok": False,
-                        "issues": [
-                            {
-                                "code": "manifest_invalid",
-                                "message": self._bounded(str(exc), 500),
-                                "path": ".paperclaw/project.json",
-                                "severity": "error",
-                            }
-                        ],
+            return self._public(
+                {
+                    "ok": True,
+                    "project": {
+                        "state": "invalid",
+                        "workspace": str(root),
+                        "manifest_path": str(store.path),
+                        "manifest": None,
+                        "validation": {
+                            "ok": False,
+                            "issues": [
+                                {
+                                    "code": "manifest_invalid",
+                                    "message": self._bounded(str(exc), 500),
+                                    "path": ".paperclaw/project.json",
+                                    "severity": "error",
+                                }
+                            ],
+                        },
+                        "index": None,
                     },
-                    "index": None,
-                },
-            }
+                }
+            )
         state = "valid" if validation.ok else "invalid"
         if validation.ok and manifest.knowledge_paths:
             state = "current" if index.current else index.reason
-        return {
-            "ok": True,
-            "project": {
-                "state": state,
-                "workspace": str(root),
-                "manifest_path": str(store.path),
-                "manifest": manifest.to_dict(),
-                "validation": validation.to_dict(),
-                "index": index.to_dict(),
-            },
-        }
+        return self._public(
+            {
+                "ok": True,
+                "project": {
+                    "state": state,
+                    "workspace": str(root),
+                    "manifest_path": str(store.path),
+                    "manifest": manifest.to_dict(),
+                    "validation": validation.to_dict(),
+                    "index": index.to_dict(),
+                },
+            }
+        )
 
     def refresh_project_index(self, workspace: str) -> dict[str, object]:
         root = self._workspace(workspace)
@@ -128,11 +136,13 @@ class DesktopProductService:
                 "project_refresh_failed",
                 self._bounded(str(exc), 500),
             ) from exc
-        return {
-            "ok": True,
-            "rebuilt": rebuilt,
-            "knowledge": snapshot.to_dict(),
-        }
+        return self._public(
+            {
+                "ok": True,
+                "rebuilt": rebuilt,
+                "knowledge": snapshot.to_dict(),
+            }
+        )
 
     def list_artifacts(
         self,
@@ -153,28 +163,34 @@ class DesktopProductService:
                 "validation_error", "Artifact limit must be an integer."
             )
         limit = min(_MAX_ARTIFACT_ROWS, max(1, limit))
+        artifact_type = self._optional_identifier(
+            values.get("artifact_type"), "artifact_type"
+        )
+        project_id = self._optional_identifier(
+            values.get("project_id"), "project_id"
+        )
         store = self._existing_artifact_store(root)
         if store is None:
             return {"ok": True, "count": 0, "artifacts": []}
         try:
             artifacts = store.list_artifacts(
-                artifact_type=self._optional_identifier(
-                    values.get("artifact_type"), "artifact_type"
-                ),
-                project_id=self._optional_identifier(
-                    values.get("project_id"), "project_id"
-                ),
+                artifact_type=artifact_type,
+                project_id=project_id,
                 limit=limit,
             )
+        except DesktopPublicError:
+            raise
         except (OSError, RuntimeError, ValueError) as exc:
             raise DesktopPublicError(
                 "artifact_list_failed", self._bounded(str(exc), 500)
             ) from exc
-        return {
-            "ok": True,
-            "count": len(artifacts),
-            "artifacts": [item.to_dict() for item in artifacts],
-        }
+        return self._public(
+            {
+                "ok": True,
+                "count": len(artifacts),
+                "artifacts": [self._artifact_summary(item) for item in artifacts],
+            }
+        )
 
     def get_artifact(self, workspace: str, artifact_id: str) -> dict[str, object]:
         root = self._workspace(workspace)
@@ -186,6 +202,8 @@ class DesktopProductService:
             bundle = store.get_bundle(identifier)
         except ArtifactNotFoundError as exc:
             raise DesktopPublicError("artifact_not_found", "Artifact was not found.") from exc
+        except DesktopPublicError:
+            raise
         except (OSError, RuntimeError, ValueError) as exc:
             raise DesktopPublicError(
                 "artifact_read_failed", self._bounded(str(exc), 500)
@@ -195,7 +213,7 @@ class DesktopProductService:
                 "artifact_too_large",
                 "Artifact revision history exceeds the desktop display limit.",
             )
-        return {"ok": True, "bundle": bundle.to_dict()}
+        return self._public({"ok": True, "bundle": bundle.to_dict()})
 
     def export_artifact(
         self,
@@ -219,27 +237,34 @@ class DesktopProductService:
             raise DesktopPublicError(
                 "validation_error", "overwrite must be a boolean."
             )
+        path = (
+            self._relative_path(relative_path)
+            if relative_path is not None
+            else None
+        )
         store = self._existing_artifact_store(root)
         if store is None:
             raise DesktopPublicError("artifact_not_found", "Artifact was not found.")
         try:
             revision = store.get_revision(identifier, revision_number)
-            path = (
-                self._relative_path(relative_path)
-                if relative_path is not None
-                else self._default_export_path(identifier, revision.revision_number, revision.media_type)
+            resolved_path = path or self._default_export_path(
+                identifier,
+                revision.revision_number,
+                revision.media_type,
             )
             export_root = root / ".paperclaw" / "exports"
             export_root.mkdir(parents=True, exist_ok=True)
             exported = store.export_revision(
                 identifier,
                 export_root,
-                path,
+                resolved_path,
                 revision_number=revision.revision_number,
                 overwrite=overwrite,
             )
         except ArtifactNotFoundError as exc:
             raise DesktopPublicError("artifact_not_found", "Artifact was not found.") from exc
+        except DesktopPublicError:
+            raise
         except FileExistsError as exc:
             raise DesktopPublicError(
                 "artifact_export_exists",
@@ -249,31 +274,47 @@ class DesktopProductService:
             raise DesktopPublicError(
                 "artifact_export_failed", self._bounded(str(exc), 500)
             ) from exc
-        return {
-            "ok": True,
-            "artifact_id": identifier,
-            "revision_number": revision.revision_number,
-            "exported_path": str(exported),
-            "workspace_relative_path": exported.relative_to(root).as_posix(),
-        }
+        return self._public(
+            {
+                "ok": True,
+                "artifact_id": identifier,
+                "revision_number": revision.revision_number,
+                "exported_path": str(exported),
+                "workspace_relative_path": exported.relative_to(root).as_posix(),
+            }
+        )
 
     def get_overview(self, workspace: str) -> dict[str, object]:
-        project = self.get_project_status(workspace)["project"]
-        artifacts = self.list_artifacts(workspace, {"limit": 10})
+        root = self._workspace(workspace)
+        project = self.get_project_status(str(root))["project"]
+        store = self._existing_artifact_store(root)
+        if store is None:
+            all_artifacts = ()
+        else:
+            try:
+                all_artifacts = store.list_artifacts(limit=5_000)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise DesktopPublicError(
+                    "artifact_list_failed", self._bounded(str(exc), 500)
+                ) from exc
         catalog = default_capability_catalog()
         maturity_counts: dict[str, int] = {}
         for item in catalog.capabilities:
             maturity_counts[item.maturity] = maturity_counts.get(item.maturity, 0) + 1
-        return {
-            "ok": True,
-            "overview": {
-                "project": project,
-                "artifact_count": artifacts["count"],
-                "recent_artifacts": artifacts["artifacts"],
-                "capability_count": len(catalog.capabilities),
-                "capability_maturity": maturity_counts,
-            },
-        }
+        return self._public(
+            {
+                "ok": True,
+                "overview": {
+                    "project": project,
+                    "artifact_count": len(all_artifacts),
+                    "recent_artifacts": [
+                        self._artifact_summary(item) for item in all_artifacts[:10]
+                    ],
+                    "capability_count": len(catalog.capabilities),
+                    "capability_maturity": maturity_counts,
+                },
+            }
+        )
 
     @staticmethod
     def _workspace(value: str) -> Path:
@@ -338,9 +379,14 @@ class DesktopProductService:
             )
         normalized = value.strip().replace("\\", "/")
         parts = normalized.split("/")
-        if normalized.startswith("/") or ".." in parts or any(part in {"", "."} for part in parts):
+        if (
+            normalized.startswith("/")
+            or ".." in parts
+            or any(part in {"", "."} for part in parts)
+        ):
             raise DesktopPublicError(
-                "validation_error", "Export path must stay inside the workspace export directory."
+                "validation_error",
+                "Export path must stay inside the workspace export directory.",
             )
         return normalized
 
@@ -357,6 +403,40 @@ class DesktopProductService:
             "text/html": ".html",
         }.get(media_type, ".bin")
         return f"{artifact_id}-r{revision_number}{suffix}"
+
+    @staticmethod
+    def _artifact_summary(item: Any) -> dict[str, object]:
+        source = item.source.to_dict()
+        return {
+            "artifact_id": item.artifact_id,
+            "artifact_type": item.artifact_type,
+            "title": item.title,
+            "created_at": item.created_at,
+            "updated_at": item.updated_at,
+            "latest_revision_number": item.latest_revision_number,
+            "source": source,
+        }
+
+    @staticmethod
+    def _public(payload: dict[str, object]) -> dict[str, object]:
+        try:
+            encoded = json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise DesktopPublicError(
+                "runtime_error", "Desktop product response is not serializable."
+            ) from exc
+        if len(encoded) > _MAX_PUBLIC_JSON_BYTES:
+            raise DesktopPublicError(
+                "response_too_large",
+                "Desktop product response exceeds the public response limit.",
+            )
+        return payload
 
     @staticmethod
     def _bounded(value: str, limit: int) -> str:
