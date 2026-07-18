@@ -2,65 +2,53 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import re
+from urllib.parse import urlparse
 
 import pytest
-from playwright.sync_api import Browser, Page, sync_playwright
+from playwright.sync_api import Browser, Page, Route, sync_playwright
 
 
 ASSET_DIR = (
     Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
 )
+TEST_ORIGIN = "http://paperclaw.test"
+_CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+}
 
 
 def load_app(page: Page) -> None:
-    """Load production Desktop assets without depending on synthetic load timing.
+    """Serve the real modular Desktop assets through a deterministic HTTP origin.
 
-    ``page.set_content`` uses ``document.write``. The real pywebview app is not
-    bootstrapped by a normal HTTP navigation, so waiting for browser ``load`` or
-    ``DOMContentLoaded`` inside this synthetic harness can deadlock. A sentinel
-    appended after all inlined production scripts gives us an explicit asset
-    readiness boundary; we then dispatch the same DOM/pywebview lifecycle events
-    that the application consumes.
+    ``page.set_content`` is implemented with ``document.write`` and deadlocks with
+    this application's lifecycle/mutation observers. Routing the production files
+    keeps CSP, stylesheet/script ordering and browser loading semantics close to
+    the real Desktop/browser host while avoiding external network access.
     """
 
-    html = (ASSET_DIR / "index.html").read_text(encoding="utf-8")
-    styles = {
-        name: (ASSET_DIR / name).read_text(encoding="utf-8")
-        for name in ("styles.css", "provider-config.css")
-    }
-    scripts = {
-        name: (ASSET_DIR / name).read_text(encoding="utf-8")
-        for name in ("i18n.js", "provider-config.js", "app.js")
-    }
-    html = re.sub(
-        r'<meta\s+http-equiv="Content-Security-Policy"[^>]*>',
-        "",
-        html,
-        flags=re.IGNORECASE,
-    )
-    for name, css in styles.items():
-        html = html.replace(
-            f'<link rel="stylesheet" href="{name}">',
-            f"<style>{css}</style>",
+    def serve(route: Route) -> None:
+        path = urlparse(route.request.url).path
+        relative = "index.html" if path in {"", "/"} else path.lstrip("/")
+        candidate = (ASSET_DIR / relative).resolve()
+        try:
+            candidate.relative_to(ASSET_DIR.resolve())
+        except ValueError:
+            route.fulfill(status=403, body="forbidden")
+            return
+        if not candidate.is_file():
+            route.fulfill(status=404, body="not found")
+            return
+        route.fulfill(
+            status=200,
+            body=candidate.read_bytes(),
+            content_type=_CONTENT_TYPES.get(candidate.suffix.lower(), "application/octet-stream"),
         )
-    for name, javascript in scripts.items():
-        html = html.replace(
-            f'<script src="{name}"></script>',
-            f"<script>{javascript}</script>",
-        )
-    html = html.replace(
-        "</body>",
-        "<script>window.__paperclawTestAssetsLoaded = true;</script></body>",
-    )
-    page.set_content(html, wait_until="commit")
-    page.wait_for_function("() => window.__paperclawTestAssetsLoaded === true")
-    page.evaluate(
-        """() => {
-          document.dispatchEvent(new Event('DOMContentLoaded'));
-          window.dispatchEvent(new Event('pywebviewready'));
-        }"""
-    )
+
+    page.route(f"{TEST_ORIGIN}/**", serve)
+    page.goto(f"{TEST_ORIGIN}/index.html", wait_until="domcontentloaded")
+    page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
 
 
 @pytest.fixture(scope="session")
@@ -88,8 +76,10 @@ def page(browser: Browser) -> Page:
 
 
 def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
-    page.evaluate(
-        f"""
+    """Install the pywebview bridge before the routed page is created."""
+
+    page.add_init_script(
+        script=f"""
         (() => {{
           const calls = {{
             start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [],
@@ -119,7 +109,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
           }};
           const autoComplete = {str(auto_complete).lower()};
           const clone = value => JSON.parse(JSON.stringify(value));
-          const envProviderState = () => ({{
+          const envProviderState = () => ({
             ok: true,
             workspace: '/tmp/paperclaw-workspace',
             provider_source: 'env',
@@ -133,7 +123,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             model_source: 'environment',
             missing: [],
             manual_provider_cleared: true
-          }});
+          });
           window.__bridgeCalls = calls;
           window.__mockState = () => state;
           window.pywebview = {{ api: {{
