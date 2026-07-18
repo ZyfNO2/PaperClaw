@@ -49,7 +49,9 @@ class _ManualProviderState:
             "provider": self.provider,
             "base_url": self.base_url,
             "model": self.selected_model,
+            "selected_model": self.selected_model,
             "available_models": list(self.models),
+            "models": list(self.models),
             "configured": True,
             "missing": [],
             "credential_configured": True,
@@ -66,9 +68,26 @@ def install_provider_extension(app_module: Any) -> None:
 
     if getattr(app_module, _INSTALLED_ATTRIBUTE, False):
         return
+
     desktop_api = app_module.DesktopAPI
+    original_init = desktop_api.__init__
     original_start_run = desktop_api.start_run
     original_get_defaults = desktop_api.get_defaults
+
+    def __init__(
+        self: Any,
+        controller: Any,
+        *,
+        provider_urlopen: Any | None = None,
+        provider_timeout: float = _CONNECT_TIMEOUT_SECONDS,
+    ) -> None:
+        original_init(self, controller)
+        self._provider_urlopen = provider_urlopen
+        try:
+            timeout = float(provider_timeout)
+        except (TypeError, ValueError):
+            timeout = _CONNECT_TIMEOUT_SECONDS
+        self._provider_timeout = max(1.0, timeout)
 
     def connect_provider(self: Any, value: Mapping[str, Any]) -> dict[str, object]:
         previous = _get_state(self)
@@ -78,7 +97,16 @@ def install_provider_extension(app_module: Any) -> None:
             )
             warning: str | None = None
             try:
-                discovered = _discover_models(base_url, api_key)
+                discovered = _discover_models(
+                    base_url,
+                    api_key,
+                    urlopen=getattr(self, "_provider_urlopen", None) or _urlopen,
+                    timeout=getattr(
+                        self,
+                        "_provider_timeout",
+                        _CONNECT_TIMEOUT_SECONDS,
+                    ),
+                )
             except DesktopPublicError as exc:
                 if manual_model and exc.code in _DISCOVERY_FALLBACK_CODES:
                     discovered = (manual_model,)
@@ -155,6 +183,7 @@ def install_provider_extension(app_module: Any) -> None:
                 "provider_configuration_error",
                 "Selected model is not available from the connected provider.",
             ).to_public_dict()
+
         models = state.models if listed else (normalized, *state.models)
         updated = _ManualProviderState(
             base_url=state.base_url,
@@ -173,9 +202,14 @@ def install_provider_extension(app_module: Any) -> None:
         return {"ok": True, **updated.to_public_dict()}
 
     def clear_provider_config(self: Any) -> dict[str, object]:
-        if hasattr(self, _PROVIDER_STATE_ATTRIBUTE):
-            delattr(self, _PROVIDER_STATE_ATTRIBUTE)
+        _clear_state(self)
         return {"ok": True, "provider_source": "env"}
+
+    def clear_manual_provider(self: Any) -> dict[str, object]:
+        cleared = _clear_state(self)
+        response = dict(original_get_defaults(self))
+        response["manual_provider_cleared"] = cleared
+        return response
 
     def get_defaults(self: Any) -> dict[str, object]:
         defaults = original_get_defaults(self)
@@ -210,9 +244,11 @@ def install_provider_extension(app_module: Any) -> None:
         )
         return original_start_run(self, hydrated)
 
+    desktop_api.__init__ = __init__
     desktop_api.connect_provider = connect_provider
     desktop_api.select_provider_model = select_provider_model
     desktop_api.clear_provider_config = clear_provider_config
+    desktop_api.clear_manual_provider = clear_manual_provider
     desktop_api.get_defaults = get_defaults
     desktop_api.start_run = start_run
 
@@ -221,6 +257,7 @@ def install_provider_extension(app_module: Any) -> None:
             "connect_provider": (1, 1),
             "select_provider_model": (1, 2),
             "clear_provider_config": (0, 0),
+            "clear_manual_provider": (0, 0),
         }
     )
     app_module._BROWSER_ASSETS.update(
@@ -241,6 +278,16 @@ def install_provider_extension(app_module: Any) -> None:
 def _get_state(api: Any) -> _ManualProviderState | None:
     value = getattr(api, _PROVIDER_STATE_ATTRIBUTE, None)
     return value if isinstance(value, _ManualProviderState) else None
+
+
+def _clear_state(api: Any) -> bool:
+    state = _get_state(api)
+    if state is not None:
+        # Drop the only retained credential reference before deleting the state.
+        object.__setattr__(state, "api_key", "")
+        delattr(api, _PROVIDER_STATE_ATTRIBUTE)
+        return True
+    return False
 
 
 def _provider_error_response(
@@ -276,8 +323,6 @@ def _provider_error_response(
                 ),
             }
         )
-    else:
-        response["active_configuration_preserved"] = False
     return response
 
 
@@ -334,7 +379,13 @@ def _required_text(value: Any, label: str, limit: int) -> str:
     return normalized
 
 
-def _discover_models(base_url: str, api_key: str) -> tuple[str, ...]:
+def _discover_models(
+    base_url: str,
+    api_key: str,
+    *,
+    urlopen: Any,
+    timeout: float,
+) -> tuple[str, ...]:
     request = urllib.request.Request(
         f"{base_url}/models",
         headers={
@@ -347,7 +398,7 @@ def _discover_models(base_url: str, api_key: str) -> tuple[str, ...]:
         method="GET",
     )
     try:
-        with _urlopen(request, timeout=_CONNECT_TIMEOUT_SECONDS) as response:
+        with urlopen(request, timeout=timeout) as response:
             try:
                 payload = json.load(response)
             except (TypeError, ValueError) as exc:
@@ -382,33 +433,36 @@ def _discover_models(base_url: str, api_key: str) -> tuple[str, ...]:
     if not models:
         raise DesktopPublicError(
             "provider_response_error",
-            "Provider returned no selectable models.",
+            "Provider model list did not include any usable model IDs.",
         )
     return models
 
 
 def _extract_models(payload: Any) -> tuple[str, ...]:
-    values: Any = payload
+    values: Any = None
     if isinstance(payload, Mapping):
         values = payload.get("data")
-        if not isinstance(values, list):
+        if values is None:
             values = payload.get("models")
     if not isinstance(values, list):
         return ()
 
-    result: list[str] = []
+    models: list[str] = []
     seen: set[str] = set()
     for item in values:
-        candidate: Any = item
+        candidate = item
         if isinstance(item, Mapping):
-            candidate = item.get("id") or item.get("name")
+            candidate = item.get("id") or item.get("model") or item.get("name")
         if not isinstance(candidate, str):
             continue
         normalized = candidate.strip()
         if not normalized or len(normalized) > 256 or normalized in seen:
             continue
         seen.add(normalized)
-        result.append(normalized)
-        if len(result) >= _MAX_DISCOVERED_MODELS:
+        models.append(normalized)
+        if len(models) >= _MAX_DISCOVERED_MODELS:
             break
-    return tuple(result)
+    return tuple(models)
+
+
+__all__ = ["install_provider_extension"]
