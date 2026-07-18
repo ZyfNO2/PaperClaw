@@ -9,6 +9,7 @@ from threading import RLock
 from typing import Any, Callable
 
 from paperclaw.models.base import ChatModel
+from paperclaw.multiagent.judge_factory import build_judge_model_from_env
 
 from .runtime import BackgroundTaskSupervisor
 from .store import SQLiteDurableTaskStore
@@ -46,6 +47,7 @@ def get_or_create_task_runtime(
     worker_id: str = "agent-task-worker",
     max_concurrency: int = 4,
     provider_concurrency: int = 2,
+    judge_model_factory: Callable[[str], ChatModel] | None = None,
 ) -> TaskRuntimeComponents:
     resolved_database = Path(database or default_task_database()).expanduser().resolve()
     key = f"{resolved_database}:{cache_key}"
@@ -54,7 +56,10 @@ def get_or_create_task_runtime(
         if existing is not None:
             return existing
         store = SQLiteDurableTaskStore(resolved_database)
-        executor = SubagentTaskExecutor(model_factory)
+        executor = SubagentTaskExecutor(
+            model_factory,
+            judge_model_factory=judge_model_factory,
+        )
         supervisor = BackgroundTaskSupervisor(
             store,
             executor,
@@ -71,7 +76,6 @@ def get_or_create_task_runtime(
 
 def install_cli_task_extension(cli_module: Any) -> None:
     """Wrap CLI memory composition and register durable task tools once."""
-
     if getattr(cli_module, _CLI_MARKER, False):
         return
     original_build_memory_runtime = cli_module.build_memory_runtime
@@ -80,6 +84,7 @@ def install_cli_task_extension(cli_module: Any) -> None:
         components = original_build_memory_runtime(*args, **kwargs)
         runtime = get_or_create_task_runtime(
             lambda _agent_id: cli_module.OpenAICompatibleModel.from_env(),
+            judge_model_factory=lambda _agent_id: build_judge_model_from_env(),
             cache_key="cli-env",
             worker_id="cli-task-worker",
         )
