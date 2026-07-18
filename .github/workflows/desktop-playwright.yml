@@ -44,14 +44,17 @@ jobs:
           python -m playwright install --with-deps chromium
 
       - name: Run desktop Playwright interactions
+        shell: bash
         run: |
+          set -o pipefail
           mkdir -p tmp/playwright
           python -m pytest -vv tests/e2e/desktop \
             --maxfail=1 \
             --timeout=20 \
             --timeout-method=thread \
             --basetemp=tmp/playwright/pytest \
-            --junitxml=tmp/playwright/junit.xml
+            --junitxml=tmp/playwright/junit.xml \
+            2>&1 | tee tmp/playwright/pytest.log
 
       - name: Upload Playwright report
         if: always()
