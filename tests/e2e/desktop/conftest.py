@@ -14,17 +14,14 @@ ASSET_DIR = (
 
 
 def load_app(page: Page) -> None:
-    """Load the production desktop HTML with all local assets inlined.
+    """Load production Desktop assets without depending on synthetic load timing.
 
-    Playwright uses ``set_content`` rather than the pywebview file host, so every
-    module referenced by index.html must be inlined. Keeping this loader aligned
-    with production prevents false failures and false positives when Desktop UI
-    assets are split into modules.
-
-    ``domcontentloaded`` is the correct readiness boundary for this synthetic
-    document. Waiting for ``window.load`` can hang because the real app lifecycle
-    is completed by the explicit ``pywebviewready`` event below, not by a file-host
-    navigation in Playwright.
+    ``page.set_content`` uses ``document.write``. The real pywebview app is not
+    bootstrapped by a normal HTTP navigation, so waiting for browser ``load`` or
+    ``DOMContentLoaded`` inside this synthetic harness can deadlock. A sentinel
+    appended after all inlined production scripts gives us an explicit asset
+    readiness boundary; we then dispatch the same DOM/pywebview lifecycle events
+    that the application consumes.
     """
 
     html = (ASSET_DIR / "index.html").read_text(encoding="utf-8")
@@ -52,8 +49,18 @@ def load_app(page: Page) -> None:
             f'<script src="{name}"></script>',
             f"<script>{javascript}</script>",
         )
-    page.set_content(html, wait_until="domcontentloaded")
-    page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
+    html = html.replace(
+        "</body>",
+        "<script>window.__paperclawTestAssetsLoaded = true;</script></body>",
+    )
+    page.set_content(html, wait_until="commit")
+    page.wait_for_function("() => window.__paperclawTestAssetsLoaded === true")
+    page.evaluate(
+        """() => {
+          document.dispatchEvent(new Event('DOMContentLoaded'));
+          window.dispatchEvent(new Event('pywebviewready'));
+        }"""
+    )
 
 
 @pytest.fixture(scope="session")
