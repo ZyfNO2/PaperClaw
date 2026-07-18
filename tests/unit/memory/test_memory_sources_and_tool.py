@@ -13,6 +13,16 @@ from paperclaw.memory import (
 from paperclaw.tools.base import ToolContext
 
 
+def _request(workspace: Path) -> ContextRequest:
+    return ContextRequest(
+        run_id="run-1",
+        conversation_id="conversation-1",
+        step_id="model-1",
+        raw_prompt="prompt",
+        workspace=str(workspace),
+    )
+
+
 def test_project_instruction_loader_supports_bounded_workspace_imports(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     docs = workspace / "docs"
@@ -36,6 +46,19 @@ def test_project_instruction_loader_supports_bounded_workspace_imports(tmp_path:
     assert "must not load" not in snapshot.content
     assert "must not escape" not in snapshot.content
     assert snapshot.source_files == ("PAPERCLAW.md", "docs/architecture.md", "AGENTS.md")
+    assert snapshot.truncated is False
+
+
+def test_project_instruction_truncation_is_explicit(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "PAPERCLAW.md").write_text("rule-" + "x" * 500, encoding="utf-8")
+
+    snapshot = ProjectInstructionLoader(workspace, max_total_chars=120).snapshot()
+
+    assert snapshot.truncated is True
+    assert "project instructions truncated" in snapshot.content
+    assert len(snapshot.content) <= 120
 
 
 def test_frozen_context_source_keeps_session_start_profile(tmp_path: Path) -> None:
@@ -51,15 +74,7 @@ def test_frozen_context_source_keeps_session_start_profile(tmp_path: Path) -> No
     )
     store.add("user", "User prefers Markdown tables.", category="preference")
 
-    candidates = source.collect(
-        ContextRequest(
-            run_id="run-1",
-            conversation_id="conversation-1",
-            step_id="model-1",
-            raw_prompt="prompt",
-            workspace=str(workspace),
-        )
-    )
+    candidates = source.collect(_request(workspace))
     rendered = "\n".join(candidate.content for candidate in candidates)
 
     assert "Chinese output" in rendered
@@ -68,6 +83,37 @@ def test_frozen_context_source_keeps_session_start_profile(tmp_path: Path) -> No
     assert user.layer == "L1"
     assert user.pinned is True
     assert user.compressible is False
+
+
+def test_low_confidence_profile_is_retained_but_not_injected(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    store = FileMemoryStore(tmp_path / "memory")
+    store.add(
+        "user",
+        "User definitely prefers Python.",
+        category="preference",
+        confidence=0.95,
+    )
+    store.add(
+        "user",
+        "User may prefer an unverified editor.",
+        category="preference",
+        confidence=0.30,
+    )
+    source = FrozenFoundationalContextSource(
+        memory_snapshot=store.snapshot(),
+        project_snapshot=ProjectInstructionLoader(workspace).snapshot(),
+        minimum_confidence=0.60,
+    )
+
+    rendered = "\n".join(
+        candidate.content for candidate in source.collect(_request(workspace))
+    )
+
+    assert "definitely prefers Python" in rendered
+    assert "unverified editor" not in rendered
+    assert len(store.list_entries("user")) == 2
 
 
 def test_memory_tool_reports_next_session_visibility_and_supports_delete(tmp_path: Path) -> None:
