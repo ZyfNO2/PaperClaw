@@ -3,72 +3,21 @@
 from __future__ import annotations
 
 import argparse
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 from collections import OrderedDict, deque
 from copy import deepcopy
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-import http.client
->>>>>>> f189121
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 from importlib.resources import as_file, files
 from importlib.util import find_spec
 import json
 import os
 from pathlib import Path
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 import secrets
 import sys
 from threading import RLock, Thread
 from typing import Any, Mapping
 from urllib.parse import quote, urlsplit
 import webbrowser
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-import platform
-import socket
-import sys
-from threading import RLock
-from typing import Any, Mapping
-import urllib.error
-import urllib.request
-from urllib.parse import urlsplit
->>>>>>> f189121
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 
 from .contracts import DesktopPublicError
 from .controller import DesktopController
@@ -80,18 +29,6 @@ _REQUIRED_ENV = (
     "PAPERCLAW_BASE_URL",
     "PAPERCLAW_MODEL",
 )
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 _BROWSER_THEMES = frozenset(
     {
         "neo-brutalist",
@@ -120,46 +57,14 @@ _BROWSER_API_ARITY: dict[str, tuple[int, int]] = {
 _BROWSER_MAX_REQUEST_BYTES = 1_000_000
 _EVENT_HISTORY_LIMIT = 2_048
 _CLIENT_CURSOR_LIMIT = 32
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> edf37eb
-=======
-_MAX_DISCOVERED_MODELS = 1_000
-_MODEL_DISCOVERY_FALLBACK_CODES = frozenset(
-    {"provider_configuration_error", "provider_invalid_response"}
-)
->>>>>>> f189121
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 
 
 class DesktopAPI:
     """Allow-listed methods exposed through ``window.pywebview.api`` and loopback HTTP."""
 
-    def __init__(
-        self,
-        controller: DesktopController,
-        *,
-        provider_urlopen: Any | None = None,
-        provider_timeout: float = 20.0,
-    ) -> None:
+    def __init__(self, controller: DesktopController) -> None:
         self._controller = controller
         self._window: Any | None = None
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
         self._browser_host: _BrowserHost | None = None
         self._browser_lock = RLock()
         self._poll_lock = RLock()
@@ -168,48 +73,16 @@ class DesktopAPI:
         )
         self._event_serial = 0
         self._client_cursors: OrderedDict[str, int] = OrderedDict()
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-        self._provider_urlopen = provider_urlopen or urllib.request.urlopen
-        self._provider_timeout = max(1.0, float(provider_timeout))
-        self._provider_lock = RLock()
-        self._manual_provider: dict[str, str] | None = None
-        self._available_models: tuple[str, ...] = ()
-        self._manual_model_selected = False
->>>>>>> f189121
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 
     def bind_window(self, window: Any) -> None:
         self._window = window
 
     def start_run(self, request: Mapping[str, Any]) -> dict[str, object]:
         try:
-            hydrated = self._hydrate_provider(request)
+            hydrated = _hydrate_environment_provider(request)
         except DesktopPublicError as exc:
             return exc.to_public_dict()
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
         self._reset_event_fanout()
->>>>>>> edf37eb
-=======
-        self._reset_event_fanout()
->>>>>>> 18cf7be
-=======
-        self._reset_event_fanout()
->>>>>>> 70e7334
-=======
-        self._reset_event_fanout()
->>>>>>> 77ef8ea
         return self._controller.start_run(hydrated)
 
     def cancel_run(self) -> dict[str, object]:
@@ -285,67 +158,12 @@ class DesktopAPI:
         """Return non-secret desktop defaults for the initial UI projection."""
 
         workspace = Path.cwd().expanduser().resolve()
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-        with self._provider_lock:
-            manual_provider = dict(self._manual_provider) if self._manual_provider else None
-            models = list(self._available_models)
-            manual_model_selected = self._manual_model_selected
-        if manual_provider is not None:
-            response: dict[str, object] = {
-                "ok": True,
-                "workspace": str(workspace),
-                "provider_source": "manual",
-                "provider": manual_provider["provider"],
-                "base_url": manual_provider["base_url"],
-                "model": manual_provider["model"],
-                "models": models,
-                "configured": True,
-                "missing": [],
-            }
-            if manual_model_selected:
-                response["model_source"] = "manual"
-                response["model_verified"] = False
-            return response
-
-        _load_dotenv(workspace / ".env")
-        missing = [name for name in _REQUIRED_ENV if not os.getenv(name)]
-        model = os.getenv("PAPERCLAW_MODEL") or None
-=======
         values = _resolve_provider_environment(workspace)
         missing = [name for name in _REQUIRED_ENV if not values.get(name)]
->>>>>>> 18cf7be
-=======
-        values = _resolve_provider_environment(workspace)
-        missing = [name for name in _REQUIRED_ENV if not values.get(name)]
->>>>>>> 70e7334
-=======
-        values = _resolve_provider_environment(workspace)
-        missing = [name for name in _REQUIRED_ENV if not values.get(name)]
->>>>>>> 77ef8ea
         return {
             "ok": True,
             "workspace": str(workspace),
             "provider_source": "env",
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-            "provider": os.getenv("PAPERCLAW_PROVIDER", "openai-compatible"),
-            "base_url": os.getenv("PAPERCLAW_BASE_URL") or None,
-            "model": model,
-            "models": [model] if model else [],
-            "configured": not missing,
-            "missing": missing,
-<<<<<<< HEAD
-        }
-
-<<<<<<< HEAD
-=======
-            "theme": _load_theme_preference(),
-        }
-
-=======
             "provider": values.get(
                 "PAPERCLAW_PROVIDER", "openai-compatible"
             ),
@@ -356,31 +174,6 @@ class DesktopAPI:
             "theme": _load_theme_preference(),
         }
 
->>>>>>> 18cf7be
-=======
-            "provider": values.get(
-                "PAPERCLAW_PROVIDER", "openai-compatible"
-            ),
-            "base_url": values.get("PAPERCLAW_BASE_URL") or None,
-            "model": values.get("PAPERCLAW_MODEL") or None,
-            "configured": not missing,
-            "missing": missing,
-            "theme": _load_theme_preference(),
-        }
-
->>>>>>> 70e7334
-=======
-            "provider": values.get(
-                "PAPERCLAW_PROVIDER", "openai-compatible"
-            ),
-            "base_url": values.get("PAPERCLAW_BASE_URL") or None,
-            "model": values.get("PAPERCLAW_MODEL") or None,
-            "configured": not missing,
-            "missing": missing,
-            "theme": _load_theme_preference(),
-        }
-
->>>>>>> 77ef8ea
     def set_theme(self, theme: str) -> dict[str, object]:
         if theme not in _BROWSER_THEMES:
             return DesktopPublicError(
@@ -396,157 +189,6 @@ class DesktopAPI:
             ).to_public_dict()
         return {"ok": True, "theme": theme}
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> edf37eb
-=======
-    def connect_provider(self, request: Mapping[str, Any]) -> dict[str, object]:
-        """Validate a manual provider and load models when the endpoint supports it.
-
-        A supplied manual model lets OpenAI-compatible providers work even when
-        ``GET /models`` is unavailable. The credential remains only in this Python
-        process and is never returned to JavaScript.
-        """
-
-        try:
-            provider_config = _validate_provider_connection_request(request)
-        except DesktopPublicError as exc:
-            return self._provider_error_response(exc)
-
-        manual_model = provider_config.pop("model", "")
-        discovery_warning = ""
-        manual_model_selected = False
-        try:
-            models = _discover_provider_models(
-                provider_config,
-                urlopen=self._provider_urlopen,
-                timeout=self._provider_timeout,
-            )
-        except DesktopPublicError as exc:
-            if manual_model and exc.code in _MODEL_DISCOVERY_FALLBACK_CODES:
-                models = [manual_model]
-                discovery_warning = (
-                    "Model discovery was unavailable. The manually entered model "
-                    "will be used without endpoint verification."
-                )
-                manual_model_selected = True
-            else:
-                return self._provider_error_response(exc)
-
-        if manual_model:
-            selected_model = manual_model
-            manual_model_selected = manual_model not in models or manual_model_selected
-            if manual_model not in models:
-                models.insert(0, manual_model)
-        else:
-            selected_model = models[0]
-
-        with self._provider_lock:
-            self._manual_provider = {
-                **provider_config,
-                "model": selected_model,
-            }
-            self._available_models = tuple(models)
-            self._manual_model_selected = manual_model_selected
-
-        response: dict[str, object] = {
-            "ok": True,
-            "provider_source": "manual",
-            "provider": provider_config["provider"],
-            "base_url": provider_config["base_url"],
-            "models": list(models),
-            "selected_model": selected_model,
-            "configured": True,
-        }
-        if manual_model_selected:
-            response.update(
-                {
-                    "model_source": "manual",
-                    "model_verified": False,
-                    "discovery_warning": discovery_warning
-                    or "The selected model was entered manually and was not listed by the provider.",
-                }
-            )
-        return response
-
-    def select_provider_model(
-        self,
-        model: str,
-        allow_unlisted: bool = False,
-    ) -> dict[str, object]:
-        """Select a discovered model, or explicitly opt into an unlisted one."""
-
-        try:
-            selected = _required_provider_text(model, "Model", limit=256)
-            if not isinstance(allow_unlisted, bool):
-                raise DesktopPublicError(
-                    "validation_error",
-                    "allow_unlisted must be a boolean.",
-                )
-        except DesktopPublicError as exc:
-            return exc.to_public_dict()
-
-        with self._provider_lock:
-            if self._manual_provider is None:
-                return DesktopPublicError(
-                    "provider_configuration_error",
-                    "Connect a provider before selecting a model.",
-                ).to_public_dict()
-            is_listed = selected in self._available_models
-            if not is_listed and not allow_unlisted:
-                return DesktopPublicError(
-                    "provider_configuration_error",
-                    "Selected model is not available from the connected provider.",
-                ).to_public_dict()
-            if not is_listed:
-                self._available_models = (selected, *self._available_models)
-            self._manual_provider = {**self._manual_provider, "model": selected}
-            self._manual_model_selected = not is_listed and allow_unlisted
-            provider = self._manual_provider["provider"]
-            base_url = self._manual_provider["base_url"]
-            models = list(self._available_models)
-
-        response: dict[str, object] = {
-            "ok": True,
-            "provider_source": "manual",
-            "provider": provider,
-            "base_url": base_url,
-            "model": selected,
-        }
-        if allow_unlisted:
-            response.update(
-                {
-                    "models": models,
-                    "selected_model": selected,
-                    "configured": True,
-                    "model_source": "manual" if not is_listed else "discovered",
-                    "model_verified": bool(is_listed),
-                }
-            )
-        return response
-
-    def clear_manual_provider(self) -> dict[str, object]:
-        """Drop the in-memory credential and return to ENV/.env resolution."""
-
-        with self._provider_lock:
-            cleared = self._manual_provider is not None
-            if self._manual_provider is not None:
-                self._manual_provider["api_key"] = ""
-            self._manual_provider = None
-            self._available_models = ()
-            self._manual_model_selected = False
-        response = self.get_defaults()
-        response["manual_provider_cleared"] = cleared
-        return response
-
->>>>>>> f189121
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
     def select_workspace(self) -> dict[str, object]:
         window = self._window
         if window is None:
@@ -580,16 +222,6 @@ class DesktopAPI:
             ).to_public_dict()
         return {"ok": True, "workspace": str(workspace)}
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
     def open_in_browser(self, theme: str = "neo-brutalist") -> dict[str, object]:
         """Open a token-protected loopback mirror in the system browser."""
 
@@ -855,10 +487,6 @@ class _BrowserHost:
 
         return BrowserRequestHandler
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 77ef8ea
 
 def _hydrate_environment_provider(request: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(request, Mapping):
@@ -976,364 +604,6 @@ def _save_theme_preference(theme: str) -> None:
         encoding="utf-8",
     )
     temporary.replace(path)
-<<<<<<< HEAD
-
-
-def _preference_path() -> Path:
-    override = os.getenv("PAPERCLAW_DESKTOP_CONFIG_DIR")
-    base = Path(override).expanduser() if override else Path.home() / ".paperclaw"
-    return base / "desktop-preferences.json"
-
-
-def _load_theme_preference() -> str:
-    path = _preference_path()
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return "neo-brutalist"
-    if not isinstance(payload, Mapping):
-        return "neo-brutalist"
-    theme = payload.get("theme")
-    return (
-        theme
-        if isinstance(theme, str) and theme in _BROWSER_THEMES
-        else "neo-brutalist"
-    )
-
-
-def _save_theme_preference(theme: str) -> None:
-    path = _preference_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(
-        json.dumps({"theme": theme}, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    temporary.replace(path)
-=======
-    def _provider_error_response(self, exc: DesktopPublicError) -> dict[str, object]:
-        response = exc.to_public_dict()
-        with self._provider_lock:
-            active = dict(self._manual_provider) if self._manual_provider else None
-        if active is not None:
-            response.update(
-                {
-                    "active_configuration_preserved": True,
-                    "active_provider_source": "manual",
-                    "active_provider": active["provider"],
-                    "active_base_url": active["base_url"],
-                    "active_model": active["model"],
-                    "error_message": (
-                        f"{response['error_message']} Previous provider remains active."
-                    ),
-                }
-            )
-            return response
-
-        defaults = self.get_defaults()
-        env_active = bool(defaults.get("configured"))
-        response["active_configuration_preserved"] = env_active
-        if env_active:
-            response.update(
-                {
-                    "active_provider_source": "env",
-                    "active_provider": defaults.get("provider"),
-                    "active_base_url": defaults.get("base_url"),
-                    "active_model": defaults.get("model"),
-                    "error_message": (
-                        f"{response['error_message']} Previous environment configuration "
-                        "remains active."
-                    ),
-                }
-            )
-        return response
-
-    def _hydrate_provider(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        if not isinstance(request, Mapping):
-            raise DesktopPublicError("validation_error", "Run request must be an object.")
-        hydrated = dict(request)
-        explicit_fields = {
-            name for name in _PROVIDER_FIELDS if hydrated.get(name) not in (None, "")
-        }
-        if explicit_fields:
-            return hydrated
-        with self._provider_lock:
-            manual_provider = dict(self._manual_provider) if self._manual_provider else None
-        if manual_provider is not None:
-            hydrated.update(manual_provider)
-            return hydrated
-        return _hydrate_environment_provider(hydrated)
->>>>>>> f189121
-
-=======
->>>>>>> 70e7334
-
-def _hydrate_environment_provider(request: Mapping[str, Any]) -> dict[str, Any]:
-    if not isinstance(request, Mapping):
-        raise DesktopPublicError("validation_error", "Run request must be an object.")
-    hydrated = dict(request)
-    explicit_fields = {
-        name for name in _PROVIDER_FIELDS if hydrated.get(name) not in (None, "")
-    }
-    if explicit_fields:
-        return hydrated
-
-    workspace_value = hydrated.get("workspace")
-    workspace = (
-        Path(workspace_value).expanduser()
-        if isinstance(workspace_value, str) and workspace_value.strip()
-        else None
-    )
-    values = _resolve_provider_environment(workspace)
-    missing = [name for name in _REQUIRED_ENV if not values.get(name)]
-    if missing:
-        raise DesktopPublicError(
-            "provider_configuration_error",
-            f"Missing environment variables: {', '.join(missing)}.",
-        )
-    hydrated.update(
-        {
-            "api_key": values["PAPERCLAW_API_KEY"],
-            "base_url": values["PAPERCLAW_BASE_URL"],
-            "model": values["PAPERCLAW_MODEL"],
-            "provider": values.get(
-                "PAPERCLAW_PROVIDER", "openai-compatible"
-            ),
-        }
-    )
-    return hydrated
-
-
-<<<<<<< HEAD
-def _validate_provider_connection_request(request: Mapping[str, Any]) -> dict[str, str]:
-    if not isinstance(request, Mapping):
-        raise DesktopPublicError(
-            "validation_error",
-            "Provider connection request must be an object.",
-        )
-    allowed_fields = {"base_url", "api_key", "provider", "model"}
-    unknown = sorted(str(key) for key in request if key not in allowed_fields)
-    if unknown:
-        raise DesktopPublicError(
-            "validation_error",
-            f"Unknown provider fields: {', '.join(unknown[:10])}.",
-        )
-    base_url = _required_provider_text(request.get("base_url"), "Base URL", limit=2_000)
-    parsed = urlsplit(base_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise DesktopPublicError(
-            "provider_configuration_error",
-            "Base URL must be an absolute HTTP or HTTPS URL.",
-        )
-    if parsed.username or parsed.password:
-        raise DesktopPublicError(
-            "provider_configuration_error",
-            "Base URL must not contain embedded credentials.",
-        )
-    api_key = _required_provider_text(request.get("api_key"), "API key", limit=20_000)
-    provider = _required_provider_text(
-        request.get("provider", "openai-compatible"),
-        "Provider",
-        limit=128,
-    )
-    result = {
-        "base_url": base_url.rstrip("/"),
-        "api_key": api_key,
-        "provider": provider,
-    }
-    manual_model = request.get("model")
-    if manual_model not in (None, ""):
-        result["model"] = _required_provider_text(manual_model, "Model", limit=256)
-    return result
-
-
-def _discover_provider_models(
-    provider_config: Mapping[str, str],
-    *,
-    urlopen: Any,
-    timeout: float,
-) -> list[str]:
-    base_url = provider_config["base_url"]
-    api_key = provider_config["api_key"]
-    request = urllib.request.Request(
-        f"{base_url}/models",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Accept": "application/json",
-            "User-Agent": (
-                f"PaperClaw/0.0.1 ({platform.system()} {platform.release()})"
-            ),
-        },
-        method="GET",
-    )
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            payload = json.load(response)
-    except urllib.error.HTTPError as exc:
-        if exc.code in {401, 403}:
-            raise DesktopPublicError(
-                "provider_authentication_error",
-                "Provider rejected the supplied API key or permission.",
-            ) from exc
-        if exc.code in {400, 404, 405}:
-            raise DesktopPublicError(
-                "provider_configuration_error",
-                "Provider model-list endpoint is unavailable at Base URL /models.",
-            ) from exc
-        raise DesktopPublicError(
-            "provider_connection_error",
-            f"Provider model discovery failed with HTTP {exc.code}.",
-        ) from exc
-    except (
-        urllib.error.URLError,
-        http.client.RemoteDisconnected,
-        ConnectionError,
-        TimeoutError,
-        socket.timeout,
-    ) as exc:
-        raise DesktopPublicError(
-            "provider_network_error",
-            "Provider could not be reached or the connection timed out.",
-        ) from exc
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise DesktopPublicError(
-            "provider_invalid_response",
-            "Provider returned invalid JSON for the model list.",
-        ) from exc
-
-    models = _extract_model_ids(payload)
-    if not models:
-        raise DesktopPublicError(
-            "provider_invalid_response",
-            "Provider returned no selectable model IDs.",
-        )
-    return models
-
-
-def _extract_model_ids(payload: Any) -> list[str]:
-    if not isinstance(payload, Mapping):
-        return []
-    raw_models = payload.get("data")
-    if not isinstance(raw_models, list):
-        raw_models = payload.get("models")
-    if not isinstance(raw_models, list):
-        return []
-
-    models: list[str] = []
-    seen: set[str] = set()
-    for item in raw_models:
-        candidate: Any = item
-        if isinstance(item, Mapping):
-            candidate = item.get("id") or item.get("model") or item.get("name")
-        if not isinstance(candidate, str):
-            continue
-        model_id = candidate.strip()
-        if not model_id or len(model_id) > 256 or model_id in seen:
-            continue
-        seen.add(model_id)
-        models.append(model_id)
-        if len(models) >= _MAX_DISCOVERED_MODELS:
-            break
-    return models
-
-
-def _required_provider_text(value: Any, label: str, *, limit: int) -> str:
-    if not isinstance(value, str):
-        raise DesktopPublicError("validation_error", f"{label} must be text.")
-    normalized = value.strip()
-    if not normalized:
-        raise DesktopPublicError("validation_error", f"{label} must not be empty.")
-    if len(normalized) > limit:
-        raise DesktopPublicError("validation_error", f"{label} is too long.")
-    return normalized
-
-
-def _load_dotenv(dotenv_path: Path) -> None:
-    """Load a local .env without replacing explicit process environment values."""
-=======
-def _resolve_provider_environment(
-    workspace: Path | None,
-) -> dict[str, str]:
-    """Resolve provider settings without mutating process environment state.
->>>>>>> 70e7334
-
-    Explicit process environment values have highest priority. A selected
-    workspace ``.env`` is next, followed by the current-directory ``.env``.
-    Reading one workspace can therefore never leak its credentials into a later
-    run for another workspace.
-    """
-
-    names = (*_REQUIRED_ENV, "PAPERCLAW_PROVIDER")
-    values = {
-        name: value
-        for name in names
-        if (value := os.getenv(name)) not in (None, "")
-    }
-    paths: list[Path] = []
-    if workspace is not None:
-        paths.append(workspace / ".env")
-    cwd_path = Path.cwd() / ".env"
-    if not paths or cwd_path != paths[0]:
-        paths.append(cwd_path)
-    for dotenv_path in paths:
-        for name, value in _read_dotenv(dotenv_path).items():
-            if name in names and name not in values and value:
-                values[name] = value
-    return values
-
-
-def _read_dotenv(dotenv_path: Path) -> dict[str, str]:
-    try:
-        if not dotenv_path.is_file():
-            return {}
-        lines = dotenv_path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return {}
-    values: dict[str, str] = {}
-    for raw_line in lines:
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        normalized_key = key.strip()
-        if normalized_key:
-            values[normalized_key] = value.strip()
-    return values
-
-
-def _preference_path() -> Path:
-    override = os.getenv("PAPERCLAW_DESKTOP_CONFIG_DIR")
-    base = Path(override).expanduser() if override else Path.home() / ".paperclaw"
-    return base / "desktop-preferences.json"
-
-
-def _load_theme_preference() -> str:
-    path = _preference_path()
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return "neo-brutalist"
-    if not isinstance(payload, Mapping):
-        return "neo-brutalist"
-    theme = payload.get("theme")
-    return (
-        theme
-        if isinstance(theme, str) and theme in _BROWSER_THEMES
-        else "neo-brutalist"
-    )
-
-
-def _save_theme_preference(theme: str) -> None:
-    path = _preference_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(
-        json.dumps({"theme": theme}, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    temporary.replace(path)
-=======
->>>>>>> 77ef8ea
 
 
 def _folder_dialog_type(webview_module: Any) -> Any:

@@ -1,28 +1,4 @@
 <!doctype html>
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<html lang="zh-CN">
-=======
-<html lang="zh-CN" data-theme="neo-brutalist">
->>>>>>> 18cf7be
-=======
-<html lang="zh-CN" data-theme="neo-brutalist">
->>>>>>> 70e7334
-=======
-<html lang="zh-CN" data-theme="neo-brutalist">
->>>>>>> 77ef8ea
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>PaperClaw Console</title>
-  <link rel="stylesheet" href="styles.css">
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 <html lang="zh-CN" data-theme="neo-brutalist">
 <head>
   <meta charset="utf-8">
@@ -31,16 +7,6 @@
   <title>PaperClaw Console</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="provider-config.css">
->>>>>>> edf37eb
-=======
-  <link rel="stylesheet" href="provider-config.css">
->>>>>>> 18cf7be
-=======
-  <link rel="stylesheet" href="provider-config.css">
->>>>>>> 70e7334
-=======
-  <link rel="stylesheet" href="provider-config.css">
->>>>>>> 77ef8ea
 </head>
 <body>
   <main id="app" data-viewport-mode="app-shell">
@@ -95,17 +61,6 @@
           <button class="btn destructive" id="cancel-button" type="button" disabled>■ STOP</button>
           <button class="btn" id="export-button" type="button">⇩ EXPORT TRACE</button>
           <button class="btn" id="select-workspace" type="button">▣ WORKSPACE</button>
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
           <label class="theme-picker" for="theme-select">
             <span>THEME</span>
             <select id="theme-select" aria-label="选择界面主题">
@@ -117,18 +72,8 @@
             </select>
           </label>
           <button class="btn" id="open-browser" type="button">◎ OPEN IN BROWSER</button>
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> edf37eb
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
         </div>
-        <span class="tiny" id="provider-summary">LLM · CONFIG NOT CHECKED</span>
+        <span class="tiny" id="provider-summary">LLM · ENV NOT CHECKED</span>
       </div>
 
       <section class="content">
@@ -145,27 +90,7 @@
           <div class="log-messages" id="mission-log" aria-live="polite">
             <article class="msg msg-system" data-log-type="system">
               <div class="msg-head"><span class="msg-marker sys"></span><span>SYSTEM</span><span class="msg-meta push-right">READY</span></div>
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-              <div class="msg-body">PaperClaw v0.11 desktop bridge is initializing. LLM configuration is loaded from environment variables at run time.</div>
-=======
               <div class="msg-body">PaperClaw v0.11 desktop bridge is initializing. LLM configuration can use environment variables or a manual provider connection.</div>
->>>>>>> edf37eb
-=======
-              <div class="msg-body">PaperClaw v0.11 desktop bridge is initializing. Model configuration can come from the ENV dialog or environment variables.</div>
->>>>>>> f189121
-=======
-              <div class="msg-body">PaperClaw v0.11 desktop bridge is initializing. LLM configuration can use environment variables or a manual provider connection.</div>
->>>>>>> 18cf7be
-=======
-              <div class="msg-body">PaperClaw v0.11 desktop bridge is initializing. LLM configuration can use environment variables or a manual provider connection.</div>
->>>>>>> 70e7334
-=======
-              <div class="msg-body">PaperClaw v0.11 desktop bridge is initializing. LLM configuration can use environment variables or a manual provider connection.</div>
->>>>>>> 77ef8ea
             </article>
           </div>
 
@@ -220,47 +145,13 @@
             <div class="timeline-list" id="timeline" aria-live="polite"></div>
           </div>
         </div>
-<<<<<<< HEAD
       </section>
     </div>
   </main>
 
   <section class="settings-panel" id="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
     <div class="settings-card">
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-      <div class="panel-head"><h2 class="panel-title" id="settings-title">MODEL CONNECTION CONFIG</h2><button class="icon-btn" id="close-settings" type="button" aria-label="关闭设置">×</button></div>
-
-      <p class="settings-note">上方输入框为待连接配置；只有连接成功后才会替换下方的 ACTIVE CONFIGURATION。连接失败时，之前可用的配置继续生效。</p>
-      <div class="budget-grid">
-        <label>PROVIDER<input id="provider-input" type="text" value="openai-compatible" maxlength="128" autocomplete="off" spellcheck="false"></label>
-        <label>BASE URL<input id="provider-base-url" type="url" placeholder="https://api.example.com/v1" maxlength="2000" autocomplete="off" spellcheck="false"></label>
-        <label>API KEY<input id="provider-api-key" type="password" placeholder="输入 API Key" maxlength="20000" autocomplete="off" spellcheck="false"></label>
-        <label>MANUAL MODEL（可选）<input id="provider-manual-model" type="text" placeholder="模型列表不可用时填写" maxlength="256" autocomplete="off" spellcheck="false"></label>
-      </div>
-      <div class="toolbar-group">
-        <button class="btn" id="toggle-api-key" type="button" aria-pressed="false">SHOW KEY</button>
-        <button class="btn primary" id="connect-provider" type="button">CONNECT &amp; LOAD MODELS</button>
-        <button class="btn" id="use-manual-model" type="button">USE MANUAL MODEL</button>
-        <button class="btn destructive" id="disconnect-provider" type="button" disabled>USE ENV / DISCONNECT</button>
-        <span class="tiny" id="connection-status" aria-live="polite">NOT CONNECTED</span>
-      </div>
-      <label class="verify-toggle" for="provider-model">AVAILABLE MODEL</label>
-      <select id="provider-model" disabled aria-label="选择可用模型">
-        <option value="">Connect provider first</option>
-      </select>
-
-      <div class="settings-note" id="active-config-status" aria-live="polite">ACTIVE · NOT CHECKED</div>
-=======
       <div class="panel-head"><h2 class="panel-title" id="settings-title">MODEL CONNECTION &amp; RUNTIME CONFIG</h2><button class="icon-btn" id="close-settings" type="button" aria-label="关闭设置">×</button></div>
->>>>>>> 18cf7be
-=======
-      <div class="panel-head"><h2 class="panel-title" id="settings-title">MODEL CONNECTION &amp; RUNTIME CONFIG</h2><button class="icon-btn" id="close-settings" type="button" aria-label="关闭设置">×</button></div>
->>>>>>> 70e7334
-=======
-      <div class="panel-head"><h2 class="panel-title" id="settings-title">MODEL CONNECTION &amp; RUNTIME CONFIG</h2><button class="icon-btn" id="close-settings" type="button" aria-label="关闭设置">×</button></div>
->>>>>>> 77ef8ea
       <dl class="config-list">
         <div><dt>Source</dt><dd id="config-source">Environment variables</dd></div>
         <div><dt>Provider</dt><dd id="config-provider">—</dd></div>
@@ -268,15 +159,6 @@
         <div><dt>Model</dt><dd id="config-model">—</dd></div>
         <div><dt>Credential</dt><dd id="config-credential">Not checked</dd></div>
       </dl>
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-      <p class="settings-note">手动输入的 API Key 只发送到 Python 桥接层，并仅保存在当前应用进程内；不会写入 Trace、导出文件或浏览器存储。断开后，新 Run 会重新使用环境变量。</p>
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 
       <section class="provider-connect-card" aria-labelledby="provider-connect-title">
         <h3 class="provider-connect-title" id="provider-connect-title">MANUAL PROVIDER CONNECTION</h3>
@@ -304,66 +186,6 @@
         <p class="provider-status" id="provider-connect-status" data-state="idle" role="status" aria-live="polite">填写 Base URL 与 API Key 后连接。若服务不支持 /models，可填写可选模型名；凭据仅保存在本次 Python 进程内存中。</p>
       </section>
 
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
-      <div class="budget-grid">
-        <label>MAX STEPS<input id="max-steps" type="number" min="1" max="200" value="12"></label>
-        <label>MODEL CALLS<input id="max-model-calls" type="number" min="1" max="100" value="10"></label>
-        <label>TOOL CALLS<input id="max-tool-calls" type="number" min="1" max="1000" value="20"></label>
-      </div>
-      <label class="verify-toggle"><input id="verification-enabled" type="checkbox" checked> Enable verification &amp; reflection gate</label>
-      <p class="gate-mode-status" id="gate-mode-status">Verify 与 Reflection Gate 已开启。</p>
-    </div>
-  </section>
-
-  <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-message"></span><button id="close-toast" type="button" aria-label="关闭提示">×</button></div>
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-      </section>
-    </div>
-  </main>
-
-  <section class="settings-panel" id="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
-    <div class="settings-card">
-      <div class="panel-head"><h2 class="panel-title" id="settings-title">MODEL CONNECTION &amp; RUNTIME CONFIG</h2><button class="icon-btn" id="close-settings" type="button" aria-label="关闭设置">×</button></div>
-      <dl class="config-list">
-        <div><dt>Source</dt><dd id="config-source">Environment variables</dd></div>
-        <div><dt>Provider</dt><dd id="config-provider">—</dd></div>
-        <div><dt>Base URL</dt><dd id="config-base-url">—</dd></div>
-        <div><dt>Model</dt><dd id="config-model">—</dd></div>
-        <div><dt>Credential</dt><dd id="config-credential">Not checked</dd></div>
-      </dl>
-
-      <section class="provider-connect-card" aria-labelledby="provider-connect-title">
-        <h3 class="provider-connect-title" id="provider-connect-title">MANUAL PROVIDER CONNECTION</h3>
-        <div class="provider-form-grid">
-          <label class="provider-field full" for="provider-base-url">BASE URL
-            <input id="provider-base-url" type="url" inputmode="url" placeholder="https://provider.example/v1" autocomplete="off" spellcheck="false">
-          </label>
-          <label class="provider-field full" for="provider-api-key">API KEY
-            <span class="provider-key-row">
-              <input id="provider-api-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="provider-connect-status">
-              <button class="btn" id="provider-key-toggle" type="button">显示</button>
-            </span>
-          </label>
-          <label class="provider-field full" for="provider-model">AVAILABLE MODEL
-            <select id="provider-model" disabled aria-label="选择当前 API 可访问的模型"></select>
-          </label>
-        </div>
-        <div class="provider-actions">
-          <button class="btn primary" id="provider-connect" type="button">CONNECT &amp; LOAD MODELS</button>
-          <button class="btn" id="provider-reset" type="button">USE ENV</button>
-        </div>
-        <p class="provider-status" id="provider-connect-status" data-state="idle" role="status" aria-live="polite">填写 Base URL 与 API Key 后连接。凭据仅保存在本次 Python 进程内存中。</p>
-      </section>
-
       <div class="budget-grid">
         <label>MAX STEPS<input id="max-steps" type="number" min="1" max="200" value="12"></label>
         <label>MODEL CALLS<input id="max-model-calls" type="number" min="1" max="100" value="10"></label>
@@ -376,16 +198,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-message"></span><button id="close-toast" type="button" aria-label="关闭提示">×</button></div>
   <script src="provider-config.js"></script>
->>>>>>> edf37eb
-=======
-  <script src="provider-config.js"></script>
->>>>>>> 18cf7be
-=======
-  <script src="provider-config.js"></script>
->>>>>>> 70e7334
-=======
-  <script src="provider-config.js"></script>
->>>>>>> 77ef8ea
   <script src="app.js"></script>
 </body>
 </html>
