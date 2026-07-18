@@ -14,27 +14,64 @@ ASSET_DIR = (
     Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
 )
 _TEST_ORIGIN = ""
+_TEST_READY_SCRIPT = "__paperclaw_test_ready.js"
 
 
 class _QuietStaticHandler(SimpleHTTPRequestHandler):
     def log_message(self, format: str, *args) -> None:
         return
 
+    def do_GET(self) -> None:
+        if self.path.split("?", 1)[0] == f"/{_TEST_READY_SCRIPT}":
+            body = b"window.__paperclawTestAssetsLoaded = true;"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path.split("?", 1)[0] in {"/", "/index.html"}:
+            html = (ASSET_DIR / "index.html").read_text(encoding="utf-8")
+            html = html.replace(
+                "</body>",
+                f'<script src="{_TEST_READY_SCRIPT}"></script></body>',
+            )
+            body = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
+
 
 def load_app(page: Page) -> None:
-    """Navigate to the real modular Desktop assets over local HTTP.
+    """Load production Desktop modules over local HTTP with explicit readiness.
 
-    A real local HTTP origin avoids ``document.write`` and request-routing
-    lifecycle artifacts while preserving the production CSP, stylesheet/script
-    ordering, and browser loading model. The bridge is injected before navigation
-    by ``install_bridge`` and the pywebview lifecycle event is dispatched after
-    the production scripts have bound their listeners.
+    The test-only same-origin sentinel is appended after the three production
+    scripts. Once it executes, all production modules have been fetched and run,
+    so the harness can dispatch the DOM/pywebview lifecycle explicitly instead of
+    depending on Playwright's navigation lifecycle heuristics.
     """
 
     if not _TEST_ORIGIN:
         raise RuntimeError("desktop test HTTP origin is not initialized")
-    page.goto(f"{_TEST_ORIGIN}/index.html", wait_until="domcontentloaded")
-    page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
+    page.goto(f"{_TEST_ORIGIN}/index.html", wait_until="commit", timeout=5_000)
+    page.wait_for_function(
+        "() => window.__paperclawTestAssetsLoaded === true",
+        timeout=5_000,
+    )
+    page.evaluate(
+        """() => {
+          document.dispatchEvent(new Event('DOMContentLoaded'));
+          window.dispatchEvent(new Event('pywebviewready'));
+        }"""
+    )
+    page.wait_for_function(
+        "() => document.querySelector('#workspace-path')?.textContent === '/tmp/paperclaw-workspace'",
+        timeout=5_000,
+    )
 
 
 @pytest.fixture(scope="session")
