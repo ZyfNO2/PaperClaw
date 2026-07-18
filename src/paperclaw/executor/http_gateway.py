@@ -1,7 +1,5 @@
 """HTTP adapter/client for the transport-neutral Worker Gateway."""
 
-from __future__ import annotations
-
 import hmac
 import json
 import re
