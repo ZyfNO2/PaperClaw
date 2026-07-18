@@ -54,6 +54,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "real_llm: tests that call a live LLM provider (slow, costly, non-deterministic)",
+    "process_acceptance: tests that launch real service/provider processes and HTTP sockets",
 ]
 
 [tool.ruff]
