@@ -12,7 +12,7 @@ from paperclaw.lsp.tools import register_lsp_tools
 from paperclaw.memory import build_memory_runtime
 from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.models.reliability import RetryPolicy
-from paperclaw.multiagent.tool import SubagentTaskTool
+from paperclaw.multiagent.reliable_tool import ReliableSubagentTaskTool
 from paperclaw.planning.bootstrap import compose_plan_and_skills
 from paperclaw.tasks.bootstrap import get_or_create_task_runtime
 from paperclaw.tasks.tools import register_task_tools
@@ -52,6 +52,18 @@ class DesktopRuntimeFactory:
             retry_policy=RetryPolicy(max_attempts=3),
         )
 
+    def _create_judge_model(self, request: DesktopRunRequest) -> Any:
+        # SemanticAcceptanceJudge owns the total two-attempt policy. Keep the
+        # underlying client single-attempt so retries stay observable/bounded.
+        return self._model_factory(
+            api_key=request.api_key,
+            base_url=request.base_url,
+            model=request.model,
+            timeout=120,
+            provider=request.provider,
+            retry_policy=RetryPolicy(max_attempts=1),
+        )
+
     def create(
         self,
         request: DesktopRunRequest,
@@ -63,14 +75,17 @@ class DesktopRuntimeFactory:
         if self._context_enabled:
             components = build_memory_runtime(request.workspace)
             model_factory = lambda _agent_id: self._create_model(request)
+            judge_model_factory = lambda _agent_id: self._create_judge_model(request)
             components.tool_registry.register(
-                SubagentTaskTool(
+                ReliableSubagentTaskTool(
                     model_factory,
+                    judge_model_factory=judge_model_factory,
                     enable_verification_gate=request.enable_verification_gate,
                 )
             )
             task_runtime = get_or_create_task_runtime(
                 model_factory,
+                judge_model_factory=judge_model_factory,
                 cache_key=f"desktop:{request.provider}:{request.base_url}:{request.model}",
                 worker_id="desktop-task-worker",
             )
