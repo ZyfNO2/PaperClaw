@@ -105,7 +105,10 @@ class ProjectKnowledgeRuntime:
             return False
         if self.policy is ProjectIndexPolicy.REQUIRE_CURRENT:
             return status.current
-        return status.available
+        # ALLOW_STALE permits only a structurally valid index whose source
+        # fingerprint changed. Corrupt metadata and project identity mismatch
+        # remain fail-closed.
+        return status.current or status.reason == "index_stale"
 
 
 @dataclass(frozen=True)
