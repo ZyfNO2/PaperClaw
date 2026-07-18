@@ -2,191 +2,109 @@
 
 ## Executive Summary
 
-PaperClaw v0.17 consolidated release (PR #42) has completed all automated gates and manual acceptance testing. The release is recommended for acceptance pending Release Owner sign-off.
+**Current decision: HOLD / NOT READY FOR RELEASE.**
 
-**Candidate SHA:** `58e7900dd80c1ad5645ab683c3cdeccf4388bea1`
+The original v0.17 operator run validated the real LLM and protected browser interface, but did not exercise the native pywebview workspace picker used by `select_workspace()`. The previous `ACCEPT pending Release Owner sign-off` recommendation is withdrawn.
 
-**Recommendation:** ACCEPT
+A code correction and focused automated tests have been added to PR #42. The release remains blocked until:
 
----
+1. all exact-head automated workflows pass;
+2. the real Windows native workflow in `DESKTOP_WORKSPACE_PICKER_REVALIDATION.md` passes;
+3. the Technical Reviewer and Release Owner sign off.
 
-## Automated Gate Results
-
-| Gate | Status | Details |
-|------|--------|---------|
-| Windows Main CI | ✅ PASS | 765 tests passed, 0 failed, 5 setup-skipped |
-| Windows Non-Process Regression | ✅ PASS | 763 tests passed, 0 failed, 5 setup-skipped |
-| Real Process Recovery | ✅ PASS | 2 tests passed, 0 failed |
-| Context/Memory Focused | ✅ PASS | 92 tests passed, 0 failed |
-| Desktop Playwright | ✅ PASS | 5 tests passed, 0 failed |
-| Ruff Correctness | ✅ PASS | E9/F63/F7/F82 clean on src/ and tests/ |
-| Windows PyInstaller onedir | ✅ PASS | Package builds and starts correctly |
-| Static Asset Check | ✅ PASS | HTML/CSS/JS present in package |
+PR #42 must remain Draft and must not be merged before those conditions are met.
 
 ---
 
-## Manual Acceptance Results
+## Reported Defect
 
-### Scenario 1: Desktop First-Run Provider Configuration
-**Status:** ✅ PASS
+### Native workspace picker requires a live window
 
-**Evidence:**
-- Manual provider connection successful (Settings → Connect & Load Models)
-- Mock provider received requests (model.started, model.completed events)
-- Run completed with COMPLETED status
-- API Key hidden in UI (shows "Configured (hidden)")
-- Verification gate passed
+The prior implementation depended only on the `DesktopAPI._window` reference. The original manual acceptance did not launch and exercise the native Desktop path, so it did not detect failures involving a missing, stale, hidden, or minimized pywebview window.
 
-### Scenario 2: Workspace Credential Isolation
-**Status:** ✅ PASS
-
-**Evidence:**
-- Workspace A (with .env): Run accepted successfully
-- Workspace B (without .env): Correct error "Missing environment variables: PAPERCLAW_API_KEY, PAPERCLAW_BASE_URL, PAPERCLAW_MODEL"
-- No credential leakage between workspaces
-
-### Scenario 3: Project Instructions
-**Status:** ✅ PASS
-
-**Evidence:**
-- PAPERCLAW.md loaded successfully
-- @docs/rules.md import resolved
-- Code block @docs/ignored.md ignored
-- @../outside.md rejection (no error)
-- Run completed without path escape errors
-
-### Scenario 4: Context Compaction
-**Status:** ✅ PASS (Unit Test Evidence)
-
-**Evidence:**
-- 4/4 compaction unit tests passed
-- Compaction threshold behavior verified
-- Full audit history preserved
-- SHA-256 references for truncated content
-- Summary generation working
-
-### Scenario 5: User Profile and Long Memory
-**Status:** ✅ PASS
-
-**Evidence:**
-- High-confidence entry (0.95) added successfully
-- Low-confidence entry (0.3) added successfully
-- Snapshot includes both entries
-- Replace affects single entry
-- Remove affects single entry
-- Capacity limit raises MemoryCapacityError
-
-### Scenario 6: Memory Privacy and Concurrency
-**Status:** ✅ PASS
-
-**Evidence:**
-- API key format (sk-*) rejected with MemoryPrivacyError
-- Private key header rejected with MemoryPrivacyError
-- Reserved delimiter (§) rejected with ValueError
-- 10 concurrent writes succeeded (2 threads × 5 writes)
-- No stale lock file after completion
-
-### Scenario 7: Service API Durability
-**Status:** ✅ PASS (Integration Test Evidence)
-
-**Evidence:**
-- 11/11 integration tests passed
-- Idempotency-Key replay verified
-- SSE event buffer and resume verified
-- Atomic cancellation persistence verified
-- Process restart reconciliation verified
-- Stale worker protection verified
-
-### Scenario 8: Service Personal Memory Boundary
-**Status:** ✅ PASS
-
-**Evidence:**
-- 3/3 unit tests passed
-- Unauthenticated service disables personal memory by default
-- Trusted deployment can explicitly enable
-- Invalid boolean configuration fails at startup
-
-### Scenario 9: Tool Authorization
-**Status:** ✅ PASS
-
-**Evidence:**
-- Workspace-local file read allowed (read_only)
-- Path outside workspace denied (workspace_path_escape)
-- Destructive tool requires approval
-- Approved tool allowed (trusted_static_approval)
-- Empty tool name denied (missing_tool_name)
-
-### Scenario 10: Research Evaluation
-**Status:** ✅ PASS
-
-**Evidence:**
-- 6/6 unit tests passed
-- Canonical generator is byte-reproducible
-- Dataset digest and results are deterministic
-- Core metrics and plugins verified
-- CLI generates JSON, Markdown, and comparison
+The protected browser interface does not remove the native dependency: its `select_workspace()` request still requires a native pywebview `Window` to display the folder dialog.
 
 ---
 
-## Code Review Summary
+## Implemented Correction
 
-| Category | Count | Notes |
-|----------|-------|-------|
-| Critical | 0 | - |
-| High | 0 | - |
-| Medium | 1 | `reject_secret_like_fields` dead code (not connected) |
-| Low | 0 | - |
+The Desktop bootstrap now installs a focused native workspace-picker extension that:
+
+- uses the window bound by `run_desktop()` when valid;
+- falls back to `webview.active_window()` and the pywebview window registry;
+- shows and restores the native host before opening the dialog;
+- retains pywebview 5 and 6 folder-dialog compatibility;
+- returns `native_window_required` when no native window exists;
+- preserves cancellation and workspace path validation behavior.
+
+Primary implementation and evidence:
+
+- `src/paperclaw/desktop/native_workspace.py`
+- `src/paperclaw/desktop/bootstrap.py`
+- `tests/unit/desktop/test_native_workspace.py`
+- `artifacts/v0_17_acceptance/DESKTOP_WORKSPACE_PICKER_REVALIDATION.md`
 
 ---
 
-## Entry Criteria Verification
+## Automated Evidence Boundary
 
-| # | Criterion | Status | Evidence |
-|---|-----------|--------|----------|
-| 1 | PR #42 targets main, mergeable | ✅ | GitHub PR status |
-| 2 | Only one consolidated PR open | ✅ | #42 only, #40/#41 closed |
-| 3 | Exact-head workflows complete | ✅ | All CI workflows green |
-| 4 | No Critical/High open | ✅ | Code review complete |
-| 5 | Artifacts identify same SHA | ✅ | All artifacts at 58e7900 |
-| 6 | Working tree clean | ✅ | 0 modified tracked files |
-| 7 | No real credentials in repo | ✅ | .env not tracked, test fixtures use fake values |
+The focused regression tests verify native-window resolution and control flow using fake pywebview objects. They do not create a real OS window or native folder dialog.
+
+Desktop Playwright remains a browser interaction gate with a mocked JavaScript bridge. Windows packaging verifies build and packaged assets. Neither gate alone proves that a real folder dialog is visible and interactive.
+
+Exact-head workflow results are recorded in PR #42 after the current CI completes.
+
+---
+
+## Historical Automated Results
+
+The following results were collected at historical candidate `58e7900dd80c1ad5645ab683c3cdeccf4388bea1`:
+
+| Gate | Historical Result |
+|------|-------------------|
+| Windows Main CI | 765 passed, 0 failed, 5 setup-skipped |
+| Windows Non-Process Regression | 763 passed, 0 failed, 5 setup-skipped |
+| Real Process Recovery | 2 passed, 0 failed |
+| Context/Memory Focused | 92 passed, 0 failed |
+| Desktop Playwright | 5 passed, 0 failed |
+| Ruff Correctness | PASS |
+| Windows PyInstaller onedir | PASS |
+
+These results remain useful for unchanged subsystems, but they are not exact-head proof for the native workspace-picker correction.
+
+---
+
+## Manual Scenario Status
+
+| # | Scenario | Status |
+|---|----------|--------|
+| 1 | Desktop first-run, native workspace picker, and real-LLM run | **PENDING** |
+| 2 | Workspace credential isolation | PASS |
+| 3 | Project instructions | PASS |
+| 4 | Context compaction | PASS |
+| 5 | User profile and long memory | PASS |
+| 6 | Memory privacy and concurrency | PASS |
+| 7 | Service API durability | PASS |
+| 8 | Service personal-memory boundary | PASS |
+| 9 | Tool authorization | PASS |
+| 10 | Research evaluation | PASS |
+
+Scenario 1 must be rerun in the native Windows application according to `DESKTOP_WORKSPACE_PICKER_REVALIDATION.md`.
+
+---
+
+## Current Sign-Off
+
+| Role | Status |
+|------|--------|
+| Test Operator | Previous web/real-LLM run complete; native rerun pending |
+| Technical Reviewer | Pending exact-head review |
+| Release Owner | Pending after native acceptance |
 
 ---
 
 ## Release Decision
 
-### ACCEPT
+### HOLD
 
-**Rationale:**
-- All 6 automated gates passed at the exact candidate SHA
-- All 10 mandatory manual scenarios passed
-- No open Critical or High issues
-- Evidence package archived at `artifacts/v0_17_acceptance/`
-- PR #42 is mergeable and targets main
-
-**Pending:**
-- Release Owner sign-off
-
----
-
-## Evidence Package Location
-
-```
-artifacts/v0_17_acceptance/
-├── ACCEPTANCE_EVIDENCE.md
-├── mock_provider_state.json
-└── test_results/
-    ├── test_scenario5.py
-    ├── test_scenario6.py
-    └── test_scenario9.py
-```
-
----
-
-## Sign-Off
-
-| Role | Name | Date | Status |
-|------|------|------|--------|
-| Test Operator | OpenCode | 2026-07-18 | ✅ Complete |
-| Technical Reviewer | - | - | ⏳ Pending |
-| Release Owner | - | - | ⏳ Pending |
+The release is not accepted at this time. Automated success cannot substitute for the missing real native-window interaction. After exact-head CI passes, complete the native Windows revalidation and attach the requested screenshots, console output, and diagnostics before changing this decision.
