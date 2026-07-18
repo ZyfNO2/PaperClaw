@@ -28,8 +28,9 @@ def build_react_flow(
     """Assemble the runtime graph and its stable NodeRegistry.
 
     ``done`` is reserved for a model-produced ``DoneProposal``. Runtime halts
-    caused by cancellation, timeout, or max-steps use ``halt`` so they never enter
-    the Verify/Reflection path without a proposal to verify.
+    caused by cancellation, timeout, max-steps, or terminal invalid output use
+    ``halt`` so they never enter Verify/Reflection without a proposal. The stable
+    node registration order is intentionally preserved for replay compatibility.
     """
     registry = registry or default_registry()
     node_registry = node_registry or NodeRegistry()
@@ -47,7 +48,6 @@ def build_react_flow(
     decide - "retry" >> decide
 
     completed = CompletedNode()
-    node_registry.add(completed)
     decide - "halt" >> completed
 
     if enable_verification_gate:
@@ -58,10 +58,13 @@ def build_react_flow(
         reflect - "default" >> decide
         reflect - "reverify" >> verify
         reflect - "done" >> completed
+        # Preserve the pre-v0.22 registry order: verify, reflect, completed.
         node_registry.add(verify)
         node_registry.add(reflect)
+        node_registry.add(completed)
     else:
         decide - "done" >> completed
+        node_registry.add(completed)
 
     return Flow(start=decide), node_registry
 
