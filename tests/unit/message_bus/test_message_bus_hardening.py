@@ -45,6 +45,36 @@ def test_draft_and_envelope_detach_and_deep_freeze_caller_data(tmp_path: Path) -
         result.message.payload["state"] = "mutate"  # type: ignore[index]
 
 
+def test_frozen_message_data_can_be_reused_as_new_validated_input() -> None:
+    first = MessageDraft(
+        topic="agent.events",
+        sender_id="agent-a",
+        idempotency_key="first",
+        payload={"nested": {"items": [1, 2]}},
+    )
+    second = MessageDraft(
+        topic="agent.events",
+        sender_id="agent-a",
+        idempotency_key="second",
+        payload=first.payload,
+        headers=first.headers,
+    )
+
+    assert second.canonical_dict()["payload"] == {
+        "nested": {"items": [1, 2]}
+    }
+
+
+def test_json_object_keys_are_not_silently_coerced() -> None:
+    with pytest.raises(ValueError, match="keys must be strings"):
+        MessageDraft(
+            topic="agent.events",
+            sender_id="agent-a",
+            idempotency_key="non-string-key",
+            payload={1: "not-json-object-key"},  # type: ignore[dict-item]
+        )
+
+
 def test_payload_and_header_byte_limits_fail_before_insert(tmp_path: Path) -> None:
     store = SQLiteMessageBusStore(
         tmp_path / "bus.sqlite3",
@@ -98,7 +128,8 @@ def test_capacity_rejection_audit_survives_business_exception(tmp_path: Path) ->
 
     events = store.list_events(topic="agent.events")
     rejected = [
-        event for event in events
+        event
+        for event in events
         if event.event_type == "message.publish_rejected_capacity"
     ]
     assert len(rejected) == 1
