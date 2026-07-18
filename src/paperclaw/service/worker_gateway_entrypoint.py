@@ -49,7 +49,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_request_bytes=args.max_request_bytes,
         max_result_bytes=args.max_result_bytes,
     )
-    app = create_worker_gateway_app(gateway, bearer_token=token)
+    app = create_worker_gateway_app(
+        gateway,
+        bearer_token=token,
+        max_request_bytes=args.max_request_bytes,
+    )
     try:
         uvicorn.run(app, host=args.host, port=args.port)
     finally:
