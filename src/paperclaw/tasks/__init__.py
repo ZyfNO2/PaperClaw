@@ -9,9 +9,16 @@ from .contracts import (
     TaskSpec,
     TaskStatus,
 )
+from .distributed_store import (
+    DurableTaskStore,
+    FencedDurableTaskStore,
+    FencedSQLiteDurableTaskStore,
+    TaskLease,
+)
 from .runtime import BackgroundTaskSupervisor, TaskExecutor
 from .service import TaskApplicationService
 from .store import SQLiteDurableTaskStore
+from .strict_store import StrictFencedSQLiteDurableTaskStore
 from .subagent import SubagentTaskExecutor
 from .tools import (
     TaskCreateTool,
@@ -26,7 +33,11 @@ __all__ = [
     "ACTIVE_TASK_STATUSES",
     "TERMINAL_TASK_STATUSES",
     "BackgroundTaskSupervisor",
+    "DurableTaskStore",
+    "FencedDurableTaskStore",
+    "FencedSQLiteDurableTaskStore",
     "SQLiteDurableTaskStore",
+    "StrictFencedSQLiteDurableTaskStore",
     "SubagentTaskExecutor",
     "TaskApplicationService",
     "TaskCreateTool",
@@ -34,6 +45,7 @@ __all__ = [
     "TaskExecutionResult",
     "TaskExecutor",
     "TaskGetTool",
+    "TaskLease",
     "TaskListTool",
     "TaskOutputTool",
     "TaskRecord",
