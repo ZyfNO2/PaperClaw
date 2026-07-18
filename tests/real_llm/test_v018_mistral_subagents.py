@@ -103,7 +103,11 @@ def test_live_mistral_parallel_isolated_subagents() -> None:
                 "writable_paths": [],
                 "allowed_tools": ["file_read", "grep"],
                 "dependencies": [],
-                "max_steps": 8,
+                # The real Provider may inspect several policy/adapter files before
+                # synthesizing its final evidence-backed result. Keep this bounded
+                # but leave completion headroom beyond the 8-step failure observed
+                # in the first v0.22 live acceptance rerun.
+                "max_steps": 12,
                 "timeout_seconds": 180,
             },
         ],
