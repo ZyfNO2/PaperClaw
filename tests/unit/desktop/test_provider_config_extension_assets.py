@@ -32,8 +32,10 @@ def test_extended_provider_controls_do_not_persist_credentials() -> None:
         "document.cookie",
         "indexeddb",
         "console.log",
-        "fetch(",
         "xmlhttprequest",
     ):
         assert forbidden not in combined
+    # Browser mode uses the existing token-protected loopback POST bridge. The
+    # credential is submitted once in that request body and is never persisted.
+    assert "x-paperclaw-token" in combined
     assert combined.count("api_key") == 1
