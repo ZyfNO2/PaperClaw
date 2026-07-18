@@ -21,6 +21,17 @@ from .gateway import (
 )
 
 _HTTP_EXECUTION_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,200}$")
+_EXECUTION_REQUEST_FIELDS = frozenset(
+    {
+        "execution_id",
+        "task_id",
+        "entrypoint",
+        "payload",
+        "workspace",
+        "timeout_seconds",
+        "metadata",
+    }
+)
 
 
 def create_worker_gateway_app(
@@ -62,15 +73,29 @@ def create_worker_gateway_app(
             return HTTPException(status_code=429, detail={"code": exc.code})
         if isinstance(exc, GatewayPolicyError):
             return HTTPException(status_code=403, detail={"code": exc.code})
-        if isinstance(exc, (ValueError, TypeError, json.JSONDecodeError)):
+        if isinstance(exc, (ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError)):
             return HTTPException(status_code=422, detail={"code": "invalid_request"})
         return HTTPException(status_code=500, detail={"code": "internal_error"})
 
     async def bounded_json(request: Request, limit: int) -> Mapping[str, Any]:
-        raw = await request.body()
-        if len(raw) > limit:
-            raise GatewayPayloadTooLargeError("HTTP request body exceeds gateway limit")
-        decoded = json.loads(raw.decode("utf-8")) if raw else {}
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > limit:
+                    raise GatewayPayloadTooLargeError(
+                        "HTTP request body exceeds gateway limit"
+                    )
+            except ValueError as exc:
+                raise ValueError("invalid Content-Length") from exc
+
+        raw = bytearray()
+        async for chunk in request.stream():
+            if len(raw) + len(chunk) > limit:
+                raise GatewayPayloadTooLargeError(
+                    "HTTP request body exceeds gateway limit"
+                )
+            raw.extend(chunk)
+        decoded = json.loads(bytes(raw).decode("utf-8")) if raw else {}
         if not isinstance(decoded, Mapping):
             raise ValueError("request body must be an object")
         return decoded
@@ -87,6 +112,8 @@ def create_worker_gateway_app(
         authorize(authorization)
         try:
             body = await bounded_json(request, max_request_bytes)
+            if set(body) - _EXECUTION_REQUEST_FIELDS:
+                raise ValueError("unknown execution request fields")
             execution = ExecutionRequest.from_dict(body)
             _http_execution_id(execution.execution_id)
             snapshot, created = service.submit(execution)
@@ -118,6 +145,8 @@ def create_worker_gateway_app(
         try:
             normalized = _http_execution_id(execution_id)
             body = await bounded_json(request, max_cancel_bytes)
+            if set(body) - {"reason"}:
+                raise ValueError("unknown cancel request fields")
             reason = (
                 body.get("reason")
                 if isinstance(body.get("reason"), str)
@@ -161,14 +190,14 @@ class HttpWorkerGatewayTransport:
         execution = payload.get("execution") if isinstance(payload, Mapping) else None
         if not isinstance(execution, Mapping):
             raise GatewayTransportError("gateway submit response is malformed")
-        return GatewayExecutionSnapshot.from_dict(execution)
+        return _snapshot(execution, "submit")
 
     def get(self, execution_id: str) -> GatewayExecutionSnapshot:
         normalized = _http_execution_id(execution_id)
         payload = self._request("GET", f"/v1/executions/{normalized}", None)
         if not isinstance(payload, Mapping):
             raise GatewayTransportError("gateway get response is malformed")
-        return GatewayExecutionSnapshot.from_dict(payload)
+        return _snapshot(payload, "get")
 
     def cancel(self, execution_id: str, reason: str) -> GatewayExecutionSnapshot:
         normalized = _http_execution_id(execution_id)
@@ -179,7 +208,7 @@ class HttpWorkerGatewayTransport:
         )
         if not isinstance(payload, Mapping):
             raise GatewayTransportError("gateway cancel response is malformed")
-        return GatewayExecutionSnapshot.from_dict(payload)
+        return _snapshot(payload, "cancel")
 
     def _request(
         self,
@@ -238,6 +267,15 @@ class HttpWorkerGatewayTransport:
         if not isinstance(decoded, Mapping):
             raise GatewayTransportError("gateway response must be an object")
         return decoded
+
+
+def _snapshot(value: Mapping[str, Any], operation: str) -> GatewayExecutionSnapshot:
+    try:
+        return GatewayExecutionSnapshot.from_dict(value)
+    except (TypeError, ValueError) as exc:
+        raise GatewayTransportError(
+            f"gateway {operation} response has an invalid execution snapshot"
+        ) from exc
 
 
 def _raise_http_error(exc: urllib.error.HTTPError) -> None:
