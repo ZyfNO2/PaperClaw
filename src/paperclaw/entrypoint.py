@@ -1,4 +1,4 @@
-"""Installed console entry point with an optional desktop command shim."""
+"""Installed console entry point with optional client and service shims."""
 
 from __future__ import annotations
 
@@ -11,6 +11,14 @@ def main(argv: list[str] | None = None) -> int:
         from paperclaw.desktop.app import main as desktop_main
 
         return desktop_main(resolved[1:])
+    if resolved and resolved[0] == "api":
+        from paperclaw.service.entrypoint import main as service_main
+
+        return service_main(resolved[1:])
+    if resolved and resolved[0] == "research-eval":
+        from paperclaw.research_eval.cli import main as research_eval_main
+
+        return research_eval_main(resolved[1:])
 
     from paperclaw.cli import main as legacy_main
 

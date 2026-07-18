@@ -12,6 +12,8 @@ dependencies = []
 [project.scripts]
 paperclaw = "paperclaw.entrypoint:main"
 paperclaw-gui = "paperclaw.desktop.app:main"
+paperclaw-api = "paperclaw.service.entrypoint:main"
+paperclaw-research-eval = "paperclaw.research_eval.cli:main"
 
 [project.optional-dependencies]
 tui = [
@@ -19,6 +21,10 @@ tui = [
 ]
 gui = [
     "pywebview>=5,<7",
+]
+service = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.34,<1",
 ]
 build = [
     "pyinstaller>=6,<7",
@@ -31,6 +37,9 @@ dev = [
     "ruff>=0.7",
     "textual>=1.0,<8",
     "playwright>=1.50,<2",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.34,<1",
+    "httpx>=0.28,<1",
 ]
 
 [tool.setuptools.packages.find]
