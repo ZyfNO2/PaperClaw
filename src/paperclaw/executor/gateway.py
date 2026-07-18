@@ -418,8 +418,12 @@ class RemoteExecutionHandle:
 
 
 def _canonical_request_bytes(request: ExecutionRequest) -> bytes:
+    # Normalize through the wire decoder before hashing so semantically equal
+    # values such as timeout_seconds=10 and timeout_seconds=10.0 produce one
+    # transport-stable idempotency identity.
+    normalized = ExecutionRequest.from_dict(request.to_dict())
     return json.dumps(
-        request.to_dict(),
+        normalized.to_dict(),
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
