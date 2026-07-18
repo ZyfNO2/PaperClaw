@@ -18,23 +18,7 @@ def test_shell_navigation_workspace_settings_and_sidebar_controls(page: Page) ->
     page.locator("#close-settings").click()
     expect(page.locator("#settings-panel")).to_be_hidden()
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-    page.locator("#sidebar-nav [data-nav=\"trace\"]").click()
-=======
     page.locator('#sidebar-nav [data-nav="trace"]').click()
->>>>>>> edf37eb
-=======
-    page.locator('#sidebar-nav [data-nav="trace"]').click()
->>>>>>> 18cf7be
-=======
-    page.locator('#sidebar-nav [data-nav="trace"]').click()
->>>>>>> 70e7334
-=======
-    page.locator('#sidebar-nav [data-nav="trace"]').click()
->>>>>>> 77ef8ea
     expect(page.locator("#toast")).to_be_visible()
     expect(page.locator("#toast-message")).to_contain_text("under development")
     page.locator("#close-toast").click()
@@ -49,55 +33,6 @@ def test_shell_navigation_workspace_settings_and_sidebar_controls(page: Page) ->
     expect(page.locator("#app")).not_to_have_class("sidebar-collapsed")
 
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-def test_manual_provider_connects_loads_models_and_clears_key(page: Page) -> None:
-    install_bridge(page)
-    load_app(page)
-
-    page.get_by_role("button", name="Settings", exact=False).click()
-    page.locator("#provider-base-url").fill("https://manual.example/v1")
-    page.locator("#provider-api-key").fill("temporary-secret")
-    page.locator("#connect-provider").click()
-
-    expect(page.locator("#connection-status")).to_have_text("CONNECTED")
-    expect(page.locator("#provider-api-key")).to_have_value("")
-    expect(page.locator("#provider-api-key")).to_have_attribute("type", "password")
-    expect(page.locator("#provider-model")).to_be_enabled()
-    expect(page.locator("#provider-model option")).to_have_count(2)
-    expect(page.locator("#provider-model")).to_have_value("manual-model-a")
-    expect(page.locator("#config-source")).to_have_text("Manual in-memory connection")
-    expect(page.locator("#provider-summary")).to_contain_text("MANUAL")
-
-    connect_calls = page.evaluate("window.__bridgeCalls.connect")
-    assert connect_calls == [
-        {
-            "provider": "openai-compatible",
-            "base_url": "https://manual.example/v1",
-            "api_key": "temporary-secret",
-        }
-    ]
-
-    page.locator("#provider-model").select_option("manual-model-b")
-    expect(page.locator("#config-model")).to_have_text("manual-model-b")
-    expect(page.locator("#model-label")).to_have_text("manual-model-b")
-    expect(page.locator("#provider-summary")).to_contain_text("manual-model-b")
-    assert page.evaluate("window.__bridgeCalls.models") == ["manual-model-b"]
-
-
->>>>>>> f189121
-def test_execute_flow_uses_env_payload_and_renders_events_and_result(page: Page) -> None:
-=======
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 def test_theme_switch_persists_and_browser_mode_receives_selected_theme(
     page: Page,
 ) -> None:
@@ -118,16 +53,6 @@ def test_theme_switch_persists_and_browser_mode_receives_selected_theme(
 def test_execute_flow_uses_env_payload_and_renders_events_and_result(
     page: Page,
 ) -> None:
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> edf37eb
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
     install_bridge(page)
     load_app(page)
 
@@ -140,31 +65,9 @@ def test_execute_flow_uses_env_payload_and_renders_events_and_result(
     expect(page.locator("#model-calls")).to_have_text("1")
     expect(page.locator("#tool-calls")).to_have_text("1")
     expect(page.locator("#verification-status")).to_have_text("PASSED")
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-    expect(page.locator("#mission-log")).to_contain_text("任务完成：hello.py 已创建并验证。")
-=======
     expect(page.locator("#mission-log")).to_contain_text(
         "任务完成：hello.py 已创建并验证。"
     )
->>>>>>> edf37eb
-=======
-    expect(page.locator("#mission-log")).to_contain_text(
-        "任务完成：hello.py 已创建并验证。"
-    )
->>>>>>> 18cf7be
-=======
-    expect(page.locator("#mission-log")).to_contain_text(
-        "任务完成：hello.py 已创建并验证。"
-    )
->>>>>>> 70e7334
-=======
-    expect(page.locator("#mission-log")).to_contain_text(
-        "任务完成：hello.py 已创建并验证。"
-    )
->>>>>>> 77ef8ea
     expect(page.locator("#timeline .event-row")).to_have_count(4)
 
     payload = page.evaluate("window.__bridgeCalls.start[0]")
@@ -187,31 +90,9 @@ def test_execute_flow_uses_env_payload_and_renders_events_and_result(
     expect(page.locator('#timeline .event-row[data-type="model"]')).to_be_visible()
 
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-def test_cancel_flow_disables_duplicate_submission_and_reaches_terminal_state(page: Page) -> None:
-=======
 def test_cancel_flow_disables_duplicate_submission_and_reaches_terminal_state(
     page: Page,
 ) -> None:
->>>>>>> edf37eb
-=======
-def test_cancel_flow_disables_duplicate_submission_and_reaches_terminal_state(
-    page: Page,
-) -> None:
->>>>>>> 18cf7be
-=======
-def test_cancel_flow_disables_duplicate_submission_and_reaches_terminal_state(
-    page: Page,
-) -> None:
->>>>>>> 70e7334
-=======
-def test_cancel_flow_disables_duplicate_submission_and_reaches_terminal_state(
-    page: Page,
-) -> None:
->>>>>>> 77ef8ea
     install_bridge(page, auto_complete=False)
     load_app(page)
 

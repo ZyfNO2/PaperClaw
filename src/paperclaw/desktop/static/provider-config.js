@@ -6,6 +6,7 @@
   const ui = {};
   let initialized = false;
   let connecting = false;
+  let providerSource = "env";
 
   function byId(id) {
     return document.getElementById(id);
@@ -17,34 +18,19 @@
     for (const id of [
       "config-source", "config-provider", "config-base-url", "config-model",
       "config-credential", "provider-base-url", "provider-api-key",
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-      "provider-key-toggle", "provider-connect", "provider-model",
-      "provider-reset", "provider-connect-status", "provider-summary",
-      "env-badge", "model-label", "verification-enabled", "gate-mode-status"
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
       "provider-manual-model", "provider-key-toggle", "provider-connect",
-      "provider-model", "provider-reset", "provider-connect-status",
+      "provider-model", "provider-reset", "use-manual-model",
+      "disconnect-provider", "active-config-status", "provider-connect-status",
       "provider-summary", "env-badge", "model-label", "verification-enabled",
       "gate-mode-status"
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
     ]) ui[toCamel(id)] = byId(id);
 
     ui.providerKeyToggle.addEventListener("click", toggleKeyVisibility);
     ui.providerConnect.addEventListener("click", connectProvider);
     ui.providerModel.addEventListener("change", selectModel);
     ui.providerReset.addEventListener("click", resetToEnvironment);
+    ui.useManualModel.addEventListener("click", useManualModel);
+    ui.disconnectProvider.addEventListener("click", disconnectProvider);
     ui.verificationEnabled.addEventListener("change", renderGateMode);
     renderGateMode();
     maybeLoadDefaults();
@@ -60,18 +46,7 @@
   }
 
   async function maybeLoadDefaults() {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
     if (!initialized) return;
->>>>>>> 18cf7be
-=======
-    if (!initialized) return;
->>>>>>> 70e7334
-=======
-    if (!initialized) return;
->>>>>>> 77ef8ea
     const api = backendApi();
     if (!api || typeof api.get_defaults !== "function") return;
     try {
@@ -86,18 +61,7 @@
     if (connecting) return;
     const baseUrl = ui.providerBaseUrl.value.trim();
     const apiKey = ui.providerApiKey.value.trim();
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
     const manualModel = ui.providerManualModel.value.trim();
->>>>>>> 18cf7be
-=======
-    const manualModel = ui.providerManualModel.value.trim();
->>>>>>> 70e7334
-=======
-    const manualModel = ui.providerManualModel.value.trim();
->>>>>>> 77ef8ea
     if (!baseUrl || !apiKey) {
       setStatus("Base URL 和 API Key 均不能为空。", "error");
       return;
@@ -114,19 +78,6 @@
     ui.providerModel.disabled = true;
     setStatus("正在连接并读取模型列表……", "pending");
     try {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-      const response = await api.connect_provider({
-        base_url: baseUrl,
-        api_key: apiKey,
-        provider: "openai-compatible"
-      });
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
       const payload = {
         base_url: baseUrl,
         api_key: apiKey,
@@ -134,42 +85,18 @@
       };
       if (manualModel) payload.model = manualModel;
       const response = await api.connect_provider(payload);
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
       if (!response || !response.ok) {
         renderError(response);
         return;
       }
-      ui.providerApiKey.value = "";
-      ui.providerApiKey.type = "password";
-      ui.providerKeyToggle.textContent = "显示";
+      clearCredentialInput();
       renderProviderState(response);
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-      setStatus(`连接成功，可用模型 ${response.available_models.length} 个。`, "success");
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
+      const models = modelList(response);
       if (response.discovery_warning) {
         setStatus(response.discovery_warning, "warning");
       } else {
-        setStatus(`连接成功，可用模型 ${response.available_models.length} 个。`, "success");
+        setStatus(`连接成功，可用模型 ${models.length} 个。`, "success");
       }
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
     } catch (_error) {
       setStatus("连接失败：桌面桥接未返回有效结果。", "error");
     } finally {
@@ -201,6 +128,34 @@
     }
   }
 
+  async function useManualModel() {
+    const selected = ui.providerManualModel.value.trim();
+    if (!selected) {
+      setStatus("请输入要使用的模型名称。", "error");
+      ui.providerManualModel.focus();
+      return;
+    }
+    const api = backendApi();
+    if (!api || typeof api.select_provider_model !== "function") {
+      setStatus("当前桌面桥接不支持手动模型选择。", "error");
+      return;
+    }
+    ui.useManualModel.disabled = true;
+    try {
+      const response = await api.select_provider_model(selected, true);
+      if (!response || !response.ok) {
+        renderError(response);
+        return;
+      }
+      renderProviderState(response);
+      setStatus(`已选择模型：${selected}`, "warning");
+    } catch (_error) {
+      setStatus("模型切换失败。", "error");
+    } finally {
+      ui.useManualModel.disabled = false;
+    }
+  }
+
   async function resetToEnvironment() {
     const api = backendApi();
     if (!api || typeof api.clear_provider_config !== "function") {
@@ -213,20 +168,7 @@
         renderError(response);
         return;
       }
-      ui.providerModel.replaceChildren();
-      ui.providerModel.disabled = true;
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-      ui.providerManualModel.value = "";
->>>>>>> 18cf7be
-=======
-      ui.providerManualModel.value = "";
->>>>>>> 70e7334
-=======
-      ui.providerManualModel.value = "";
->>>>>>> 77ef8ea
+      clearManualUi();
       setStatus("已恢复为环境变量配置。", "success");
       await maybeLoadDefaults();
     } catch (_error) {
@@ -234,84 +176,86 @@
     }
   }
 
+  async function disconnectProvider() {
+    const api = backendApi();
+    if (!api || typeof api.clear_manual_provider !== "function") {
+      setStatus("当前桌面桥接不支持断开手动 Provider。", "error");
+      return;
+    }
+    ui.disconnectProvider.disabled = true;
+    try {
+      const response = await api.clear_manual_provider();
+      if (!response || !response.ok) {
+        renderError(response);
+        return;
+      }
+      clearManualUi();
+      renderProviderState(response);
+      setStatus(
+        response.configured
+          ? "手动 Provider 已断开，ENV 配置继续生效。"
+          : "手动 Provider 已断开，但 ENV 配置不完整。",
+        response.configured ? "success" : "warning"
+      );
+    } catch (_error) {
+      setStatus("断开手动 Provider 失败。", "error");
+      ui.disconnectProvider.disabled = providerSource !== "manual";
+    }
+  }
+
+  function clearManualUi() {
+    clearCredentialInput();
+    ui.providerModel.replaceChildren();
+    ui.providerModel.disabled = true;
+    ui.providerManualModel.value = "";
+  }
+
+  function clearCredentialInput() {
+    ui.providerApiKey.value = "";
+    ui.providerApiKey.type = "password";
+    ui.providerKeyToggle.textContent = "显示";
+  }
+
   function renderProviderState(response) {
-    const source = response.provider_source === "manual" ? "Manual connection" : "Environment variables";
+    providerSource = response.provider_source === "manual" ? "manual" : "env";
+    const source = providerSource === "manual" ? "Manual connection" : "Environment variables";
     const provider = text(response.provider, "openai-compatible");
     const baseUrl = text(response.base_url, "not configured");
-    const model = text(response.model, "not configured");
+    const model = text(response.model || response.selected_model, "not configured");
     const configured = Boolean(response.configured);
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
     const verified = response.model_verified !== false;
->>>>>>> 18cf7be
-=======
-    const verified = response.model_verified !== false;
->>>>>>> 70e7334
-=======
-    const verified = response.model_verified !== false;
->>>>>>> 77ef8ea
+    const models = modelList(response);
 
     ui.configSource.textContent = source;
     ui.configProvider.textContent = provider;
     ui.configBaseUrl.textContent = baseUrl;
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-    ui.configModel.textContent = model;
-    ui.configCredential.textContent = configured ? "Configured (hidden)" : `Missing: ${(response.missing || []).join(", ")}`;
-    ui.providerBaseUrl.value = response.base_url || "";
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
     ui.configModel.textContent = verified ? model : `${model} (unverified)`;
     ui.configCredential.textContent = configured ? "Configured (hidden)" : `Missing: ${(response.missing || []).join(", ")}`;
     ui.providerBaseUrl.value = response.base_url || "";
-    if (response.provider_source === "manual" && response.model_source === "manual") {
-      ui.providerManualModel.value = response.model || "";
-    }
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
-
-    if (Array.isArray(response.available_models)) {
-      populateModels(response.available_models, response.model);
+    if (providerSource === "manual" && response.model_source === "manual") {
+      ui.providerManualModel.value = response.model || response.selected_model || "";
     }
 
-    const prefix = response.provider_source === "manual" ? "MANUAL" : "ENV";
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-    ui.providerSummary.textContent = configured
-      ? `LLM · ${prefix} · ${provider} / ${model}`
-      : `LLM · ${prefix} INCOMPLETE · ${(response.missing || []).join(", ")}`;
-    ui.modelLabel.textContent = model;
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
+    if (models.length) populateModels(models, response.model || response.selected_model);
+
+    const prefix = providerSource === "manual" ? "MANUAL" : "ENV";
     const modelDisplay = verified ? model : `${model} · UNVERIFIED`;
     ui.providerSummary.textContent = configured
       ? `LLM · ${prefix} · ${provider} / ${modelDisplay}`
       : `LLM · ${prefix} INCOMPLETE · ${(response.missing || []).join(", ")}`;
     ui.modelLabel.textContent = modelDisplay;
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
-    ui.envBadge.textContent = response.provider_source === "manual" ? "API✓" : (configured ? "ENV✓" : "ENV!");
+    ui.envBadge.textContent = providerSource === "manual" ? "API✓" : (configured ? "ENV✓" : "ENV!");
     ui.envBadge.dataset.configured = configured ? "true" : "false";
+    ui.disconnectProvider.disabled = providerSource !== "manual";
+    ui.activeConfigStatus.textContent = configured
+      ? `ACTIVE · ${prefix} · ${modelDisplay}`
+      : "ACTIVE · NONE";
+  }
+
+  function modelList(response) {
+    if (Array.isArray(response.available_models)) return response.available_models;
+    if (Array.isArray(response.models)) return response.models;
+    return response.model ? [response.model] : [];
   }
 
   function populateModels(models, selected) {
@@ -347,26 +291,12 @@
   function renderError(response) {
     const code = response && response.error_code ? response.error_code : "runtime_error";
     const message = response && response.error_message ? response.error_message : "Provider connection failed.";
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
     if (response && response.active_configuration_preserved) {
       const source = text(response.active_provider_source, "previous").toUpperCase();
-      setStatus(`${code}: ${message} · ${source} CONFIG STILL ACTIVE`, "warning");
+      ui.activeConfigStatus.textContent = `ACTIVE · ${source} · ${text(response.active_model, "model")}`;
+      setStatus(`${code}: ${message} · Previous provider remains active`, "warning");
       return;
     }
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
     setStatus(`${code}: ${message}`, "error");
   }
 
@@ -394,38 +324,14 @@
         },
         body: JSON.stringify({args})
       });
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-      const payload = await response.json();
-      return payload;
-=======
       return response.json();
->>>>>>> 18cf7be
-=======
-      return response.json();
->>>>>>> 70e7334
-=======
-      return response.json();
->>>>>>> 77ef8ea
     }
     return {
       get_defaults: () => invoke("get_defaults", []),
       connect_provider: (request) => invoke("connect_provider", [request]),
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-      select_provider_model: (model) => invoke("select_provider_model", [model]),
-=======
       select_provider_model: (model, allowUnlisted = false) => invoke("select_provider_model", [model, allowUnlisted]),
->>>>>>> 18cf7be
-=======
-      select_provider_model: (model, allowUnlisted = false) => invoke("select_provider_model", [model, allowUnlisted]),
->>>>>>> 70e7334
-=======
-      select_provider_model: (model, allowUnlisted = false) => invoke("select_provider_model", [model, allowUnlisted]),
->>>>>>> 77ef8ea
-      clear_provider_config: () => invoke("clear_provider_config", [])
+      clear_provider_config: () => invoke("clear_provider_config", []),
+      clear_manual_provider: () => invoke("clear_manual_provider", [])
     };
   }
 

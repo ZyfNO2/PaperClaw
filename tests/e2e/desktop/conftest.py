@@ -8,36 +8,17 @@ import pytest
 from playwright.sync_api import Browser, Page, sync_playwright
 
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-ASSET_DIR = Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
-=======
 ASSET_DIR = (
     Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
 )
->>>>>>> edf37eb
-=======
-ASSET_DIR = (
-    Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
-)
->>>>>>> 18cf7be
-=======
-ASSET_DIR = (
-    Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
-)
->>>>>>> 70e7334
-=======
-ASSET_DIR = (
-    Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
-)
->>>>>>> 77ef8ea
 
 
 def load_app(page: Page) -> None:
     html = (ASSET_DIR / "index.html").read_text(encoding="utf-8")
     css = (ASSET_DIR / "styles.css").read_text(encoding="utf-8")
+    provider_javascript = (ASSET_DIR / "provider-config.js").read_text(
+        encoding="utf-8"
+    )
     javascript = (ASSET_DIR / "app.js").read_text(encoding="utf-8")
     html = re.sub(
         r'<meta\s+http-equiv="Content-Security-Policy"[^>]*>',
@@ -45,35 +26,16 @@ def load_app(page: Page) -> None:
         html,
         flags=re.IGNORECASE,
     )
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-    html = html.replace('<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>")
-    html = html.replace('<script src="app.js"></script>', f"<script>{javascript}</script>")
-=======
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
     html = html.replace(
         '<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>"
     )
     html = html.replace(
+        '<script src="provider-config.js"></script>',
+        f"<script>{provider_javascript}</script>",
+    )
+    html = html.replace(
         '<script src="app.js"></script>', f"<script>{javascript}</script>"
     )
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> edf37eb
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
     page.set_content(html, wait_until="load")
     page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
 
@@ -95,31 +57,9 @@ def browser() -> Browser:
 
 @pytest.fixture
 def page(browser: Browser) -> Page:
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-    page = browser.new_page(viewport={"width": 1440, "height": 900}, accept_downloads=True)
-=======
     page = browser.new_page(
         viewport={"width": 1440, "height": 900}, accept_downloads=True
     )
->>>>>>> edf37eb
-=======
-    page = browser.new_page(
-        viewport={"width": 1440, "height": 900}, accept_downloads=True
-    )
->>>>>>> 18cf7be
-=======
-    page = browser.new_page(
-        viewport={"width": 1440, "height": 900}, accept_downloads=True
-    )
->>>>>>> 70e7334
-=======
-    page = browser.new_page(
-        viewport={"width": 1440, "height": 900}, accept_downloads=True
-    )
->>>>>>> 77ef8ea
     yield page
     page.close()
 
@@ -128,27 +68,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
     page.evaluate(
         f"""
         (() => {{
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-          const calls = {{ start: [], cancel: 0, select: 0, polls: 0 }};
-=======
-          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
->>>>>>> edf37eb
-=======
-          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, connect: [], models: [] }};
->>>>>>> f189121
-=======
-          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
->>>>>>> 18cf7be
-=======
-          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
->>>>>>> 70e7334
-=======
-          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [] }};
->>>>>>> 77ef8ea
+          const calls = {{ start: [], cancel: 0, select: 0, polls: 0, browser: [], themes: [], models: [] }};
           let state = {{
             run_id: null, status: 'idle', model_calls: 0, tool_calls: 0,
             last_sequence: 0, terminal: false, verification_status: null,
@@ -156,22 +76,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             error_code: null, error_message: null
           }};
           let queue = [];
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
           let theme = 'neo-brutalist';
->>>>>>> edf37eb
-=======
-          let theme = 'neo-brutalist';
->>>>>>> 18cf7be
-=======
-          let theme = 'neo-brutalist';
->>>>>>> 70e7334
-=======
-          let theme = 'neo-brutalist';
->>>>>>> 77ef8ea
           const autoComplete = {str(auto_complete).lower()};
           window.__bridgeCalls = calls;
           window.__mockState = () => state;
@@ -185,50 +90,44 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
                 base_url: 'https://provider.example/v1',
                 model: 'env-model',
                 models: ['env-model'],
+                available_models: ['env-model'],
                 configured: true,
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-                missing: []
-=======
                 missing: [],
                 theme
->>>>>>> edf37eb
               }};
             }},
             async connect_provider(payload) {{
-              calls.connect.push(JSON.parse(JSON.stringify(payload)));
+              calls.provider = JSON.parse(JSON.stringify(payload));
               return {{
                 ok: true,
                 provider_source: 'manual',
-                provider: payload.provider,
+                provider: payload.provider || 'openai-compatible',
                 base_url: payload.base_url,
-                models: ['manual-model-a', 'manual-model-b'],
+                model: 'manual-model-a',
                 selected_model: 'manual-model-a',
-                configured: true
+                models: ['manual-model-a', 'manual-model-b'],
+                available_models: ['manual-model-a', 'manual-model-b'],
+                configured: true,
+                model_source: 'discovered',
+                model_verified: true
               }};
             }},
             async select_provider_model(model) {{
               calls.models.push(model);
               return {{
-                ok: true,
-                provider_source: 'manual',
-                provider: 'openai-compatible',
-                base_url: 'https://manual.example/v1',
-                model
-=======
-                missing: [],
-                theme
->>>>>>> 18cf7be
-=======
-                missing: [],
-                theme
->>>>>>> 70e7334
-=======
-                missing: [],
-                theme
->>>>>>> 77ef8ea
+                ok: true, provider_source: 'manual', provider: 'openai-compatible',
+                base_url: 'https://manual.example/v1', model,
+                selected_model: model, models: [model], available_models: [model],
+                configured: true, model_source: 'discovered', model_verified: true
+              }};
+            }},
+            async clear_provider_config() {{ return {{ ok: true, provider_source: 'env' }}; }},
+            async clear_manual_provider() {{
+              return {{
+                ok: true, workspace: '/tmp/paperclaw-workspace', provider_source: 'env',
+                provider: 'openai-compatible', base_url: 'https://provider.example/v1',
+                model: 'env-model', models: ['env-model'], available_models: ['env-model'],
+                configured: true, missing: [], manual_provider_cleared: true
               }};
             }},
             async get_state() {{ return {{ ok: true, state }}; }},
@@ -270,35 +169,11 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             async select_workspace() {{
               calls.select += 1;
               return {{ ok: true, workspace: '/tmp/selected-workspace' }};
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
             }},
-            async set_theme(theme) {{
-              calls.themes.push(theme);
-              return {{ ok: true, theme }};
-            }},
-            async open_in_browser(theme) {{
-              calls.browser.push(theme);
+            async set_theme(nextTheme) {{ calls.themes.push(nextTheme); theme = nextTheme; return {{ ok: true, theme }}; }},
+            async open_in_browser(selectedTheme) {{
+              calls.browser.push(selectedTheme);
               return {{ ok: true, opened: true, mode: 'browser', origin: 'http://127.0.0.1:4455' }};
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> edf37eb
-=======
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
             }}
           }} }};
         }})();

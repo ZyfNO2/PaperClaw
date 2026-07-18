@@ -10,17 +10,6 @@ from typing import Any, Mapping
 
 from paperclaw.harness import RunLimits
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-ACTIVE_SERVICE_STATUSES = frozenset({"accepted", "running", "cancelling"})
-TERMINAL_SERVICE_STATUSES = frozenset(
-    {"completed", "failed", "blocked", "stopped", "budget_exhausted"}
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 ACTIVE_SERVICE_STATUSES = frozenset(
     {"accepted", "queued", "running", "cancelling"}
 )
@@ -36,13 +25,6 @@ TERMINAL_SERVICE_STATUSES = frozenset(
 )
 DISCONNECT_POLICIES = frozenset(
     {"detach_on_disconnect", "cancel_on_disconnect"}
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 )
 _SECRET_KEYS = frozenset(
     {
@@ -99,18 +81,7 @@ class ServiceRunRequest:
     conversation_id: str | None = None
     client_id: str | None = None
     enable_verification_gate: bool = True
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
     disconnect_policy: str = "detach_on_disconnect"
->>>>>>> 18cf7be
-=======
-    disconnect_policy: str = "detach_on_disconnect"
->>>>>>> 70e7334
-=======
-    disconnect_policy: str = "detach_on_disconnect"
->>>>>>> 77ef8ea
 
     def __post_init__(self) -> None:
         task = self.task.strip()
@@ -124,42 +95,16 @@ class ServiceRunRequest:
         normalized_workspace = str(Path(workspace).expanduser())
         conversation = _optional_identifier(self.conversation_id, "conversation_id")
         client = _optional_identifier(self.client_id, "client_id")
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
         disconnect_policy = self.disconnect_policy.strip()
         if disconnect_policy not in DISCONNECT_POLICIES:
             raise ValueError(
                 "disconnect_policy must be detach_on_disconnect or "
                 "cancel_on_disconnect"
             )
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
         object.__setattr__(self, "task", task)
         object.__setattr__(self, "workspace", normalized_workspace)
         object.__setattr__(self, "conversation_id", conversation)
         object.__setattr__(self, "client_id", client)
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-
-    def digest(self) -> str:
-        payload = {
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
         object.__setattr__(self, "disconnect_policy", disconnect_policy)
 
     def digest(self) -> str:
@@ -173,48 +118,18 @@ class ServiceRunRequest:
 
     def to_metadata(self) -> dict[str, Any]:
         return {
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
             "task": self.task,
             "workspace": self.workspace,
             "conversation_id": self.conversation_id,
             "client_id": self.client_id,
             "enable_verification_gate": self.enable_verification_gate,
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
             "disconnect_policy": self.disconnect_policy,
->>>>>>> 18cf7be
-=======
-            "disconnect_policy": self.disconnect_policy,
->>>>>>> 70e7334
-=======
-            "disconnect_policy": self.disconnect_policy,
->>>>>>> 77ef8ea
             "limits": {
                 "max_steps": self.limits.max_steps,
                 "max_model_calls": self.limits.max_model_calls,
                 "max_tool_calls": self.limits.max_tool_calls,
             },
         }
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-        encoded = json.dumps(
-            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        ).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 
     @classmethod
     def from_metadata(cls, value: Mapping[str, Any]) -> "ServiceRunRequest":
@@ -243,13 +158,6 @@ class ServiceRunRequest:
                 ),
             ),
         )
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 
 
 @dataclass(frozen=True)
@@ -327,17 +235,6 @@ def sanitize_public(value: Any, *, depth: int = 0) -> Any:
         for raw_key, raw_value in list(value.items())[:100]:
             key = str(raw_key)
             normalized = key.lower().replace("-", "_")
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-            if normalized in _SECRET_KEYS or any(
-                marker in normalized
-                for marker in ("password", "secret", "api_key", "authorization")
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
             if (
                 normalized in _SECRET_KEYS
                 or any(
@@ -351,38 +248,15 @@ def sanitize_public(value: Any, *, depth: int = 0) -> Any:
                 )
                 or normalized.endswith("_token")
                 or normalized.startswith("token_")
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
             ):
                 continue
             sanitized[key[:100]] = sanitize_public(raw_value, depth=depth + 1)
         return sanitized
     if isinstance(value, (list, tuple, set, frozenset)):
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-        return [sanitize_public(item, depth=depth + 1) for item in list(value)[:100]]
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
         return [
             sanitize_public(item, depth=depth + 1)
             for item in list(value)[:100]
         ]
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
     return _bounded_text(str(value))
 
 
@@ -403,14 +277,6 @@ def _bounded_text(value: str | None, limit: int = 20_000) -> str | None:
     if value is None:
         return None
     return value if len(value) <= limit else value[:limit] + "...<truncated>"
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea
 
 
 def _required_text(value: Any, name: str) -> str:
@@ -427,10 +293,3 @@ def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError(f"{name} must be a positive integer")
     return value
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 18cf7be
-=======
->>>>>>> 70e7334
-=======
->>>>>>> 77ef8ea

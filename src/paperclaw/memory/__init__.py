@@ -10,10 +10,7 @@ from .store import (
     FileMemoryStore,
     MemoryCapacityError,
     MemoryEntry,
-<<<<<<< HEAD
-=======
     MemoryLockTimeout,
->>>>>>> 77ef8ea
     MemoryMatchError,
     MemoryPolicy,
     MemoryPrivacyError,
@@ -27,10 +24,7 @@ __all__ = [
     "FrozenFoundationalContextSource",
     "MemoryCapacityError",
     "MemoryEntry",
-<<<<<<< HEAD
-=======
     "MemoryLockTimeout",
->>>>>>> 77ef8ea
     "MemoryMatchError",
     "MemoryPolicy",
     "MemoryPrivacyError",

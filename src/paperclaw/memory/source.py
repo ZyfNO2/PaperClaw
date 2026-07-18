@@ -14,10 +14,7 @@ from .store import MemoryEntry, MemorySnapshot
 
 _IMPORT_PATTERN = re.compile(r"(?<![A-Za-z0-9_])@([A-Za-z0-9_./\\-]+)")
 _DEFAULT_INSTRUCTION_FILES = ("PAPERCLAW.md", "CLAUDE.md", "AGENTS.md")
-<<<<<<< HEAD
-=======
 _TRUNCATION_MARKER = "\n[paperclaw: project instructions truncated at configured limit]"
->>>>>>> 77ef8ea
 
 
 @dataclass(frozen=True)
@@ -25,10 +22,7 @@ class ProjectInstructionSnapshot:
     content: str
     source_files: tuple[str, ...]
     fingerprint: str
-<<<<<<< HEAD
-=======
     truncated: bool = False
->>>>>>> 77ef8ea
 
 
 class ProjectInstructionLoader:
@@ -65,19 +59,11 @@ class ProjectInstructionLoader:
         blocks: list[str] = []
         used = 0
         source_files: list[str] = []
-<<<<<<< HEAD
-=======
         truncated = False
->>>>>>> 77ef8ea
         for path, content in loaded.items():
             relative = path.relative_to(self.workspace).as_posix()
             block = f"[project-instruction:{relative}]\n{content}"
             if used + len(block) > self.max_total_chars:
-<<<<<<< HEAD
-                remaining = self.max_total_chars - used
-                if remaining > 0:
-                    blocks.append(block[:remaining])
-=======
                 truncated = True
                 remaining = self.max_total_chars - used
                 marker_budget = len(_TRUNCATION_MARKER)
@@ -86,7 +72,6 @@ class ProjectInstructionLoader:
                     source_files.append(relative)
                 elif remaining > 0:
                     blocks.append(_TRUNCATION_MARKER[-remaining:])
->>>>>>> 77ef8ea
                 break
             blocks.append(block)
             source_files.append(relative)
@@ -97,10 +82,7 @@ class ProjectInstructionLoader:
             content=rendered,
             source_files=tuple(source_files),
             fingerprint=fingerprint,
-<<<<<<< HEAD
-=======
             truncated=truncated,
->>>>>>> 77ef8ea
         )
 
     def _load(self, path: Path, *, depth: int, loaded: dict[Path, str]) -> None:
@@ -148,11 +130,6 @@ class FrozenFoundationalContextSource:
         *,
         memory_snapshot: MemorySnapshot,
         project_snapshot: ProjectInstructionSnapshot,
-<<<<<<< HEAD
-    ) -> None:
-        self.memory_snapshot = memory_snapshot
-        self.project_snapshot = project_snapshot
-=======
         minimum_confidence: float = 0.60,
     ) -> None:
         if (
@@ -164,7 +141,6 @@ class FrozenFoundationalContextSource:
         self.memory_snapshot = memory_snapshot
         self.project_snapshot = project_snapshot
         self.minimum_confidence = float(minimum_confidence)
->>>>>>> 77ef8ea
 
     def collect(self, request: ContextRequest) -> tuple[ContextCandidate, ...]:
         candidates: list[ContextCandidate] = []
@@ -186,20 +162,13 @@ class FrozenFoundationalContextSource:
                     bucket="protected",
                     pinned=True,
                     compressible=False,
-<<<<<<< HEAD
-=======
                     metadata={"truncated": project.truncated},
->>>>>>> 77ef8ea
                 )
             )
 
         user_content = self._render_store(
             "USER PROFILE",
             self.memory_snapshot.user_entries,
-<<<<<<< HEAD
-            self.memory_snapshot.user_used_chars,
-=======
->>>>>>> 77ef8ea
             self.memory_snapshot.user_limit_chars,
         )
         if user_content:
@@ -225,10 +194,6 @@ class FrozenFoundationalContextSource:
         memory_content = self._render_store(
             "MEMORY",
             self.memory_snapshot.memory_entries,
-<<<<<<< HEAD
-            self.memory_snapshot.memory_used_chars,
-=======
->>>>>>> 77ef8ea
             self.memory_snapshot.memory_limit_chars,
         )
         if memory_content:
@@ -252,20 +217,6 @@ class FrozenFoundationalContextSource:
             )
         return tuple(candidates)
 
-<<<<<<< HEAD
-    @staticmethod
-    def _render_store(
-        title: str,
-        entries: tuple[MemoryEntry, ...],
-        used_chars: int,
-        limit_chars: int,
-    ) -> str:
-        if not entries:
-            return ""
-        percentage = round((used_chars / limit_chars) * 100) if limit_chars else 0
-        lines = [f"{title} [{percentage}% — {used_chars}/{limit_chars} chars]"]
-        for entry in entries:
-=======
     def _render_store(
         self,
         title: str,
@@ -288,7 +239,6 @@ class FrozenFoundationalContextSource:
             f"minimum_confidence={self.minimum_confidence:.2f}]"
         ]
         for entry in selected:
->>>>>>> 77ef8ea
             lines.append(
                 "\n".join(
                     (
