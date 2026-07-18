@@ -1,0 +1,44 @@
+name: v0.23 Executor isolation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feat/v0.22-verification-reliability
+    paths:
+      - "src/paperclaw/executor/**"
+      - "src/paperclaw/tasks/**"
+      - "tests/unit/executor/**"
+      - "tests/unit/tasks/**"
+      - ".github/workflows/v023-executor-isolation.yml"
+      - "Plan/PaperClaw_v0.23_Executor_Isolation_Subprocess_Worker_Foundation.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  executor-isolation:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Run focused executor acceptance
+        run: python -m pytest -q tests/unit/executor/test_subprocess_executor.py tests/unit/tasks/test_process_executor.py
+      - name: Run task compatibility acceptance
+        run: python -m pytest -q tests/unit/tasks
+      - name: Run correctness lint
+        run: python -m ruff check src/paperclaw/executor src/paperclaw/tasks tests/unit/executor tests/unit/tasks --select E9,F63,F7,F82
