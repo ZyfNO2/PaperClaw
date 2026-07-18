@@ -51,7 +51,7 @@ jobs:
           python -m pytest -vv tests/e2e/desktop \
             --maxfail=1 \
             --timeout=20 \
-            --timeout-method=thread \
+            --timeout-method=signal \
             --basetemp=tmp/playwright/pytest \
             --junitxml=tmp/playwright/junit.xml \
             2>&1 | tee tmp/playwright/pytest.log
