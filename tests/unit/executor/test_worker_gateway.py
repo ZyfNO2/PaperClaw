@@ -8,6 +8,7 @@ from paperclaw.executor import (
     DirectWorkerGatewayTransport,
     ExecutionRequest,
     ExecutorStatus,
+    GatewayCapacityError,
     GatewayConflictError,
     GatewayPayloadTooLargeError,
     GatewayPolicyError,
@@ -81,6 +82,33 @@ def test_same_execution_id_different_request_conflicts(tmp_path: Path) -> None:
         service.submit(_request(tmp_path, payload={"value": 1}))
         with pytest.raises(GatewayConflictError):
             service.submit(_request(tmp_path, payload={"value": 2}))
+    finally:
+        service.close()
+
+
+def test_capacity_rejects_new_ids_without_forgetting_used_id(tmp_path: Path) -> None:
+    service = _service(tmp_path, max_execution_records=1)
+    try:
+        request = _request(tmp_path, execution_id="stable-id", payload={"value": 1})
+        handle = RemoteWorkerExecutor(DirectWorkerGatewayTransport(service)).start(request)
+        result = handle.wait(10)
+        assert result is not None
+        assert result.status is ExecutorStatus.SUCCEEDED
+
+        snapshot, created = service.submit(request)
+        assert created is False
+        assert snapshot.state == "terminal"
+        assert snapshot.result == result
+
+        with pytest.raises(GatewayCapacityError):
+            service.submit(
+                _request(tmp_path, execution_id="new-id", payload={"value": 2})
+            )
+
+        # Capacity pressure must not turn an old execution ID back into a fresh run.
+        again, created_again = service.submit(request)
+        assert created_again is False
+        assert again.result == result
     finally:
         service.close()
 
