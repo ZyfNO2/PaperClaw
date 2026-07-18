@@ -9,21 +9,19 @@ from typing import Any
 from uuid import uuid4
 
 from paperclaw.agent.flow import default_registry
-from paperclaw.harness import (
-    ContextOrchestratedAgentRuntimeExecutor,
-    QueryEngine,
-)
-from paperclaw.memory import (
-    MemoryRuntimeSettings,
-    MemoryTool,
-    build_memory_runtime,
-)
+from paperclaw.harness import ContextOrchestratedAgentRuntimeExecutor, QueryEngine
+from paperclaw.memory import MemoryRuntimeSettings, MemoryTool, build_memory_runtime
 from paperclaw.models.adapters import OpenAICompatibleModel
+from paperclaw.planning.bootstrap import default_plan_database
+from paperclaw.planning.runtime import SQLitePlanStore
+from paperclaw.planning.tools import PlanController, compose_plan_registry
 from paperclaw.policy import (
     DefaultToolAuthorizationPolicy,
     ToolAuthorizationPolicy,
     authorize_registry,
 )
+from paperclaw.skills.runtime import SkillRegistry
+from paperclaw.skills.tools import SkillListTool, SkillTool
 from paperclaw.tasks.bootstrap import TaskRuntimeComponents
 from paperclaw.tasks.tools import register_task_tools
 from paperclaw.tui.bridge import TUIEventBridge
@@ -45,9 +43,7 @@ class ServiceRuntimeFactory:
         task_runtime: TaskRuntimeComponents | None = None,
     ) -> None:
         self._model_factory = model_factory
-        self._executor_factory = (
-            executor_factory or ContextOrchestratedAgentRuntimeExecutor
-        )
+        self._executor_factory = executor_factory or ContextOrchestratedAgentRuntimeExecutor
         self._context_enabled = executor_factory is None
         self._engine_factory = engine_factory
         self._tool_policy = tool_policy or DefaultToolAuthorizationPolicy()
@@ -65,19 +61,27 @@ class ServiceRuntimeFactory:
     ) -> QueryEngine:
         bridge = TUIEventBridge(event_handler)
         model = self._model_factory()
+        conversation_id = request.conversation_id or f"api-{uuid4().hex[:12]}"
         registry = authorize_registry(
             default_registry(),
             workspace=request.workspace,
             policy=self._tool_policy,
         )
         if self._task_runtime is not None:
-            # Service deployment explicitly enables durable background tasks. The
-            # child runtime still applies scoped Worker permissions independently.
             register_task_tools(
                 registry,
                 self._task_runtime.store,
                 self._task_runtime.supervisor,
             )
+
+        plan_controller = PlanController(
+            SQLitePlanStore(default_plan_database()),
+            conversation_id,
+        )
+        registry = compose_plan_registry(registry, plan_controller)
+        skills = SkillRegistry(workspace=request.workspace)
+        registry.register(SkillListTool(skills))
+        registry.register(SkillTool(skills))
 
         if self._context_enabled:
             settings = MemoryRuntimeSettings.from_env()
@@ -112,7 +116,6 @@ class ServiceRuntimeFactory:
                 enable_verification_gate=request.enable_verification_gate,
                 legacy_event_handler=bridge.handle_legacy_event,
             )
-        conversation_id = request.conversation_id or f"api-{uuid4().hex[:12]}"
         return self._engine_factory(
             executor,
             conversation_id=conversation_id,
