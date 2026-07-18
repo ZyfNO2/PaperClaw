@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import re
 from typing import Any, Mapping
 import urllib.error
 import urllib.request
@@ -19,6 +20,8 @@ from .gateway import (
     GatewayTransportError,
     WorkerGatewayService,
 )
+
+_HTTP_EXECUTION_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,200}$")
 
 
 def create_worker_gateway_app(
@@ -84,6 +87,7 @@ def create_worker_gateway_app(
         try:
             body = await bounded_json(request, max_request_bytes)
             execution = ExecutionRequest.from_dict(body)
+            _http_execution_id(execution.execution_id)
             snapshot, created = service.submit(execution)
             return {"created": created, "execution": snapshot.to_dict()}
         except HTTPException:
@@ -98,7 +102,8 @@ def create_worker_gateway_app(
     ) -> dict[str, Any]:
         authorize(authorization)
         try:
-            return service.get(execution_id).to_dict()
+            normalized = _http_execution_id(execution_id)
+            return service.get(normalized).to_dict()
         except Exception as exc:
             raise public_error(exc) from exc
 
@@ -110,13 +115,14 @@ def create_worker_gateway_app(
     ) -> dict[str, Any]:
         authorize(authorization)
         try:
+            normalized = _http_execution_id(execution_id)
             body = await bounded_json(request, max_cancel_bytes)
             reason = (
                 body.get("reason")
                 if isinstance(body.get("reason"), str)
                 else "remote_cancel_requested"
             )
-            return service.cancel(execution_id, reason=reason[:120]).to_dict()
+            return service.cancel(normalized, reason=reason[:120]).to_dict()
         except HTTPException:
             raise
         except Exception as exc:
@@ -149,6 +155,7 @@ class HttpWorkerGatewayTransport:
         self._max_response_bytes = max_response_bytes
 
     def submit(self, request: ExecutionRequest) -> GatewayExecutionSnapshot:
+        _http_execution_id(request.execution_id)
         payload = self._request("POST", "/v1/executions", request.to_dict())
         execution = payload.get("execution") if isinstance(payload, Mapping) else None
         if not isinstance(execution, Mapping):
@@ -156,15 +163,17 @@ class HttpWorkerGatewayTransport:
         return GatewayExecutionSnapshot.from_dict(execution)
 
     def get(self, execution_id: str) -> GatewayExecutionSnapshot:
-        payload = self._request("GET", f"/v1/executions/{execution_id}", None)
+        normalized = _http_execution_id(execution_id)
+        payload = self._request("GET", f"/v1/executions/{normalized}", None)
         if not isinstance(payload, Mapping):
             raise GatewayTransportError("gateway get response is malformed")
         return GatewayExecutionSnapshot.from_dict(payload)
 
     def cancel(self, execution_id: str, reason: str) -> GatewayExecutionSnapshot:
+        normalized = _http_execution_id(execution_id)
         payload = self._request(
             "POST",
-            f"/v1/executions/{execution_id}/cancel",
+            f"/v1/executions/{normalized}/cancel",
             {"reason": reason[:120]},
         )
         if not isinstance(payload, Mapping):
@@ -245,6 +254,12 @@ def _raise_http_error(exc: urllib.error.HTTPError) -> None:
     raise GatewayTransportError(
         f"gateway returned HTTP {status}", uncertain=status >= 500
     ) from exc
+
+
+def _http_execution_id(value: str) -> str:
+    if not isinstance(value, str) or _HTTP_EXECUTION_ID.fullmatch(value) is None:
+        raise ValueError("HTTP execution_id must use only A-Z a-z 0-9 _ . : -")
+    return value
 
 
 def _required_token(value: str) -> str:
