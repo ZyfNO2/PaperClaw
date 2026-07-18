@@ -29,7 +29,6 @@ _DISCOVERY_FALLBACK_CODES = frozenset(
     {"provider_models_unavailable", "provider_response_error"}
 )
 
-# Kept module-level so focused tests can replace the network boundary.
 _urlopen = urllib.request.urlopen
 
 
@@ -229,9 +228,6 @@ def install_provider_extension(app_module: Any) -> None:
         explicit = {
             name for name in _PROVIDER_FIELDS if hydrated.get(name) not in (None, "")
         }
-        # Never combine a partially explicit endpoint/model with an unrelated
-        # in-memory credential. Explicit provider fields are validated as one unit
-        # by the existing controller/runtime path.
         if explicit:
             return original_start_run(self, hydrated)
         hydrated.update(
@@ -283,7 +279,6 @@ def _get_state(api: Any) -> _ManualProviderState | None:
 def _clear_state(api: Any) -> bool:
     state = _get_state(api)
     if state is not None:
-        # Drop the only retained credential reference before deleting the state.
         object.__setattr__(state, "api_key", "")
         delattr(api, _PROVIDER_STATE_ATTRIBUTE)
         return True
@@ -323,6 +318,8 @@ def _provider_error_response(
                 ),
             }
         )
+    else:
+        response["active_configuration_preserved"] = False
     return response
 
 
