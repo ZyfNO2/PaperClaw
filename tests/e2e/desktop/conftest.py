@@ -1,54 +1,58 @@
 from __future__ import annotations
 
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
-from urllib.parse import urlparse
+from threading import Thread
 
 import pytest
-from playwright.sync_api import Browser, Page, Route, sync_playwright
+from playwright.sync_api import Browser, Page, sync_playwright
 
 
 ASSET_DIR = (
     Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
 )
-TEST_ORIGIN = "http://paperclaw.test"
-_CONTENT_TYPES = {
-    ".html": "text/html; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".js": "application/javascript; charset=utf-8",
-}
+_TEST_ORIGIN = ""
+
+
+class _QuietStaticHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args) -> None:
+        return
 
 
 def load_app(page: Page) -> None:
-    """Serve the real modular Desktop assets through a deterministic HTTP origin.
+    """Navigate to the real modular Desktop assets over local HTTP.
 
-    ``page.set_content`` is implemented with ``document.write`` and deadlocks with
-    this application's lifecycle/mutation observers. Routing the production files
-    keeps CSP, stylesheet/script ordering and browser loading semantics close to
-    the real Desktop/browser host while avoiding external network access.
+    A real local HTTP origin avoids ``document.write`` and request-routing
+    lifecycle artifacts while preserving the production CSP, stylesheet/script
+    ordering, and browser loading model. The bridge is injected before navigation
+    by ``install_bridge`` and the pywebview lifecycle event is dispatched after
+    the production scripts have bound their listeners.
     """
 
-    def serve(route: Route) -> None:
-        path = urlparse(route.request.url).path
-        relative = "index.html" if path in {"", "/"} else path.lstrip("/")
-        candidate = (ASSET_DIR / relative).resolve()
-        try:
-            candidate.relative_to(ASSET_DIR.resolve())
-        except ValueError:
-            route.fulfill(status=403, body="forbidden")
-            return
-        if not candidate.is_file():
-            route.fulfill(status=404, body="not found")
-            return
-        route.fulfill(
-            status=200,
-            body=candidate.read_bytes(),
-            content_type=_CONTENT_TYPES.get(candidate.suffix.lower(), "application/octet-stream"),
-        )
-
-    page.route(f"{TEST_ORIGIN}/**", serve)
-    page.goto(f"{TEST_ORIGIN}/index.html", wait_until="domcontentloaded")
+    if not _TEST_ORIGIN:
+        raise RuntimeError("desktop test HTTP origin is not initialized")
+    page.goto(f"{_TEST_ORIGIN}/index.html", wait_until="domcontentloaded")
     page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
+
+
+@pytest.fixture(scope="session")
+def desktop_origin() -> str:
+    global _TEST_ORIGIN
+    handler = partial(_QuietStaticHandler, directory=str(ASSET_DIR))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = Thread(target=server.serve_forever, name="paperclaw-playwright-http", daemon=True)
+    thread.start()
+    host, port = server.server_address[:2]
+    _TEST_ORIGIN = f"http://{host}:{port}"
+    try:
+        yield _TEST_ORIGIN
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        _TEST_ORIGIN = ""
 
 
 @pytest.fixture(scope="session")
@@ -67,7 +71,7 @@ def browser() -> Browser:
 
 
 @pytest.fixture
-def page(browser: Browser) -> Page:
+def page(browser: Browser, desktop_origin: str) -> Page:
     page = browser.new_page(
         viewport={"width": 1440, "height": 900}, accept_downloads=True
     )
@@ -76,7 +80,7 @@ def page(browser: Browser) -> Page:
 
 
 def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
-    """Install the pywebview bridge before the routed page is created."""
+    """Install the pywebview bridge before the local HTTP page is created."""
 
     page.add_init_script(
         script=f"""
