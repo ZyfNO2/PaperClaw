@@ -330,16 +330,16 @@ Reject the candidate if any of the following occurs:
 
 ## 10. Final sign-off checklist
 
-- [ ] Candidate SHA recorded
-- [ ] Consolidated PR targets `main`
-- [ ] Superseded PRs closed
-- [ ] Windows regression passed
-- [ ] Real-process recovery passed
-- [ ] Context/Memory focused tests passed
-- [ ] Desktop Playwright passed
-- [ ] Windows package passed
-- [ ] Ruff gate passed
-- [ ] Mandatory manual scenarios passed
-- [ ] Evidence package archived
-- [ ] No Critical or High finding open
-- [ ] Release owner approved
+- [x] Candidate SHA recorded: `58e7900dd80c1ad5645ab683c3cdeccf4388bea1`
+- [x] Consolidated PR targets `main`: PR #42 mergeable
+- [x] Superseded PRs closed: #40, #41 closed
+- [x] Windows regression passed: 765 passed, 0 failed
+- [x] Real-process recovery passed: 2 passed, 0 failed
+- [x] Context/Memory focused tests passed: 92 passed, 0 failed
+- [x] Desktop Playwright passed: 5 passed, 0 failed
+- [x] Windows package passed: PyInstaller onedir OK
+- [x] Ruff gate passed: E9/F63/F7/F82 clean
+- [x] Mandatory manual scenarios passed: 10/10 scenarios
+- [x] Evidence package archived: `artifacts/v0_17_acceptance/`
+- [x] No Critical or High finding open: 0 Critical, 0 High
+- [ ] Release owner approved: **PENDING**
