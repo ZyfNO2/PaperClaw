@@ -1,8 +1,8 @@
 """Bounded semantic acceptance for completed Worker outputs.
 
-Deterministic verification remains authoritative for locally checkable facts.  This
+Deterministic verification remains authoritative for locally checkable facts. This
 module only answers the separate question: does the compact Worker result satisfy
-the explicit task objective and acceptance criteria?  It never upgrades failed
+the explicit task objective and acceptance criteria? It never upgrades failed
 deterministic evidence and never receives permission to execute tools.
 """
 
@@ -33,10 +33,12 @@ class SemanticJudgePolicy:
 class SemanticAcceptanceJudge:
     """Judge acceptance criteria without changing deterministic evidence.
 
-    A first rejection is confirmed once when the attempt budget allows it.  Two
+    A first rejection is never sufficient for a hard rejection. When the attempt
+    budget allows it, the rejection is independently confirmed once. Two semantic
     rejections produce ``rejected``; reject/pass disagreement produces
-    ``inconclusive``.  Retriable provider failures may consume the remaining
-    attempt budget.  Malformed output and non-retriable failures are terminal.
+    ``inconclusive``. Retriable provider failures may consume the remaining attempt
+    budget, but a later lone rejection then remains ``inconclusive`` rather than
+    being misclassified as a confirmed business failure.
     """
 
     def __init__(
@@ -126,16 +128,20 @@ class SemanticAcceptanceJudge:
                     transient=False,
                 )
 
-            # Only passed/rejected are valid model decisions.  A rejection uses
-            # the second total attempt as independent confirmation when available.
+            # Only passed/rejected are valid model decisions. A hard rejection
+            # requires two semantic decisions that both rejected. A Provider retry
+            # is not a semantic vote and cannot serve as confirmation.
             if first_rejection is None:
                 first_rejection = (reason_code, summary)
                 if attempts < self._policy.max_attempts:
                     continue
                 return self._result(
-                    "rejected",
-                    reason_code=reason_code,
-                    summary=summary,
+                    "inconclusive",
+                    reason_code="rejection_unconfirmed",
+                    summary=(
+                        "semantic rejection could not be independently confirmed "
+                        "within the bounded attempt budget"
+                    ),
                     attempt_count=attempts,
                     transient=False,
                 )
