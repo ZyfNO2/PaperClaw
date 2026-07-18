@@ -1,235 +1,110 @@
 # PaperClaw v0.27 Forgotten Debt / Product Foundation
 
-> Status: implementation in progress  
+> Status: implementation complete / acceptance complete  
 > Stack base: `feat/v0.26-agent-message-bus @ d089719abebb7a1a66ffb31ba49be6245eb306ea`  
-> Branch: `feat/v0.27-forgotten-debt-product-foundation`
+> Branch: `feat/v0.27-forgotten-debt-product-foundation`  
+> Draft PR: `#56`  
+> Validated implementation SHA: `0cc3e95ec211ba5b893d8e53248d341d56d360d8`
 
-## 1. Why this release exists
+## 1. Purpose
 
-v0.22-v0.26 added verification hardening, subprocess execution, remote gateway, fenced durable ownership and a durable message-bus foundation. A code/product audit shows that several earlier promises are now individually implemented but still lack one coherent product boundary.
+v0.22-v0.26 added verification hardening, subprocess execution, a remote worker gateway, generation-fenced durable ownership and a durable Agent Message Bus foundation.
 
-The audit used three evidence sets:
+A combined code/product audit showed that several earlier capabilities existed independently but still lacked:
 
-1. current code and stacked PRs #51-#55;
-2. the interview knowledge base covering Tool Calling, MCP, RAG, Memory, Multi-Agent coordination, evaluation, cost and latency;
-3. current Claude product patterns such as Projects, project knowledge/instructions, Skills, Connectors, Artifacts and remote coding tasks.
+- a correct and fully bounded Message Bus public contract;
+- a machine-readable source of truth for capability maturity;
+- one safe project boundary joining instructions, local knowledge, Skills and Connector declarations;
+- current documentation that distinguishes implemented, foundation-only, experimental and planned work.
 
-The goal is not to copy Claude. The goal is to fix correctness defects and add the missing truth/project boundary that PaperClaw should already have had before more feature growth.
+The audit used:
 
-## 2. Code-review findings
+1. the current repository and stacked Draft PRs;
+2. the Agent / Multi-Agent / MCP / RAG interview knowledge base;
+3. current Claude product patterns such as Projects, project knowledge/instructions, Skills, Connectors, Artifacts and reviewable remote coding tasks.
 
-### P0 correctness defects
+The goal is not to clone Claude. The goal is to repair correctness defects and establish product boundaries PaperClaw should have had before further feature growth.
 
-#### D-001 `AgentMessageBus` public export missing
+## 2. Code-review findings and disposition
 
-`service.py` defines `AgentMessageBus`, and tests import it from `paperclaw.message_bus`, but `message_bus/__init__.py` does not export it.
+### D-001 — `AgentMessageBus` public export missing
 
-Impact:
+**Finding:** `service.py` defined the façade, while package-level imports used by tests and callers did not export it.
 
-- import-time failure;
-- façade tests cannot collect;
-- documented Agent-facing API is not actually public.
+**Disposition:** fixed. `AgentMessageBus` is exported from `paperclaw.message_bus` and covered by import/roundtrip tests.
 
-#### D-002 frozen message contracts are not deeply immutable
+### D-002 — frozen message contracts were not deeply immutable
 
-`MessageDraft` and `MessageEnvelope` are frozen dataclasses, but `payload` and `headers` are caller-owned mutable mappings.
+**Finding:** frozen dataclasses still held caller-owned mutable mappings/lists. Mutation after validation could change envelope state, inject credential-shaped fields or desynchronize idempotency expectations.
 
-A caller can mutate nested data after validation/digest calculation, causing:
+**Disposition:** fixed.
 
-- idempotency digest drift;
-- secret-shaped data appearing after validation;
-- envelope state changing after publication.
+- JSON objects are normalized at construction;
+- mappings are detached and wrapped in `MappingProxyType`;
+- arrays become tuples;
+- canonical output explicitly thaws immutable values;
+- frozen payload/header values can safely be reused as new validated inputs;
+- non-string JSON object keys are rejected rather than silently coerced.
 
-#### D-003 payload/header byte limits are missing
+### D-003 — payload/header/draft byte bounds missing
 
-The v0.26 plan says payload and headers are bounded, but the implementation only verifies JSON serializability.
+**Finding:** v0.26 documented bounded messages but only checked JSON serializability.
 
-Impact:
+**Disposition:** fixed with configurable limits checked before DB mutation:
 
-- unbounded SQLite row/event growth;
-- memory/CPU pressure during canonical serialization;
-- mismatch between documentation and implementation.
+- payload: 1 MiB default;
+- headers: 64 KiB default;
+- complete draft: 1.25 MiB default.
 
-#### D-004 capacity-rejection audit is rolled back
+### D-004 — capacity rejection audit rolled back
 
-`message.publish_rejected_capacity` is inserted inside the same transaction that raises `MessageBusCapacityError`. The exception rolls back the audit event.
+**Finding:** the rejection event was written in the same transaction that raised `MessageBusCapacityError`; rollback removed the audit evidence.
 
-Impact:
+**Disposition:** fixed. Capacity detection rolls back the publish transaction, then records `message.publish_rejected_capacity` in a distinct transaction before returning the public error.
 
-- rejection is not durably auditable;
-- operational evidence contradicts the documented contract.
+### D-005 — README stopped at v0.08
 
-#### D-005 stale documentation is a product correctness defect
+**Finding:** product truth was materially stale compared with the v0.22-v0.26 development stack.
 
-The root README still describes the repository as complete only through v0.08 even though the current stacked implementation reaches v0.26.
+**Disposition:** fixed. README now explains the current stacked Draft line, maturity states, Project commands, capability discovery, limitations and deferred debt.
 
-Impact:
+### D-006 — no machine-readable capability truth source
 
-- users and interview notes cannot distinguish shipped, foundation-only and deferred capabilities;
-- future agents may plan against obsolete constraints;
-- release evidence is fragmented across Plan/Handoff files.
+**Finding:** capability state had to be inferred from README, code, Plans and Handoffs.
 
-## 3. Interview-driven missing boundaries
-
-The interview material repeatedly expects an Agent system to explain and demonstrate:
-
-- Tool discovery/schema validation/permission recheck;
-- MCP lifecycle and reconnect/idempotency;
-- context compression and project instructions;
-- RAG ingestion, hybrid retrieval, grounding and citation quality;
-- short/session/long-term memory;
-- orchestrated and choreographed Multi-Agent collaboration;
-- task success, tool-call accuracy, collaboration efficiency, latency P50/P99 and token/API cost.
-
-PaperClaw already contains many foundations, but the following integration debt remains:
-
-### D-006 capabilities have no machine-readable source of truth
-
-Feature state is currently inferred from README, Plan files, Handoffs and code paths.
-
-Needed:
-
-- stable capability IDs;
-- version introduced;
-- maturity (`shipped`, `foundation`, `experimental`, `planned`);
-- supported surfaces (`library`, `cli`, `tui`, `desktop`, `service`);
-- dependencies and explicit limitations;
-- JSON/text output for doctor/UI/interview evidence.
-
-### D-007 project-level boundary is incomplete
-
-Existing `ProjectInstructionLoader` already loads `PAPERCLAW.md`, `CLAUDE.md` and `AGENTS.md`, and long memory is integrated into Context assembly. However there is no explicit project manifest that declares:
-
-- project identity/name;
-- instruction files;
-- knowledge paths;
-- enabled Skills;
-- enabled Connectors/MCP servers;
-- project-local data/cache paths;
-- validation status.
-
-Without this, RAG, Skills, MCP and Memory remain separate mechanisms rather than one project workspace.
-
-### D-008 Local RAG is not a default project knowledge path
-
-v0.09.1 proves incremental BM25 and grounded citations, but normal runtime composition does not automatically bind a project knowledge declaration to a retrieval source.
-
-This release will establish the manifest and deterministic index command. Automatic live reindexing remains deferred until lifecycle/close semantics are explicit.
-
-### D-009 newer runtime capabilities are not discoverable from product surfaces
-
-Tasks, Plan Mode, Skills, LSP, subprocess execution, Remote Gateway, fenced queue and Message Bus are largely library/CLI foundations. Desktop/provider UX does not expose a unified capability/availability view.
-
-A machine-readable catalog is the required predecessor to Desktop settings/Inspector work.
-
-## 4. Claude-product comparison and deferred product debt
-
-Current Claude patterns highlight product expectations that PaperClaw does not yet implement end-to-end:
-
-- Projects: isolated workspace, instructions, knowledge and scoped memory;
-- Skills/Connectors: discoverable, configurable capability ecosystem;
-- Artifacts: first-class editable/versioned output separate from chat;
-- interactive connector views;
-- remote coding tasks that continue and create reviewable PRs;
-- auditable scientific artifacts with reproducible code/history.
-
-Deferred after v0.27:
-
-### D-010 first-class Artifact model
-
-Needed later:
-
-- artifact ID/type/version;
-- source run/task/trace linkage;
-- immutable revisions;
-- file/export metadata;
-- preview/edit boundary;
-- optional publish/share policy.
-
-### D-011 Skills and Connector management surface
-
-Needed later:
-
-- list/enable/disable;
-- trust/source/version metadata;
-- MCP auth/permission state;
-- per-project selection;
-- Desktop UI and Service API.
-
-### D-012 aggregate evaluation and observability dashboard
-
-Existing per-trace eval is insufficient for interview/production claims.
-
-Needed later:
-
-- task success/tool accuracy;
-- collaboration efficiency;
-- latency P50/P95/P99;
-- token/API cost;
-- failure taxonomy over multiple runs;
-- exportable benchmark suites.
-
-### D-013 Message Bus runtime wiring
-
-The bus exists as a durable foundation but is not yet wired into Coordinator/Worker/Reviewer or Task runtime choreography.
-
-This must wait until delivery semantics, consumer identity and failure policy are defined. v0.27 will not silently change Multi-Agent behavior.
-
-### D-014 external shared store/broker adapters
-
-SQLite multi-process evidence is not a multi-host claim. PostgreSQL/Redis/NATS/Kafka adapters require real-service validation.
-
-## 5. v0.27 implementation scope
-
-### Phase A — Message Bus correctness hardening
-
-- export `AgentMessageBus` publicly;
-- canonical deep copy/freeze payload and headers;
-- add configurable payload/header/envelope byte limits;
-- ensure canonical digest uses normalized immutable data;
-- persist capacity rejection audit outside the rolled-back publish transaction;
-- remove unused imports and run focused lint;
-- add mutation, oversize and durable-audit regressions.
-
-### Phase B — Capability Catalog
-
-Add:
+**Disposition:** fixed with:
 
 ```text
-paperclaw.capabilities
-  CapabilityDescriptor
-  CapabilityCatalog
-  default_capability_catalog()
+CapabilityDescriptor
+CapabilityCatalog
+default_capability_catalog()
 ```
+
+Catalog fields include:
+
+- stable capability ID;
+- introduced version;
+- maturity: `shipped`, `foundation`, `experimental`, `planned`;
+- supported surfaces;
+- dependencies;
+- explicit limitations.
 
 CLI:
 
-```text
+```bash
 paperclaw capabilities
 paperclaw capabilities --format json
-paperclaw capabilities --status shipped
+paperclaw capabilities --status foundation
 paperclaw capabilities --surface desktop
 ```
 
-Catalog rules:
+### D-007 — project-level boundary incomplete
 
-- explicit maturity and limitations;
-- no capability inferred as available merely because a Plan exists;
-- no secret/config values in output;
-- deterministic ordering and JSON schema version.
+**Finding:** project instructions, Memory, RAG, Skills and MCP existed as separate mechanisms without one project declaration.
 
-### Phase C — Project Workspace manifest
+**Disposition:** fixed at foundation level with `.paperclaw/project.json`.
 
-Add `.paperclaw/project.json` contract and CLI:
-
-```text
-paperclaw project init --name <name>
-paperclaw project show
-paperclaw project validate
-paperclaw project index
-```
-
-Manifest v1:
+Manifest v1 declares:
 
 ```text
 schema_version
@@ -242,81 +117,222 @@ enabled_connectors
 data_directory
 ```
 
-Safety:
+Safety rules:
 
-- manifest and declared paths stay inside workspace;
-- no credential-shaped fields;
-- bounded JSON size;
-- deterministic normalization;
-- symlink/path traversal rejected;
-- project index only accepts supported text/Markdown files and uses existing incremental BM25 store.
+- strict known fields;
+- strict JSON arrays containing strings;
+- bounded UTF-8 JSON;
+- credential-shaped fields rejected;
+- only workspace-relative paths;
+- absolute paths and `..` rejected;
+- external or broken symlinks rejected;
+- manifest symlink explicitly rejected in both CLI load and runtime discovery.
 
-Runtime integration:
+CLI:
 
-- `build_memory_runtime()` discovers a manifest when present;
-- manifest instruction files feed the existing `ProjectInstructionLoader`;
-- an existing validated project RAG index may be registered as a Context source;
-- no implicit network calls;
-- no background watcher in this release.
+```bash
+paperclaw project --workspace . init --name "My Project"
+paperclaw project --workspace . show
+paperclaw project --workspace . validate
+paperclaw project --workspace . index
+```
 
-### Phase D — truth/documentation sync
+### D-008 — local RAG not bound to project knowledge lifecycle
 
-- update README capability/version overview through v0.27;
-- add debt matrix and explicit deferred list;
-- add Handoff with exact SHA/run/test artifact;
-- keep PR Draft and unmerged.
+**Finding:** v0.09.1 proved incremental BM25 and citations, but ordinary runtime composition did not consume a project knowledge declaration.
 
-## 6. Acceptance matrix
+**Disposition:** fixed at deterministic local foundation level.
 
-### Message Bus
+- supported knowledge files: UTF-8 `.md`, `.markdown`, `.txt`;
+- deterministic recursive ordering;
+- per-file path, byte length and SHA-256 metadata;
+- aggregate source fingerprint;
+- atomic SQLite index replacement;
+- metadata written to `.paperclaw/data/project-index.json`;
+- runtime registers `project.bm25_retrieval` only when the index fingerprint is current;
+- missing/stale/invalid index is explicit and is not silently used;
+- no implicit network call or background watcher.
 
-- `from paperclaw.message_bus import AgentMessageBus` works;
-- caller mutation cannot change validated draft/envelope;
-- nested mutation is blocked/detached;
-- credential-shaped fields cannot be injected after construction;
-- oversize payload/header/envelope rejected before DB write;
-- capacity rejection leaves a durable audit event;
-- idempotent retry still works at capacity.
+### D-009 — newer capabilities not discoverable from product surfaces
 
-### Capability Catalog
+**Finding:** Tasks, Plan Mode, Skills, LSP, subprocess, Remote Gateway, fenced queue and Message Bus had fragmented visibility.
 
-- stable deterministic catalog;
-- shipped/foundation/experimental/planned distinguished;
-- surface/status filters correct;
-- JSON/text CLI output;
-- README generated/validated against catalog version table where practical.
+**Disposition:** capability catalog and current README now provide the stable predecessor for later Desktop/Service management UI.
 
-### Projects
+## 3. Interview-driven debt retained for later releases
 
-- safe init/show/validate;
-- existing non-project workspace remains backward compatible;
-- instruction file selection affects Context snapshot;
-- path traversal and external symlink rejected;
-- deterministic project BM25 index;
-- runtime can use a prebuilt valid index;
-- missing/stale index is explicit, not silently treated as current.
+The interview material expects the system to explain and measure:
 
-### Regression
+- Tool discovery, schema validation and permission recheck;
+- MCP lifecycle, reconnect and idempotency;
+- RAG ingestion, hybrid retrieval, reranking, grounding and citations;
+- short/session/long-term memory boundaries;
+- orchestrated and choreographed Multi-Agent collaboration;
+- task success, tool-call accuracy, collaboration efficiency, latency percentiles and Token/API cost.
 
-- Linux and Windows focused tests;
-- v0.26 Message Bus regression;
-- memory/context/retrieval regression;
-- CLI regression;
-- full Windows non-live repository regression;
-- Ruff high-signal correctness checks.
+v0.27 deliberately does not mislabel the following as complete.
 
-## 7. Non-goals
+### D-010 — first-class Artifact model
 
-- no Desktop redesign in this PR;
+Needed:
+
+- Artifact ID/type/version;
+- immutable revisions;
+- Run/Task/Trace source linkage;
+- preview/edit/export metadata;
+- optional publish/share policy.
+
+### D-011 — Skills and Connector management surface
+
+Needed:
+
+- discover/list/enable/disable;
+- source, trust and version metadata;
+- MCP Auth/Permission state;
+- per-project activation;
+- Desktop UI and Service API.
+
+The v0.27 manifest declares enabled IDs but does not yet perform full lifecycle management.
+
+### D-012 — aggregate evaluation and observability
+
+Needed:
+
+- task success rate;
+- tool-call accuracy;
+- collaboration efficiency;
+- P50/P95/P99 latency;
+- Token/API cost;
+- failure taxonomy across runs;
+- exportable benchmark suites.
+
+Current evaluation remains primarily per trace.
+
+### D-013 — Message Bus runtime choreography
+
+The durable Bus foundation is not automatically wired into Coordinator/Worker/Reviewer or durable Task execution.
+
+Required first:
+
+- stable consumer identity;
+- delivery/retry semantics;
+- poison-message and failure policy;
+- correlation and causal trace linkage;
+- explicit backpressure behavior in orchestration.
+
+### D-014 — real external store/broker adapters
+
+SQLite tests prove same-filesystem multi-process behavior only.
+
+PostgreSQL, Redis, NATS or Kafka claims require real shared-service adapters and independent validation of:
+
+- idempotency;
+- ordering;
+- lease/fencing;
+- recovery;
+- transport uncertainty;
+- multi-host contention.
+
+## 4. Claude-product comparison
+
+The audit identified useful product boundaries rather than copying UI details:
+
+- Projects demonstrate the value of one workspace containing instructions and scoped knowledge;
+- Skills and Connectors demonstrate discoverable, configurable capability ecosystems;
+- Artifacts demonstrate outputs as first-class editable/versioned objects separate from chat;
+- remote coding tasks demonstrate long-running work that produces reviewable repository changes;
+- scientific workflows emphasize reproducible, auditable outputs.
+
+v0.27 implements only the prerequisite project/capability truth boundaries. Artifact UI, connector management, remote-task product UX and aggregate scientific/evaluation dashboards remain explicit debt.
+
+## 5. Implemented architecture
+
+```text
+paperclaw.entrypoint
+  ├─ legacy Agent / Team / TUI / Trace paths
+  └─ product CLI routing
+       ├─ capabilities
+       └─ project init/show/validate/index
+
+ProjectManifest
+  ├─ instruction_files -> existing ProjectInstructionLoader
+  ├─ knowledge_paths -> deterministic local index
+  ├─ enabled_skills -> declaration only
+  ├─ enabled_connectors -> declaration only
+  └─ data_directory -> workspace-confined project data
+
+build_memory_runtime()
+  ├─ foundational Memory + project instructions
+  └─ current project BM25 index -> Retrieval Context Source
+```
+
+Existing non-project workspaces remain backward compatible.
+
+## 6. Acceptance evidence
+
+Validated implementation SHA:
+
+```text
+0cc3e95ec211ba5b893d8e53248d341d56d360d8
+```
+
+GitHub Actions run:
+
+```text
+29659299612
+```
+
+Results:
+
+- Ubuntu v0.27 focused acceptance: SUCCESS;
+- Windows v0.27 focused acceptance: SUCCESS;
+- Ubuntu/Windows Context and Retrieval compatibility: SUCCESS;
+- Ubuntu/Windows v0.25-v0.26 regression slices: SUCCESS;
+- focused Ruff: SUCCESS;
+- full Windows `-m "not real_llm"` repository regression: SUCCESS;
+- repository correctness Ruff: SUCCESS.
+
+Machine-readable full regression:
+
+```text
+904 passed / 0 failed
+10 marker-driven setup skips
+artifact: v027-full-regression-29659299612
+digest: sha256:ac01227611a90ff479194b5a83b3f6e77867f6ae98b22c0ae390f8775d17c44a
+```
+
+Focused artifacts:
+
+```text
+Linux digest:  sha256:e2007a230b095268c6f8117306f171b268aa4c3cf5c454c5def23a31bfd7b0e8
+Windows digest: sha256:23b875c4c0c18cd25036fc011777466c29cd9634b0c84b6df1bf6839a5aba52a
+```
+
+## 7. Preserved negative evidence
+
+Development surfaced and fixed:
+
+1. the initial catalog helper treated a scalar limitation string as an iterable of characters; a machine-readable focused report isolated the single failing test, and scalar/iterable normalization was corrected;
+2. the first workflow referenced brittle explicit compatibility test paths; it was replaced with stable keyword-based selection and focused report artifacts;
+3. a frozen Message Bus payload initially could not safely be reused as another message input; normalization now thaws before canonical JSON validation;
+4. Python non-string mapping keys could be silently converted by JSON; raw keys are now recursively required to be strings;
+5. manifest discovery initially treated a symlink manifest as absent while direct load rejected it; discovery now surfaces the same explicit policy error;
+6. manifest JSON array fields initially risked string-to-character coercion; arrays are now strictly typed.
+
+No tests were skipped or assertions weakened to hide these findings.
+
+## 8. Non-goals preserved
+
+- no Desktop redesign;
 - no Artifact editor/share implementation;
 - no OAuth connector directory;
-- no vector embedding/reranker;
+- no vector embedding, Hybrid Search or reranker;
 - no automatic filesystem watcher;
 - no Coordinator choreography rewrite;
 - no external distributed broker/store claim;
-- no merge of stacked PRs.
+- no automatic merge of stacked PRs.
 
-## 8. Planned follow-on
+## 9. Follow-on development plan
 
 ```text
 v0.28 Project Knowledge Runtime + lifecycle
@@ -324,9 +340,21 @@ v0.28 Project Knowledge Runtime + lifecycle
   -> stale-index policy and watcher
   -> project-scoped memory isolation
 
-v0.29 Artifact model + revision/export/preview
+v0.29 Artifact model
+  -> revisions / source linkage / preview / export
 
-v0.30 Desktop capability/project/skill/connector management
+v0.30 Desktop product integration
+  -> capabilities / projects / skills / connectors
 
-v0.31 Aggregate Eval / Cost / Latency dashboard
+v0.31 Aggregate Eval / Cost / Latency
+  -> multi-run metrics and benchmark suites
+
+later external infrastructure line
+  -> real PostgreSQL/Redis/NATS/Kafka adapters with service evidence
 ```
+
+## 10. Final classification
+
+**COMPLETE / DRAFT PR READY FOR OWNER REVIEW**
+
+PR #56 remains Draft and unmerged.
