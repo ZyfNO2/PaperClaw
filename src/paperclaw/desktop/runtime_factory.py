@@ -7,6 +7,8 @@ from typing import Any
 from uuid import uuid4
 
 from paperclaw.harness import ContextOrchestratedAgentRuntimeExecutor, QueryEngine
+from paperclaw.lsp.bootstrap import get_lsp_manager
+from paperclaw.lsp.tools import register_lsp_tools
 from paperclaw.memory import build_memory_runtime
 from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.models.reliability import RetryPolicy
@@ -22,7 +24,7 @@ DesktopEventHandler = Callable[[str, dict], None]
 
 
 class DesktopRuntimeFactory:
-    """Build one scoped parent runtime and reuse background task workers."""
+    """Build one scoped parent runtime and reuse process-scoped services."""
 
     def __init__(
         self,
@@ -33,9 +35,7 @@ class DesktopRuntimeFactory:
         conversation_id_factory: Callable[[], str] | None = None,
     ) -> None:
         self._model_factory = model_factory
-        self._executor_factory = (
-            executor_factory or ContextOrchestratedAgentRuntimeExecutor
-        )
+        self._executor_factory = executor_factory or ContextOrchestratedAgentRuntimeExecutor
         self._context_enabled = executor_factory is None
         self._engine_factory = engine_factory
         self._conversation_id_factory = conversation_id_factory or (
@@ -71,9 +71,7 @@ class DesktopRuntimeFactory:
             )
             task_runtime = get_or_create_task_runtime(
                 model_factory,
-                cache_key=(
-                    f"desktop:{request.provider}:{request.base_url}:{request.model}"
-                ),
+                cache_key=f"desktop:{request.provider}:{request.base_url}:{request.model}",
                 worker_id="desktop-task-worker",
             )
             register_task_tools(
@@ -85,6 +83,10 @@ class DesktopRuntimeFactory:
                 components,
                 workspace=request.workspace,
                 scope_id=conversation_id,
+            )
+            register_lsp_tools(
+                components.tool_registry,
+                get_lsp_manager(request.workspace),
             )
             executor = self._executor_factory(
                 model,
