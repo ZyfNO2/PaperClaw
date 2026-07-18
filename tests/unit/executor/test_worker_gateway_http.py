@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from time import sleep
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ import pytest
 from paperclaw.executor import (
     ExecutionRequest,
     GatewayExecutionSnapshot,
+    GatewayTransportError,
     HttpWorkerGatewayTransport,
     SubprocessWorkerExecutor,
     WorkerGatewayService,
@@ -101,6 +103,29 @@ def test_http_workspace_policy_is_enforced_on_worker_host(tmp_path: Path) -> Non
         service.close()
 
 
+def test_http_raw_body_limit_applies_before_unknown_fields_are_dropped(tmp_path: Path) -> None:
+    service = WorkerGatewayService(
+        SubprocessWorkerExecutor(allowed_entrypoints={"executor.echo.v1"}),
+        allowed_workspace_roots=[tmp_path],
+        max_request_bytes=10_000,
+    )
+    client = TestClient(
+        create_worker_gateway_app(service, bearer_token=TOKEN, max_request_bytes=300)
+    )
+    try:
+        body = _request(tmp_path).to_dict()
+        body["ignored_padding"] = "x" * 2_000
+        response = client.post(
+            "/v1/executions",
+            content=json.dumps(body),
+            headers={**_auth(), "Content-Type": "application/json"},
+        )
+        assert response.status_code == 413
+        assert response.json()["detail"]["code"] == "gateway_payload_too_large"
+    finally:
+        service.close()
+
+
 def test_http_get_returns_terminal_execution(tmp_path: Path) -> None:
     client, service = _client(tmp_path)
     try:
@@ -109,13 +134,14 @@ def test_http_get_returns_terminal_execution(tmp_path: Path) -> None:
             "/v1/executions", json=request.to_dict(), headers=_auth()
         )
         assert response.status_code == 202
-        for _ in range(100):
+        for _ in range(200):
             response = client.get(
                 f"/v1/executions/{request.execution_id}", headers=_auth()
             )
             assert response.status_code == 200
             if response.json()["state"] == "terminal":
                 break
+            sleep(0.01)
         payload = response.json()
         assert payload["state"] == "terminal"
         assert payload["result"]["status"] == "succeeded"
@@ -126,6 +152,7 @@ def test_http_get_returns_terminal_execution(tmp_path: Path) -> None:
 class _FakeResponse:
     def __init__(self, payload: dict[str, Any]) -> None:
         self._payload = json.dumps(payload).encode("utf-8")
+        self.headers: dict[str, str] = {}
 
     def __enter__(self):
         return self
@@ -133,8 +160,10 @@ class _FakeResponse:
     def __exit__(self, exc_type, exc, tb):
         return False
 
-    def read(self) -> bytes:
-        return self._payload
+    def read(self, amount: int = -1) -> bytes:
+        if amount < 0:
+            return self._payload
+        return self._payload[:amount]
 
 
 def test_stdlib_http_transport_keeps_bearer_token_out_of_request_body(
@@ -169,3 +198,23 @@ def test_stdlib_http_transport_keeps_bearer_token_out_of_request_body(
     assert observed["authorization"] == f"Bearer {TOKEN}"
     assert TOKEN.encode() not in observed["body"]
     assert observed["timeout"] == 3
+
+
+def test_stdlib_http_transport_rejects_oversize_response(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request = _request(tmp_path)
+
+    def fake_urlopen(http_request, timeout):
+        del http_request, timeout
+        return _FakeResponse({"padding": "x" * 2_000})
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    transport = HttpWorkerGatewayTransport(
+        "https://worker.example.test",
+        bearer_token=TOKEN,
+        max_response_bytes=128,
+    )
+
+    with pytest.raises(GatewayTransportError, match="exceeds client limit"):
+        transport.submit(request)
