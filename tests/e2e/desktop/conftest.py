@@ -14,132 +14,27 @@ ASSET_DIR = (
     Path(__file__).resolve().parents[3] / "src" / "paperclaw" / "desktop" / "static"
 )
 _TEST_ORIGIN = ""
-_MARKERS = {
-    "__paperclaw_after_i18n.js": "i18n",
-    "__paperclaw_after_provider.js": "provider",
-    "__paperclaw_after_app.js": "app",
-}
-
-
-def _marker_statement(name: str) -> str:
-    return (
-        "window.__paperclawTestStages = window.__paperclawTestStages || [];"
-        f"window.__paperclawTestStages.push('{name}');"
-    )
 
 
 class _QuietStaticHandler(SimpleHTTPRequestHandler):
     def log_message(self, format: str, *args) -> None:
         return
 
-    def do_GET(self) -> None:
-        path = self.path.split("?", 1)[0].lstrip("/")
-        print(f"PAPERCLAW_HTTP_GET={path}", flush=True)
-        marker = _MARKERS.get(path)
-        if marker is not None:
-            body = _marker_statement(marker).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/javascript; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            print(f"PAPERCLAW_HTTP_DONE={path}", flush=True)
-            return
-        if path == "app.js":
-            javascript = (ASSET_DIR / "app.js").read_text(encoding="utf-8")
-            replacements = [
-                (
-                    "const bootstrap = readBrowserBootstrap();",
-                    "const bootstrap = readBrowserBootstrap();" + _marker_statement("app-bootstrap"),
-                ),
-                (
-                    "const bridgeClientId = createClientId();",
-                    "const bridgeClientId = createClientId();" + _marker_statement("app-client-id"),
-                ),
-                (
-                    "let currentTheme = resolveInitialTheme(bootstrap.theme);",
-                    "let currentTheme = resolveInitialTheme(bootstrap.theme);" + _marker_statement("app-theme"),
-                ),
-                (
-                    "document.documentElement.dataset.theme = currentTheme;",
-                    "document.documentElement.dataset.theme = currentTheme;" + _marker_statement("app-dataset"),
-                ),
-            ]
-            for original, replacement in replacements:
-                if original not in javascript:
-                    raise RuntimeError(f"missing app instrumentation target: {original}")
-                javascript = javascript.replace(original, replacement, 1)
-            body = javascript.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/javascript; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            print("PAPERCLAW_HTTP_DONE=app.js", flush=True)
-            return
-        if path in {"", "index.html"}:
-            html = (ASSET_DIR / "index.html").read_text(encoding="utf-8")
-            html = html.replace(
-                '<script src="i18n.js"></script>',
-                '<script src="i18n.js"></script><script src="__paperclaw_after_i18n.js"></script>',
-            )
-            html = html.replace(
-                '<script src="provider-config.js"></script>',
-                '<script src="provider-config.js"></script><script src="__paperclaw_after_provider.js"></script>',
-            )
-            html = html.replace(
-                '<script src="app.js"></script>',
-                '<script src="app.js"></script><script src="__paperclaw_after_app.js"></script>',
-            )
-            body = html.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            print(f"PAPERCLAW_HTTP_DONE={path or 'index.html'}", flush=True)
-            return
-        super().do_GET()
-        print(f"PAPERCLAW_HTTP_DONE={path}", flush=True)
-
-
-def _stage(name: str) -> None:
-    print(f"PAPERCLAW_PLAYWRIGHT_STAGE={name}", flush=True)
-
-
-def _wait_marker(page: Page, marker: str) -> None:
-    page.wait_for_function(
-        "marker => (window.__paperclawTestStages || []).includes(marker)",
-        arg=marker,
-        timeout=3_000,
-    )
-    _stage(f"after-{marker}")
-
 
 def load_app(page: Page) -> None:
-    """Load production Desktop modules and identify the exact script boundary."""
+    """Navigate to the real modular Desktop assets over local HTTP.
+
+    A real local HTTP origin avoids ``document.write`` and request-routing
+    lifecycle artifacts while preserving the production CSP, stylesheet/script
+    ordering, and browser loading model. The bridge is injected before navigation
+    by ``install_bridge`` and the pywebview lifecycle event is dispatched after
+    the production scripts have bound their listeners.
+    """
 
     if not _TEST_ORIGIN:
         raise RuntimeError("desktop test HTTP origin is not initialized")
-    _stage("goto-start")
-    page.goto(f"{_TEST_ORIGIN}/index.html", wait_until="commit", timeout=5_000)
-    _stage("goto-commit")
-    _wait_marker(page, "i18n")
-    _wait_marker(page, "provider")
-    for marker in ("app-bootstrap", "app-client-id", "app-theme", "app-dataset", "app"):
-        _wait_marker(page, marker)
-    page.evaluate(
-        """() => {
-          document.dispatchEvent(new Event('DOMContentLoaded'));
-          window.dispatchEvent(new Event('pywebviewready'));
-        }"""
-    )
-    _stage("lifecycle-dispatched")
-    page.wait_for_function(
-        "() => document.querySelector('#workspace-path')?.textContent === '/tmp/paperclaw-workspace'",
-        timeout=5_000,
-    )
-    _stage("workspace-ready")
+    page.goto(f"{_TEST_ORIGIN}/index.html", wait_until="domcontentloaded")
+    page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
 
 
 @pytest.fixture(scope="session")
