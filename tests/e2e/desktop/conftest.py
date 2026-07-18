@@ -109,7 +109,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
           }};
           const autoComplete = {str(auto_complete).lower()};
           const clone = value => JSON.parse(JSON.stringify(value));
-          const envProviderState = () => ({
+          const envProviderState = () => ({{
             ok: true,
             workspace: '/tmp/paperclaw-workspace',
             provider_source: 'env',
@@ -123,7 +123,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             model_source: 'environment',
             missing: [],
             manual_provider_cleared: true
-          });
+          }});
           window.__bridgeCalls = calls;
           window.__mockState = () => state;
           window.pywebview = {{ api: {{
