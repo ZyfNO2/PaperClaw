@@ -1,0 +1,47 @@
+name: v0.20 Plan Mode and Skills
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan-skills:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project
+        run: python -m pip install -e '.[dev]'
+      - name: Run Plan and Skill tests
+        run: |
+          mkdir -p tmp
+          python -m pytest -q \
+            tests/unit/planning \
+            tests/unit/skills \
+            --report-log=tmp/v020-plan-skills-report.jsonl
+      - name: Write architecture evidence
+        if: always()
+        run: |
+          cat > tmp/v020-plan-skills-summary.md <<'EOF'
+          # v0.20 Plan Mode and Skills
+
+          Plan Mode is a persistent state machine and permission switch. Mutating
+          tools remain unavailable until explicit approval of a structured plan.
+          AskUserQuestion persists an unanswered interaction. Skills are discovered,
+          trust-classified and loaded as bounded artifacts without granting tools.
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v020-plan-skills-${{ github.run_id }}
+          path: |
+            tmp/v020-plan-skills-report.jsonl
+            tmp/v020-plan-skills-summary.md
+          retention-days: 30
