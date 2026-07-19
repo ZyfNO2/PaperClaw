@@ -9,7 +9,8 @@ from uuid import uuid4
 import pytest
 
 from paperclaw.models.adapters import OpenAICompatibleModel
-from paperclaw.multiagent.tool import SubagentTaskTool
+from paperclaw.multiagent.judge_factory import build_judge_model_from_env
+from paperclaw.multiagent.reliable_tool import ReliableSubagentTaskTool
 from paperclaw.tools.base import ToolContext
 
 
@@ -48,12 +49,18 @@ def test_live_mistral_parallel_isolated_subagents() -> None:
         pytest.fail("PAPERCLAW_API_KEY is required for live Mistral acceptance")
 
     workspace = Path.cwd().resolve()
-    run_id = f"mistral-v018-{uuid4().hex[:12]}"
-    models: dict[str, MeteredModel] = {}
+    run_id = f"mistral-v022-{uuid4().hex[:12]}"
+    execution_models: dict[str, MeteredModel] = {}
+    judge_models: dict[str, MeteredModel] = {}
 
-    def factory(agent_id: str) -> MeteredModel:
+    def execution_factory(agent_id: str) -> MeteredModel:
         model = MeteredModel(OpenAICompatibleModel.from_env(), agent_id)
-        models[agent_id] = model
+        execution_models[agent_id] = model
+        return model
+
+    def judge_factory(agent_id: str) -> MeteredModel:
+        model = MeteredModel(build_judge_model_from_env(), agent_id)
+        judge_models[agent_id] = model
         return model
 
     request = {
@@ -85,14 +92,16 @@ def test_live_mistral_parallel_isolated_subagents() -> None:
                 "task_id": "mcp-permissions",
                 "title": "MCP Permission Boundary",
                 "objective": (
-                    "Inspect PaperClaw MCP permission and policy code and summarize "
-                    "the authorization boundary and one risk."
+                    "Inspect src/paperclaw/mcp/runtime.py and summarize the "
+                    "MCPPermissionPolicy boundary, DenyAllMCPPermissionPolicy default, "
+                    "AllowListMCPPermissionPolicy behavior, one concrete denial path, "
+                    "and one implementation risk."
                 ),
                 "acceptance_criteria": [
-                    "Cite inspected module paths",
-                    "Explain one permission denial path",
+                    "Cite src/paperclaw/mcp/runtime.py as the inspected module",
+                    "Explain one concrete permission denial path from the inspected code",
                 ],
-                "allowed_paths": ["src/paperclaw/mcp", "src/paperclaw/policy"],
+                "allowed_paths": ["src/paperclaw/mcp/runtime.py"],
                 "writable_paths": [],
                 "allowed_tools": ["file_read", "grep"],
                 "dependencies": [],
@@ -103,22 +112,28 @@ def test_live_mistral_parallel_isolated_subagents() -> None:
     }
 
     started = monotonic()
-    result = SubagentTaskTool(factory).execute(
+    result = ReliableSubagentTaskTool(
+        execution_factory,
+        judge_model_factory=judge_factory,
+    ).execute(
         request,
         ToolContext(
             workspace,
             output_limit=40_000,
-            remaining_model_calls=20,
+            # Two Workers reserve max_steps + two Reflection calls + two semantic
+            # judge calls. Keep the live acceptance budget above that strict cap.
+            remaining_model_calls=30,
             remaining_tool_calls=20,
         ),
     )
     elapsed = monotonic() - started
 
     assert result.ok, result.output
-    assert set(models) == {"worker-0", "worker-1"}
+    assert set(execution_models) == {"worker-0", "worker-1"}
+    assert set(judge_models) == {"judge-worker-0", "judge-worker-1"}
     windows = [
         (model.started_at, model.completed_at)
-        for model in models.values()
+        for model in execution_models.values()
         if model.started_at is not None and model.completed_at is not None
     ]
     assert len(windows) == 2
@@ -129,19 +144,27 @@ def test_live_mistral_parallel_isolated_subagents() -> None:
     assert overlap_seconds > 0, "Workers did not overlap at the Provider-call boundary"
 
     payload = json.loads(result.output)
+    semantic = {
+        task_id: task["semantic_acceptance"]
+        for task_id, task in payload["tasks"].items()
+    }
+    assert all(item and item["status"] == "passed" for item in semantic.values())
     evidence = {
         "evidence_type": "live_provider",
         "provider": os.getenv("PAPERCLAW_PROVIDER", "mistral"),
         "model": os.getenv("PAPERCLAW_MODEL"),
+        "judge_provider": os.getenv("PAPERCLAW_JUDGE_PROVIDER")
+        or os.getenv("PAPERCLAW_PROVIDER", "mistral"),
+        "judge_model": os.getenv("PAPERCLAW_JUDGE_MODEL") or os.getenv("PAPERCLAW_MODEL"),
         "parent_run_id": run_id,
         "subtask_ids": sorted(payload["tasks"]),
         "elapsed_seconds": round(elapsed, 3),
         "provider_overlap_seconds": round(overlap_seconds, 3),
         "parent_context_return_chars": len(result.output),
         "parent_context_added_tokens": sum(
-            model.output_tokens for model in models.values()
+            model.output_tokens for model in execution_models.values()
         ),
-        "workers": {
+        "execution_workers": {
             agent_id: {
                 "model_calls": model.calls,
                 "input_tokens": model.input_tokens,
@@ -149,8 +172,19 @@ def test_live_mistral_parallel_isolated_subagents() -> None:
                 "started_at": model.started_at,
                 "completed_at": model.completed_at,
             }
-            for agent_id, model in sorted(models.items())
+            for agent_id, model in sorted(execution_models.items())
         },
+        "semantic_judges": {
+            agent_id: {
+                "model_calls": model.calls,
+                "input_tokens": model.input_tokens,
+                "output_tokens": model.output_tokens,
+                "started_at": model.started_at,
+                "completed_at": model.completed_at,
+            }
+            for agent_id, model in sorted(judge_models.items())
+        },
+        "semantic_acceptance": semantic,
         "tool_metadata": result.metadata,
         "task_statuses": {
             task_id: task["status"] for task_id, task in payload["tasks"].items()

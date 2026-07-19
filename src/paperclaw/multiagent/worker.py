@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import subprocess
 import threading
+import traceback
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -27,6 +28,7 @@ from paperclaw.multiagent.events import emit_team_event
 from paperclaw.multiagent.lease import LeaseManager
 from paperclaw.multiagent.permissions import PermissionGuardLite
 from paperclaw.multiagent.scoped_tools import WorkerRuntimeCounters, build_scoped_registry
+from paperclaw.multiagent.semantic_judge import SemanticAcceptanceJudge
 
 
 def _kill_process_tree(pid: int) -> None:
@@ -37,7 +39,6 @@ def _kill_process_tree(pid: int) -> None:
     fall back to ``proc.kill()`` on the Popen object's PID. This is best-effort
     — the cancel event will still cause the AgentRuntime to stop between steps.
     """
-
     try:
         subprocess.run(
             ["taskkill", "/PID", str(pid), "/T", "/F"],
@@ -64,9 +65,11 @@ class Worker:
         lease_manager: LeaseManager,
         team_state: dict,
         enable_verification_gate: bool = True,
+        judge_model: ChatModel | None = None,
     ) -> None:
         self.agent_id = agent_id
         self._model = model
+        self._judge_model = judge_model
         self._guard = guard
         self._lease_manager = lease_manager
         self._team_state = team_state
@@ -82,7 +85,6 @@ class Worker:
 
     def run(self, task: AgentTask, workspace: Path) -> WorkerResult:
         """Run a single task to completion, failure, or cancellation."""
-
         emit_team_event(
             self._team_state,
             MessageType.TASK_ASSIGNED.value,
@@ -109,7 +111,6 @@ class Worker:
             registry,
             enable_verification_gate=self._enable_verification_gate,
         )
-
         try:
             final_state = runtime.run(
                 worker_task,
@@ -123,10 +124,22 @@ class Worker:
             )
         except Exception as exc:  # defensive: single Worker failure must not crash Coordinator
             self._lease_manager.release_all_for_task(task.task_id)
+            location = _exception_location(exc)
+            emit_team_event(
+                self._team_state,
+                "worker.crashed",
+                self.agent_id,
+                task.task_id,
+                error_type=type(exc).__name__,
+                error_location=location,
+            )
+            message = str(exc).strip()
+            detail = f": {message[:300]}" if message else ""
+            where = f" at {location}" if location else ""
             return WorkerResult(
                 task_id=task.task_id,
                 status=WorkerStatus.FAILED,
-                summary=f"Worker crashed: {type(exc).__name__}: {exc}",
+                summary=f"Worker crashed: {type(exc).__name__}{detail}{where}",
                 unresolved_items=["internal worker error"],
             )
 
@@ -136,8 +149,8 @@ class Worker:
         if not isinstance(verification_result, VerificationResult):
             verification_result = None
 
-        # Local Verify is required: if gate is on and verification failed, the
-        # Worker cannot report completed.
+        # Deterministic Verify is authoritative. A semantic judge may never
+        # upgrade failed local evidence into a completed Worker result.
         if (
             self._enable_verification_gate
             and status == WorkerStatus.COMPLETED
@@ -146,15 +159,55 @@ class Worker:
         ):
             status = WorkerStatus.FAILED
 
+        semantic_judge_result = None
+        if status == WorkerStatus.COMPLETED and self._judge_model is not None:
+            semantic_judge_result = SemanticAcceptanceJudge(self._judge_model).evaluate(
+                task,
+                worker_summary=final_state.get("result")
+                or final_state.get("stop_reason")
+                or "no result",
+                deterministic_result=verification_result,
+                changed_files=changed_files,
+                unresolved_items=list(final_state.get("remaining_issues", [])),
+            )
+            # Judge calls are real Provider calls and must count against the same
+            # team model-call budget as execution/reflection calls.
+            counters.model_call_count += semantic_judge_result.attempt_count
+            emit_team_event(
+                self._team_state,
+                "verification.semantic.completed",
+                self.agent_id,
+                task.task_id,
+                status=semantic_judge_result.status,
+                reason_code=semantic_judge_result.reason_code,
+                attempt_count=semantic_judge_result.attempt_count,
+                provider=semantic_judge_result.provider,
+                model=semantic_judge_result.model,
+                transient=semantic_judge_result.transient,
+            )
+            if semantic_judge_result.status == "rejected":
+                status = WorkerStatus.FAILED
+            elif semantic_judge_result.status != "passed":
+                # Provider instability, protocol errors, and judge disagreement
+                # are not equivalent to a deterministic business failure.
+                status = WorkerStatus.BLOCKED
+
         emit_team_event(
             self._team_state,
-            MessageType.TASK_COMPLETED.value if status == WorkerStatus.COMPLETED else MessageType.TASK_FAILED.value,
+            MessageType.TASK_COMPLETED.value
+            if status == WorkerStatus.COMPLETED
+            else MessageType.TASK_FAILED.value,
             self.agent_id,
             task.task_id,
             status=status.value if isinstance(status, WorkerStatus) else status,
             changed_files=changed_files,
+            deterministic_verification=(
+                verification_result.status if verification_result is not None else None
+            ),
+            semantic_acceptance=(
+                semantic_judge_result.status if semantic_judge_result is not None else None
+            ),
         )
-
         self._lease_manager.release_all_for_task(task.task_id)
         return WorkerResult(
             task_id=task.task_id,
@@ -162,6 +215,7 @@ class Worker:
             summary=final_state.get("result") or final_state.get("stop_reason") or "no result",
             changed_files=changed_files,
             verification_result=verification_result,
+            semantic_judge_result=semantic_judge_result,
             unresolved_items=final_state.get("remaining_issues", []),
             handoff_notes=[f"steps={final_state.get('step_count', 0)}"],
             step_count=final_state.get("step_count", 0),
@@ -182,7 +236,6 @@ class Worker:
         ``_cancel_active_worker`` returns ``unknown_outcome`` and the leases
         remain held until the thread eventually finishes.
         """
-
         self._cancel_event.set()
 
         # Kill any registered subprocesses for this task so that long-running
@@ -212,7 +265,6 @@ class Worker:
 
     def _make_worker_runtime_state(self, task: AgentTask, workspace: Path) -> dict:
         """Build a minimal shared state for the underlying AgentRuntime."""
-
         return {
             "run_id": f"worker-{uuid4().hex[:8]}",
             "_team_state": self._team_state,
@@ -252,7 +304,6 @@ class Worker:
         counters: WorkerRuntimeCounters,
     ) -> None:
         """Forward interesting runtime events into the team trace."""
-
         if event == "tool_call":
             counters.tool_call_count += 1
         elif event == "model_call":
@@ -265,13 +316,17 @@ class Worker:
         Worker must also verify that no scoped tool call failed (scope/lease/CAS
         violation). If any required tool failed, the task cannot be COMPLETED.
         """
-
         stop_reason = final_state.get("stop_reason")
         if stop_reason == "cancelled":
             return WorkerStatus.CANCELLED
         if stop_reason in {"max_steps", "invalid_model_output", "timeout"}:
             return WorkerStatus.FAILED
-        if stop_reason in {"blocked_environment", "verification_failed", "reflection_limit", "repeated_failure"}:
+        if stop_reason in {
+            "blocked_environment",
+            "verification_failed",
+            "reflection_limit",
+            "repeated_failure",
+        }:
             return WorkerStatus.BLOCKED
 
         # Even when the model says "done", hard tool failures recorded in history
@@ -289,7 +344,6 @@ class Worker:
 
     def _extract_changed_files(self, final_state: dict) -> list[str]:
         """Collect paths touched by successful file_write/file_edit calls."""
-
         changed: set[str] = set()
         for entry in final_state.get("history", []):
             if entry.tool in {"file_write", "file_edit"} and entry.result.ok:
@@ -301,7 +355,6 @@ class Worker:
 
 def _render_task_context(task: AgentTask) -> str:
     """Render only the explicit task contract into a fresh worker context."""
-
     return json.dumps(
         {
             "task_id": task.task_id,
@@ -311,7 +364,22 @@ def _render_task_context(task: AgentTask) -> str:
             "allowed_paths": task.allowed_paths,
             "writable_paths": task.writable_paths,
             "allowed_tools": task.allowed_tools,
+            "completion_result_contract": [
+                "done.arguments.result must be a self-contained evidence-backed deliverable, not a status-only sentence",
+                "explicitly address every acceptance criterion before proposing done",
+                "for read-only analysis, cite exact inspected module paths and concrete findings derived from tool evidence",
+                "do not claim criteria that were not supported by observed tool results",
+            ],
         },
         ensure_ascii=False,
         sort_keys=True,
     )
+
+
+def _exception_location(exc: Exception) -> str | None:
+    """Return a bounded traceback location without serializing locals or prompts."""
+    frames = traceback.extract_tb(exc.__traceback__)
+    if not frames:
+        return None
+    frame = frames[-1]
+    return f"{Path(frame.filename).name}:{frame.name}:{frame.lineno}"[:300]

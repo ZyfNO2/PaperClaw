@@ -14,7 +14,7 @@ from paperclaw.multiagent.contracts import (
     TeamStopReason,
     WorkerStatus,
 )
-from paperclaw.multiagent.coordinator import Coordinator
+from paperclaw.multiagent.semantic_coordinator import SemanticCoordinator
 
 from .contracts import TaskExecutionResult, TaskRecord, TaskStatus
 
@@ -26,10 +26,12 @@ class SubagentTaskExecutor:
         self,
         model_factory: Callable[[str], ChatModel],
         *,
+        judge_model_factory: Callable[[str], ChatModel] | None = None,
         enable_verification_gate: bool = True,
         event_handler: Callable[[str, dict], None] | None = None,
     ) -> None:
         self._model_factory = model_factory
+        self._judge_model_factory = judge_model_factory
         self._enable_verification_gate = enable_verification_gate
         self._event_handler = event_handler
 
@@ -61,19 +63,21 @@ class SubagentTaskExecutor:
             max_steps=task.max_steps,
             timeout_seconds=max(1, int(task.timeout_seconds)),
         )
+        semantic_reserve = 2 if self._judge_model_factory is not None else 0
         budget = TeamBudget(
             max_agents=1,
             max_total_steps=task.max_steps,
-            max_total_model_calls=max(task.max_steps + 2, 4),
+            max_total_model_calls=max(task.max_steps + 2 + semantic_reserve, 4),
             max_wall_time_seconds=max(1, int(task.timeout_seconds)),
             max_fix_rounds=1,
         )
-        coordinator = Coordinator(
+        coordinator = SemanticCoordinator(
             self._model_factory,
             Path(task.workspace),
             budget=budget,
             enable_verification_gate=self._enable_verification_gate,
             event_handler=self._project_event(task),
+            judge_model_factory=self._judge_model_factory,
         )
         monitor_stop = Event()
 
@@ -109,6 +113,16 @@ class SubagentTaskExecutor:
             "unresolved_items": list(worker.unresolved_items),
             "review_findings": [finding.to_dict() for finding in result.review_findings],
             "team_summary": result.summary,
+            "deterministic_verification": (
+                worker.verification_result.to_dict()
+                if worker.verification_result is not None
+                else None
+            ),
+            "semantic_acceptance": (
+                worker.semantic_judge_result.to_dict()
+                if worker.semantic_judge_result is not None
+                else None
+            ),
         }
         common = {
             "output": output,
@@ -127,15 +141,22 @@ class SubagentTaskExecutor:
                 stop_reason="cancel_requested",
                 **common,
             )
-        if worker.status is WorkerStatus.TIMED_OUT:
-            terminal = (
-                TaskStatus.UNKNOWN_OUTCOME
-                if worker.changed_files
-                else TaskStatus.TIMED_OUT
-            )
+        if worker.status is WorkerStatus.BLOCKED:
+            semantic = worker.semantic_judge_result
             return TaskExecutionResult(
-                terminal,
-                stop_reason="worker_timeout",
+                TaskStatus.BLOCKED,
+                error={
+                    "code": (
+                        "semantic_acceptance_"
+                        + semantic.status
+                        if semantic is not None
+                        else "subagent_blocked"
+                    ),
+                    "reason_code": semantic.reason_code if semantic is not None else None,
+                },
+                stop_reason="semantic_acceptance_blocked"
+                if semantic is not None
+                else "subagent_blocked",
                 **common,
             )
         return TaskExecutionResult(

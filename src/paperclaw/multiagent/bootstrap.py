@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from .tool import SubagentTaskTool
+from .judge_factory import build_judge_model_from_env
+from .reliable_tool import ReliableSubagentTaskTool
 
 _CLI_MARKER = "_paperclaw_subagent_cli_extension"
 
 
 def install_cli_subagent_extension(cli_module: Any) -> None:
     """Wrap the CLI memory-runtime builder without rewriting the legacy parser."""
-
     if getattr(cli_module, _CLI_MARKER, False):
         return
     original_build_memory_runtime = cli_module.build_memory_runtime
@@ -20,8 +20,9 @@ def install_cli_subagent_extension(cli_module: Any) -> None:
         components = original_build_memory_runtime(*args, **kwargs)
         if "delegate_tasks" not in components.tool_registry.names:
             components.tool_registry.register(
-                SubagentTaskTool(
+                ReliableSubagentTaskTool(
                     lambda _agent_id: cli_module.OpenAICompatibleModel.from_env(),
+                    judge_model_factory=lambda _agent_id: build_judge_model_from_env(),
                     enable_verification_gate=True,
                 )
             )
