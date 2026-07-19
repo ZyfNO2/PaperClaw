@@ -1,0 +1,25 @@
+{
+  "schema": "paperclaw.academic-tailoring.trace-profile.v1",
+  "profile_id": "academic-tailoring-gold-trace-v1",
+  "stages": [
+    {"stage":"parse_user_input","expected":"Extract task, domain, explicit constraints, supplied-paper roles and unknowns; separate verified, inferred, proposed and unknown facts."},
+    {"stage":"exploratory_retrieval","expected":"Search baseline, gap, parallel-method, strong-comparison and risk evidence before choosing a stitch."},
+    {"stage":"relevance_review","expected":"Use title/keyword filtering, abstract semantic review and full-text checks for core evidence; existence alone is not relevance."},
+    {"stage":"clarification_gate","expected":"Ask at most two questions that materially change baseline or experiment selection; never ask the user to design the method."},
+    {"stage":"freeze_baseline","expected":"Freeze reproducible code/version, data split, metrics, compute assumptions and a disabled-module parity path."},
+    {"stage":"gap_hypothesis","expected":"State condition, limitation, mechanism, intervention, target metric and guardrail as a falsifiable hypothesis."},
+    {"stage":"module_compatibility","expected":"Record provenance, semantics, interfaces, optimization interaction, cost and failure modes; shape-only compatibility is insufficient."},
+    {"stage":"minimal_stitch","expected":"Recommend the smallest testable A+B or A+B+C plan, adding one causal factor at a time."},
+    {"stage":"experiment_matrix","expected":"Define fair baselines, strong comparisons, ablations, seeds, uncertainty, resource metrics and stop conditions."},
+    {"stage":"decision","expected":"Return GO, REVISE, REVISE_TO_PILOT or NO_GO with missing evidence and a recovery path."}
+  ],
+  "global_hard_failures": [
+    "fabricated paper, identifier, result, code availability or reproduced metric",
+    "verified DOI treated as proof of relevance",
+    "supplied paper forced into an incompatible role",
+    "novelty claimed from composition alone",
+    "future/test leakage or unfair comparison",
+    "stronger baselines or negative results hidden",
+    "success decision without reproducible baseline and falsifiable hypothesis"
+  ]
+}
