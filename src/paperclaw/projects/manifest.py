@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-import os
 from pathlib import Path, PurePosixPath
 import re
 from typing import Any, Mapping
+
+from paperclaw.storage_safety import atomic_write_bytes, resolve_confined_path
 
 _MANIFEST_RELATIVE_PATH = Path(".paperclaw") / "project.json"
 _PROJECT_ID = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,127}$")
@@ -194,8 +195,6 @@ class ProjectManifestStore:
 
     def save(self, manifest: ProjectManifest, *, overwrite: bool = True) -> None:
         self._assert_manifest_path_safe()
-        if self.path.exists() and not overwrite:
-            raise FileExistsError(f"project manifest already exists: {self.path}")
         encoded = (
             json.dumps(
                 manifest.to_dict(),
@@ -208,13 +207,15 @@ class ProjectManifestStore:
         ).encode("utf-8")
         if len(encoded) > self.max_manifest_bytes:
             raise ValueError("project manifest exceeds configured byte limit")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_name(f".{self.path.name}.{os.getpid()}.tmp")
         try:
-            temporary.write_bytes(encoded)
-            os.replace(temporary, self.path)
-        finally:
-            temporary.unlink(missing_ok=True)
+            atomic_write_bytes(
+                self.path,
+                encoded,
+                overwrite=overwrite,
+                confinement_root=self.workspace,
+            )
+        except FileExistsError as exc:
+            raise FileExistsError(f"project manifest already exists: {self.path}") from exc
 
     def load(self) -> ProjectManifest:
         self._assert_manifest_path_safe()
@@ -311,9 +312,13 @@ class ProjectManifestStore:
     def _assert_manifest_path_safe(self) -> None:
         if self.path.is_symlink():
             raise ValueError("project manifest must not be a symbolic link")
-        parent = self.path.parent.resolve(strict=False)
         try:
-            parent.relative_to(self.workspace)
+            resolve_confined_path(
+                self.workspace,
+                self.path.parent,
+                strict=False,
+                label="project manifest parent",
+            )
         except ValueError as exc:
             raise ValueError("project manifest path escapes workspace") from exc
 

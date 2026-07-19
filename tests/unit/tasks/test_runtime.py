@@ -4,6 +4,9 @@ from pathlib import Path
 from threading import Barrier, Lock
 from time import monotonic, sleep
 
+import pytest
+
+import paperclaw.tasks.runtime as task_runtime
 from paperclaw.tasks import (
     BackgroundTaskSupervisor,
     SQLiteDurableTaskStore,
@@ -11,6 +14,47 @@ from paperclaw.tasks import (
     TaskSpec,
     TaskStatus,
 )
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "cannot schedule new futures after shutdown",
+        "cannot schedule new futures after interpreter shutdown",
+    ],
+)
+def test_worker_thread_suppresses_executor_shutdown_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    message: str,
+) -> None:
+    store = SQLiteDurableTaskStore(tmp_path / "tasks.sqlite3")
+    supervisor = BackgroundTaskSupervisor(store, lambda _task, _cancel: None)
+
+    def fail_during_asyncio_run(coro):
+        coro.close()
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(task_runtime.asyncio, "run", fail_during_asyncio_run)
+
+    supervisor._thread_main()
+
+
+def test_worker_thread_does_not_hide_unrelated_runtime_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = SQLiteDurableTaskStore(tmp_path / "tasks.sqlite3")
+    supervisor = BackgroundTaskSupervisor(store, lambda _task, _cancel: None)
+
+    def fail_during_asyncio_run(coro):
+        coro.close()
+        raise RuntimeError("event loop invariant failed")
+
+    monkeypatch.setattr(task_runtime.asyncio, "run", fail_during_asyncio_run)
+
+    with pytest.raises(RuntimeError, match="event loop invariant failed"):
+        supervisor._thread_main()
 
 
 def create(store: SQLiteDurableTaskStore, task_id: str) -> None:

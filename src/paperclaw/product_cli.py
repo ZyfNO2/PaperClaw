@@ -231,36 +231,50 @@ def _run_project(args: argparse.Namespace) -> int:
     raise AssertionError("unreachable project command")
 
 
-def _artifact_store(args: argparse.Namespace) -> FileArtifactStore:
-    workspace = Path(args.workspace).expanduser().resolve(strict=True)
+def _resolved_artifact_workspace(args: argparse.Namespace) -> Path:
+    raw_workspace = Path(args.workspace).expanduser()
+    if raw_workspace.is_symlink():
+        raise ValueError("workspace must not be a symbolic link")
+    workspace = raw_workspace.resolve(strict=True)
     if not workspace.is_dir():
         raise ValueError("workspace must be a directory")
-    return FileArtifactStore(workspace / ".paperclaw" / "artifacts")
+    return workspace
+
+
+def _artifact_store_for(workspace: Path) -> FileArtifactStore:
+    return FileArtifactStore(
+        workspace / ".paperclaw" / "artifacts",
+        confinement_root=workspace,
+    )
 
 
 def _workspace_file(workspace: Path, value: Path) -> Path:
     raw = value if value.is_absolute() else workspace / value
-    resolved = raw.expanduser().resolve(strict=True)
+    expanded = raw.expanduser()
+    if expanded.is_symlink():
+        raise ValueError("artifact source must be a regular non-symlink file")
+    resolved = expanded.resolve(strict=True)
     try:
         resolved.relative_to(workspace)
     except ValueError as exc:
         raise ValueError("artifact source file must stay inside workspace") from exc
-    if not resolved.is_file() or resolved.is_symlink():
+    if not resolved.is_file():
         raise ValueError("artifact source must be a regular non-symlink file")
     return resolved
 
 
 def _run_artifact(args: argparse.Namespace) -> int:
-    workspace = Path(args.workspace).expanduser().resolve(strict=True)
-    store = _artifact_store(args)
+    workspace = _resolved_artifact_workspace(args)
     if args.artifact_command == "create":
         source_file = _workspace_file(workspace, args.file)
+        content = source_file.read_bytes()
+        store = _artifact_store_for(workspace)
         artifact, revision, created = store.create_artifact(
             idempotency_key=args.idempotency_key,
             artifact_type=args.artifact_type,
             title=args.title,
             media_type=args.media_type,
-            content=source_file.read_bytes(),
+            content=content,
             source=ArtifactSourceLinks(
                 project_id=args.project_id,
                 run_id=args.run_id,
@@ -279,6 +293,7 @@ def _run_artifact(args: argparse.Namespace) -> int:
         )
         return 0
     if args.artifact_command == "list":
+        store = _artifact_store_for(workspace)
         artifacts = store.list_artifacts(
             artifact_type=args.artifact_type,
             project_id=args.project_id,
@@ -293,21 +308,25 @@ def _run_artifact(args: argparse.Namespace) -> int:
         )
         return 0
     if args.artifact_command == "show":
+        store = _artifact_store_for(workspace)
         _json({"ok": True, "bundle": store.get_bundle(args.artifact_id).to_dict()})
         return 0
     if args.artifact_command == "revise":
         source_file = _workspace_file(workspace, args.file)
+        content = source_file.read_bytes()
+        store = _artifact_store_for(workspace)
         revision, created = store.add_revision(
             args.artifact_id,
             idempotency_key=args.idempotency_key,
             media_type=args.media_type,
-            content=source_file.read_bytes(),
+            content=content,
             message=args.message,
             metadata={"source_path": source_file.relative_to(workspace).as_posix()},
         )
         _json({"ok": True, "created": created, "revision": revision.to_dict()})
         return 0
     if args.artifact_command == "export":
+        store = _artifact_store_for(workspace)
         exported = store.export_revision(
             args.artifact_id,
             args.destination_root,
