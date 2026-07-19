@@ -76,6 +76,13 @@
       const section = byId(PAGES[key].sectionId);
       if (section) section.hidden = key !== name;
     }
+    const active = byId(PAGES[name].sectionId);
+    if (active) {
+      active.classList.remove("page-enter");
+      void active.offsetWidth;
+      active.classList.add("page-enter");
+      active.addEventListener("animationend", () => active.classList.remove("page-enter"), { once: true });
+    }
     const nav = byId("sidebar-nav");
     if (nav) {
       for (const button of nav.querySelectorAll("[data-nav]")) {

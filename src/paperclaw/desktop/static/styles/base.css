@@ -18,6 +18,7 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background-color var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out);
 }
 
 h1, h2, h3, h4, p, dl, dd, dt, figure { margin: 0; }
@@ -64,7 +65,7 @@ code, pre, kbd, samp, .mono { font-family: var(--font-mono); }
 /* Thin, quiet scrollbars that stay visible enough for dense panels. */
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   border-radius: 5px;
   border: 2px solid transparent;
@@ -72,6 +73,29 @@ code, pre, kbd, samp, .mono { font-family: var(--font-mono); }
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-faint); }
 * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+
+/* Theme transition: smooth color cross-fade when [data-theme] changes.
+   Scope to the document shell and primary surfaces to avoid transitioning
+   every node (which would be expensive on large trees). The motion guard
+   below collapses this along with all other transitions. */
+html, body,
+.app, .sidebar, .topbar, .inspector-drawer, .modal-root, .toast-stack,
+.card, .stat-card, .milestone, .cap-card, .artifact-card, .table thead th,
+.nav, .toolbar, .segmented, .switch, .field input, .field textarea, .field select,
+.btn, .nav-btn, .chip, .tab, .code-block {
+  transition: background-color var(--dur-base) var(--ease-out),
+              border-color var(--dur-base) var(--ease-out),
+              color var(--dur-base) var(--ease-out);
+}
+
+/* Page enter: a short fade + slight rise applied to the section that just
+   became visible. The .page-enter class is added by shell.js showPage and
+   removed once the animation completes so it can re-trigger next time. */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: page-enter var(--dur-base) var(--ease-out); }
 
 /* Motion preferences: the Settings "Animation" switch maps to data-motion,
    and OS-level reduced motion is always honored. */
