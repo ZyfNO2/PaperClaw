@@ -5,12 +5,13 @@ from __future__ import annotations
 from contextlib import contextmanager
 import hashlib
 import json
-import os
 from pathlib import Path, PurePosixPath
 import sqlite3
 import time
 from typing import Any, Callable, Mapping, Protocol
 from uuid import uuid4
+
+from paperclaw.storage_safety import atomic_write_bytes, resolve_confined_path
 
 from .contracts import (
     ArtifactBundle,
@@ -24,12 +25,28 @@ from .contracts import (
     normalize_metadata,
 )
 
+_WINDOWS_RESERVED = frozenset(
+    {
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        *(f"com{index}" for index in range(1, 10)),
+        *(f"lpt{index}" for index in range(1, 10)),
+    }
+)
+
 
 class ArtifactStore(Protocol):
     def create_artifact(self, **kwargs) -> tuple[ArtifactRecord, ArtifactRevision, bool]: ...
     def add_revision(self, artifact_id: str, **kwargs) -> tuple[ArtifactRevision, bool]: ...
     def get_artifact(self, artifact_id: str) -> ArtifactRecord: ...
-    def get_bundle(self, artifact_id: str) -> ArtifactBundle: ...
+    def get_bundle(
+        self,
+        artifact_id: str,
+        *,
+        max_revisions: int | None = None,
+    ) -> ArtifactBundle: ...
     def read_revision(self, artifact_id: str, revision_number: int | None = None) -> bytes: ...
 
 
@@ -38,6 +55,7 @@ class FileArtifactStore:
         self,
         root: str | Path,
         *,
+        confinement_root: str | Path | None = None,
         max_content_bytes: int = 16_777_216,
         max_metadata_bytes: int = 65_536,
         busy_timeout_ms: int = 10_000,
@@ -48,7 +66,21 @@ class FileArtifactStore:
         candidate = Path(root).expanduser()
         if candidate.exists() and candidate.is_symlink():
             raise ValueError("artifact root must not be a symbolic link")
-        self.root = candidate.resolve(strict=False)
+        if confinement_root is None:
+            resolved_root = candidate.resolve(strict=False)
+            self.confinement_root: Path | None = None
+        else:
+            allowed = Path(confinement_root).expanduser().resolve(strict=True)
+            if not allowed.is_dir():
+                raise ValueError("artifact confinement_root must be a directory")
+            resolved_root = resolve_confined_path(
+                allowed,
+                candidate,
+                strict=False,
+                label="artifact root",
+            )
+            self.confinement_root = allowed
+        self.root = resolved_root
         self.root.mkdir(parents=True, exist_ok=True)
         self.database = self.root / "artifacts.sqlite3"
         self.blob_root = self.root / "blobs" / "sha256"
@@ -56,6 +88,7 @@ class FileArtifactStore:
         self.max_metadata_bytes = max_metadata_bytes
         self._busy_timeout_ms = busy_timeout_ms
         self._clock = clock
+        self._assert_layout_safe()
         self._initialize()
 
     def create_artifact(
@@ -89,43 +122,39 @@ class FileArtifactStore:
             }
         )
         scope_key = f"create:{key}"
-        self._ensure_blob(content_hash, normalized_content)
         now = self._clock()
+        artifact = ArtifactRecord(
+            artifact_id=f"artifact-{uuid4().hex}",
+            artifact_type=artifact_type,
+            title=title,
+            created_at=now,
+            updated_at=now,
+            latest_revision_number=1,
+            source=normalized_source,
+            metadata=normalized_metadata,
+        )
+        revision = ArtifactRevision(
+            revision_id=f"revision-{uuid4().hex}",
+            artifact_id=artifact.artifact_id,
+            revision_number=1,
+            content_hash=content_hash,
+            byte_length=len(normalized_content),
+            media_type=media_type,
+            created_at=now,
+            message=revision_message,
+            metadata={},
+        )
+
         with self._transaction() as connection:
             existing = self._idempotency_locked(connection, scope_key)
             if existing is not None:
                 self._assert_digest(existing, digest)
-                artifact = self._artifact_locked(connection, existing["result_id"])
-                revision = self._revision_locked(
-                    connection, artifact.artifact_id, 1
-                )
-                return artifact, revision, False
+                self._ensure_blob(content_hash, normalized_content)
+                stored = self._artifact_locked(connection, existing["result_id"])
+                first = self._revision_locked(connection, stored.artifact_id, 1)
+                return stored, first, False
 
-            artifact_id = f"artifact-{uuid4().hex}"
-            revision_id = f"revision-{uuid4().hex}"
-            # Construct contracts before writing so type/media/title validation
-            # fails before durable metadata mutation.
-            artifact = ArtifactRecord(
-                artifact_id=artifact_id,
-                artifact_type=artifact_type,
-                title=title,
-                created_at=now,
-                updated_at=now,
-                latest_revision_number=1,
-                source=normalized_source,
-                metadata=normalized_metadata,
-            )
-            revision = ArtifactRevision(
-                revision_id=revision_id,
-                artifact_id=artifact_id,
-                revision_number=1,
-                content_hash=content_hash,
-                byte_length=len(normalized_content),
-                media_type=media_type,
-                created_at=now,
-                message=revision_message,
-                metadata={},
-            )
+            self._ensure_blob(content_hash, normalized_content)
             connection.execute(
                 """
                 INSERT INTO product_artifacts(
@@ -146,7 +175,12 @@ class FileArtifactStore:
             )
             self._insert_revision(connection, revision)
             self._insert_idempotency(
-                connection, scope_key, digest, "artifact", artifact_id, now
+                connection,
+                scope_key,
+                digest,
+                "artifact",
+                artifact.artifact_id,
+                now,
             )
             return artifact, revision, True
 
@@ -177,23 +211,34 @@ class FileArtifactStore:
             }
         )
         scope_key = f"revise:{artifact_key}:{key}"
-        self._ensure_blob(content_hash, normalized_content)
         now = self._clock()
+        # Validate the public revision fields before any filesystem mutation.
+        ArtifactRevision(
+            revision_id="revision-validation",
+            artifact_id=artifact_key,
+            revision_number=1,
+            content_hash=content_hash,
+            byte_length=len(normalized_content),
+            media_type=media_type,
+            created_at=now,
+            message=message,
+            metadata=normalized_metadata,
+        )
+
         with self._transaction() as connection:
             existing = self._idempotency_locked(connection, scope_key)
             if existing is not None:
                 self._assert_digest(existing, digest)
-                revision = self._revision_by_id_locked(
+                self._ensure_blob(content_hash, normalized_content)
+                return self._revision_by_id_locked(
                     connection, existing["result_id"]
-                )
-                return revision, False
+                ), False
 
             artifact = self._artifact_locked(connection, artifact_key)
-            revision_number = artifact.latest_revision_number + 1
             revision = ArtifactRevision(
                 revision_id=f"revision-{uuid4().hex}",
                 artifact_id=artifact_key,
-                revision_number=revision_number,
+                revision_number=artifact.latest_revision_number + 1,
                 content_hash=content_hash,
                 byte_length=len(normalized_content),
                 media_type=media_type,
@@ -201,6 +246,7 @@ class FileArtifactStore:
                 message=message,
                 metadata=normalized_metadata,
             )
+            self._ensure_blob(content_hash, normalized_content)
             self._insert_revision(connection, revision)
             cursor = connection.execute(
                 """
@@ -209,7 +255,7 @@ class FileArtifactStore:
                 WHERE artifact_id = ? AND latest_revision_number = ?
                 """,
                 (
-                    revision_number,
+                    revision.revision_number,
                     now,
                     artifact_key,
                     artifact.latest_revision_number,
@@ -246,10 +292,36 @@ class FileArtifactStore:
             number = revision_number or artifact.latest_revision_number
             return self._revision_locked(connection, artifact_key, number)
 
-    def get_bundle(self, artifact_id: str) -> ArtifactBundle:
+    def get_bundle(
+        self,
+        artifact_id: str,
+        *,
+        max_revisions: int | None = None,
+    ) -> ArtifactBundle:
         artifact_key = _bounded_identifier(artifact_id, "artifact_id")
+        if max_revisions is not None and (
+            isinstance(max_revisions, bool)
+            or not isinstance(max_revisions, int)
+            or max_revisions < 1
+        ):
+            raise ValueError("max_revisions must be a positive integer")
         with self._connection() as connection:
             artifact = self._artifact_locked(connection, artifact_key)
+            if max_revisions is not None:
+                count = int(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) AS count
+                        FROM product_artifact_revisions
+                        WHERE artifact_id = ?
+                        """,
+                        (artifact_key,),
+                    ).fetchone()["count"]
+                )
+                if count > max_revisions:
+                    raise ArtifactCapacityError(
+                        "artifact revision history exceeds configured limit"
+                    )
             rows = connection.execute(
                 """
                 SELECT * FROM product_artifact_revisions
@@ -260,6 +332,20 @@ class FileArtifactStore:
             revisions = tuple(self._revision_from_row(row) for row in rows)
             return ArtifactBundle(artifact, revisions)
 
+    def count_artifacts(
+        self,
+        *,
+        artifact_type: str | None = None,
+        project_id: str | None = None,
+    ) -> int:
+        query, params = self._artifact_filter_query(
+            "SELECT COUNT(*) AS count FROM product_artifacts WHERE 1 = 1",
+            artifact_type=artifact_type,
+            project_id=project_id,
+        )
+        with self._connection() as connection:
+            return int(connection.execute(query, params).fetchone()["count"])
+
     def list_artifacts(
         self,
         *,
@@ -267,17 +353,13 @@ class FileArtifactStore:
         project_id: str | None = None,
         limit: int = 200,
     ) -> tuple[ArtifactRecord, ...]:
-        if not 1 <= limit <= 5_000:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 5_000:
             raise ValueError("limit must be in [1, 5000]")
-        query = "SELECT * FROM product_artifacts WHERE 1 = 1"
-        params: list[object] = []
-        if artifact_type is not None:
-            query += " AND artifact_type = ?"
-            params.append(artifact_type)
-        if project_id is not None:
-            _bounded_identifier(project_id, "project_id")
-            query += " AND json_extract(source_json, '$.project_id') = ?"
-            params.append(project_id)
+        query, params = self._artifact_filter_query(
+            "SELECT * FROM product_artifacts WHERE 1 = 1",
+            artifact_type=artifact_type,
+            project_id=project_id,
+        )
         query += " ORDER BY updated_at DESC, artifact_id ASC LIMIT ?"
         params.append(limit)
         with self._connection() as connection:
@@ -310,35 +392,50 @@ class FileArtifactStore:
         revision_number: int | None = None,
         overwrite: bool = False,
     ) -> Path:
-        root = Path(destination_root).expanduser().resolve(strict=True)
+        raw_root = Path(destination_root).expanduser()
+        if raw_root.is_symlink():
+            raise ValueError("destination_root must not be a symbolic link")
+        root = raw_root.resolve(strict=True)
         if not root.is_dir():
             raise ValueError("destination_root must be a directory")
         normalized = _relative_path(relative_path)
-        target = (root / Path(normalized)).resolve(strict=False)
-        try:
-            target.relative_to(root)
-        except ValueError as exc:
-            raise ValueError("artifact export path escapes destination root") from exc
-        if target.is_symlink():
+        unresolved = root / Path(normalized)
+        if unresolved.is_symlink():
             raise ValueError("artifact export target must not be a symbolic link")
-        if target.exists() and not overwrite:
-            raise FileExistsError(f"artifact export target exists: {target}")
+        target = resolve_confined_path(
+            root,
+            unresolved,
+            strict=False,
+            label="artifact export path",
+        )
         content = self.read_revision(artifact_id, revision_number)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        resolved_parent = target.parent.resolve(strict=True)
         try:
-            resolved_parent.relative_to(root)
-        except ValueError as exc:
-            raise ValueError("artifact export parent escapes destination root") from exc
-        temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-        try:
-            temporary.write_bytes(content)
-            if target.exists() and not overwrite:
-                raise FileExistsError(f"artifact export target exists: {target}")
-            os.replace(temporary, target)
-        finally:
-            temporary.unlink(missing_ok=True)
-        return target
+            return atomic_write_bytes(
+                target,
+                content,
+                overwrite=overwrite,
+                confinement_root=root,
+            )
+        except FileExistsError as exc:
+            raise FileExistsError(f"artifact export target exists: {target}") from exc
+
+    def _artifact_filter_query(
+        self,
+        query: str,
+        *,
+        artifact_type: str | None,
+        project_id: str | None,
+    ) -> tuple[str, list[object]]:
+        params: list[object] = []
+        if artifact_type is not None:
+            _bounded_identifier(artifact_type, "artifact_type")
+            query += " AND artifact_type = ?"
+            params.append(artifact_type)
+        if project_id is not None:
+            _bounded_identifier(project_id, "project_id")
+            query += " AND json_extract(source_json, '$.project_id') = ?"
+            params.append(project_id)
+        return query, params
 
     def _content(self, content: bytes) -> bytes:
         if not isinstance(content, bytes):
@@ -349,29 +446,61 @@ class FileArtifactStore:
 
     def _ensure_blob(self, content_hash: str, content: bytes) -> None:
         path = self._blob_path(content_hash)
-        if path.exists():
-            existing = path.read_bytes()
-            if hashlib.sha256(existing).hexdigest() != content_hash:
-                raise ArtifactIntegrityError("existing artifact blob is corrupt")
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        if path.is_symlink():
+            raise ArtifactIntegrityError("artifact blob must not be a symbolic link")
         try:
-            temporary.write_bytes(content)
-            try:
-                os.link(temporary, path)
-            except FileExistsError:
-                pass
-            except OSError:
-                if not path.exists():
-                    os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
-        if hashlib.sha256(path.read_bytes()).hexdigest() != content_hash:
+            atomic_write_bytes(
+                path,
+                content,
+                overwrite=False,
+                confinement_root=self.root,
+            )
+        except FileExistsError:
+            pass
+        try:
+            existing = path.read_bytes()
+        except FileNotFoundError as exc:
+            raise ArtifactIntegrityError("persisted artifact blob is missing") from exc
+        if hashlib.sha256(existing).hexdigest() != content_hash:
             raise ArtifactIntegrityError("persisted artifact blob hash mismatch")
 
     def _blob_path(self, content_hash: str) -> Path:
-        return self.blob_root / content_hash[:2] / content_hash
+        unresolved = self.blob_root / content_hash[:2] / content_hash
+        if unresolved.is_symlink():
+            raise ArtifactIntegrityError("artifact blob must not be a symbolic link")
+        try:
+            return resolve_confined_path(
+                self.root,
+                unresolved,
+                strict=False,
+                label="artifact blob",
+            )
+        except ValueError as exc:
+            raise ArtifactIntegrityError("artifact blob path escapes store") from exc
+
+    def _assert_layout_safe(self) -> None:
+        if self.database.is_symlink():
+            raise ValueError("artifact database must not be a symbolic link")
+        for path, label in (
+            (self.database, "artifact database"),
+            (self.root / "blobs", "artifact blob directory"),
+            (self.blob_root, "artifact blob root"),
+        ):
+            if path.is_symlink():
+                raise ValueError(f"{label} must not be a symbolic link")
+            resolve_confined_path(
+                self.root,
+                path,
+                strict=False,
+                label=label,
+            )
+        if self.confinement_root is not None:
+            resolve_confined_path(
+                self.confinement_root,
+                self.root,
+                strict=True,
+                label="artifact root",
+            )
 
     def _initialize(self) -> None:
         with self._connection() as connection:
@@ -419,6 +548,7 @@ class FileArtifactStore:
 
     @contextmanager
     def _connection(self):
+        self._assert_layout_safe()
         connection = sqlite3.connect(
             self.database,
             timeout=self._busy_timeout_ms / 1000,
@@ -606,6 +736,14 @@ def _relative_path(value: str) -> str:
     path = PurePosixPath(normalized)
     if path.is_absolute() or ".." in path.parts or normalized == ".":
         raise ValueError("relative_path must stay within destination root")
+    if any(part in {"", "."} for part in path.parts):
+        raise ValueError("relative_path contains an invalid segment")
+    for part in path.parts:
+        if ":" in part or part.endswith((" ", ".")):
+            raise ValueError("relative_path is not portable across supported platforms")
+        stem = part.split(".", 1)[0].casefold()
+        if stem in _WINDOWS_RESERVED:
+            raise ValueError("relative_path uses a reserved platform name")
     return path.as_posix()
 
 
