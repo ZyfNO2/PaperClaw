@@ -40,12 +40,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+      - name: Prepare evidence directory
+        run: python -c "from pathlib import Path; Path('tmp').mkdir(exist_ok=True)"
       - name: Run v0.31 focused tests
-        run: python -m pytest -q tests/unit/eval/test_aggregate.py tests/unit/multiagent/test_bus_runtime.py
+        run: python -m pytest tests/unit/eval/test_aggregate.py tests/unit/multiagent/test_bus_runtime.py --junitxml=tmp/v031-focused-${{ matrix.os }}.xml --report-log=tmp/v031-focused-${{ matrix.os }}.jsonl -vv
       - name: Run compatibility slices
-        run: python -m pytest -q tests/unit/message_bus tests/unit/test_multiagent_coordinator.py
+        run: python -m pytest tests/unit/message_bus tests/unit/test_multiagent_coordinator.py --junitxml=tmp/v031-compat-${{ matrix.os }}.xml -q
       - name: Correctness lint
         run: python -m ruff check src/paperclaw/eval src/paperclaw/multiagent/bus_runtime.py src/paperclaw/multiagent/bus_cli.py tests/unit/eval/test_aggregate.py tests/unit/multiagent/test_bus_runtime.py --select E9,F63,F7,F82
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v031-focused-${{ matrix.os }}-${{ github.run_id }}
+          path: tmp/
+          retention-days: 30
+          if-no-files-found: warn
 
   full-non-live:
     runs-on: windows-latest
@@ -61,10 +71,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+      - name: Prepare evidence directory
+        run: python -c "from pathlib import Path; Path('tmp').mkdir(exist_ok=True)"
       - name: Full non-live regression
-        run: python -m pytest -q -m "not real_llm"
+        run: python -m pytest -m "not real_llm" --junitxml=tmp/v031-full.xml --report-log=tmp/v031-full.jsonl -q
       - name: Repository correctness lint
         run: python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
+      - name: Upload full regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v031-full-${{ github.run_id }}
+          path: tmp/
+          retention-days: 30
+          if-no-files-found: warn
 
   live-provider:
     if: github.event_name == 'workflow_dispatch'
