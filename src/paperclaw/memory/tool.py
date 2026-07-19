@@ -12,6 +12,7 @@ from typing import Any
 
 from paperclaw.tools.base import ToolContext, ToolResult, ToolValidationError
 
+from .scoped import MemoryStoreProtocol
 from .store import FileMemoryStore, MemoryStoreError
 
 
@@ -25,8 +26,8 @@ class MemoryTool:
         "Changes apply to the next runtime/session frozen snapshot."
     )
 
-    def __init__(self, store: FileMemoryStore | None = None) -> None:
-        self.store = store or FileMemoryStore()
+    def __init__(self, store: MemoryStoreProtocol | None = None) -> None:
+        self.store: MemoryStoreProtocol = store or FileMemoryStore()
 
     def validate(self, arguments: dict[str, Any]) -> None:
         action = arguments.get("action")
@@ -113,7 +114,11 @@ class MemoryTool:
             "usage": usage,
             "snapshot_visibility": "next_session",
         }
-        return ToolResult(True, json.dumps(payload, sort_keys=True), metadata={"verb": verb})
+        return ToolResult(
+            True,
+            json.dumps(payload, sort_keys=True),
+            metadata={"verb": verb},
+        )
 
     @staticmethod
     def _require_text(arguments: dict[str, Any], key: str) -> str:

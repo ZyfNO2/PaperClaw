@@ -9,6 +9,9 @@ import sys
 
 from paperclaw.capabilities import default_capability_catalog
 from paperclaw.projects import (
+    ProjectIndexPolicy,
+    ProjectKnowledgeRuntime,
+    ProjectKnowledgeWatcher,
     ProjectManifestStore,
     build_project_index,
     inspect_project_index,
@@ -61,6 +64,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
     project_index = project_subparsers.add_parser("index")
     project_index.add_argument("--max-file-bytes", type=int, default=5_000_000)
+
+    project_refresh = project_subparsers.add_parser("refresh")
+    project_refresh.add_argument(
+        "--policy",
+        choices=tuple(item.value for item in ProjectIndexPolicy),
+        default=ProjectIndexPolicy.REQUIRE_CURRENT.value,
+    )
+    project_refresh.add_argument("--max-file-bytes", type=int, default=5_000_000)
+
+    project_watch = project_subparsers.add_parser("watch")
+    project_watch.add_argument("--once", action="store_true", required=True)
+    project_watch.add_argument("--rebuild-on-change", action="store_true")
+    project_watch.add_argument("--max-file-bytes", type=int, default=5_000_000)
     return parser
 
 
@@ -124,6 +140,54 @@ def _run_project(args: argparse.Namespace) -> int:
         )
         _json({"ok": True, "index": indexed.to_dict()})
         return 0
+    if args.project_command == "refresh":
+        if not report.ok:
+            _json({"ok": False, "validation": report.to_dict()})
+            return 1
+        runtime = ProjectKnowledgeRuntime(
+            store,
+            manifest,
+            policy=args.policy,
+            max_file_bytes=args.max_file_bytes,
+        )
+        snapshot, rebuilt = runtime.refresh_if_stale()
+        _json(
+            {
+                "ok": True,
+                "rebuilt": rebuilt,
+                "knowledge": snapshot.to_dict(),
+            }
+        )
+        return 0
+    if args.project_command == "watch":
+        runtime = ProjectKnowledgeRuntime(
+            store,
+            manifest,
+            max_file_bytes=args.max_file_bytes,
+        )
+        watcher = ProjectKnowledgeWatcher(
+            runtime,
+            rebuild_on_change=args.rebuild_on_change,
+        )
+        event = watcher.poll_once()
+        _json(
+            {
+                "ok": True,
+                "changed": event is not None,
+                "event": (
+                    {
+                        "previous_reason": event.previous_reason,
+                        "current_reason": event.current_reason,
+                        "rebuilt": event.rebuilt,
+                        "elapsed_seconds": event.elapsed_seconds,
+                    }
+                    if event is not None
+                    else None
+                ),
+                "knowledge": runtime.inspect().to_dict(),
+            }
+        )
+        return 0
     raise AssertionError("unreachable project command")
 
 
@@ -134,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "capabilities":
             return _run_capabilities(args)
         return _run_project(args)
-    except (FileExistsError, FileNotFoundError, OSError, ValueError) as exc:
+    except (FileExistsError, FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
         _json(
             {
                 "ok": False,
