@@ -29,20 +29,20 @@ _REQUIRED_ENV = (
     "PAPERCLAW_BASE_URL",
     "PAPERCLAW_MODEL",
 )
-_BROWSER_THEMES = frozenset(
-    {
-        "neo-brutalist",
-        "soft-minimal",
-        "terminal-dark",
-        "clean-mono",
-        "paper-light",
-    }
-)
+_BROWSER_THEMES = frozenset({"dark", "light"})
 _BROWSER_ASSETS = {
     "": ("index.html", "text/html; charset=utf-8"),
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
-    "/styles.css": ("styles.css", "text/css; charset=utf-8"),
+    "/styles/tokens.css": ("styles/tokens.css", "text/css; charset=utf-8"),
+    "/styles/base.css": ("styles/base.css", "text/css; charset=utf-8"),
+    "/styles/layout.css": ("styles/layout.css", "text/css; charset=utf-8"),
+    "/styles/components.css": ("styles/components.css", "text/css; charset=utf-8"),
+    "/styles/pages.css": ("styles/pages.css", "text/css; charset=utf-8"),
+    "/styles/responsive.css": ("styles/responsive.css", "text/css; charset=utf-8"),
+    "/js/mock-data.js": ("js/mock-data.js", "text/javascript; charset=utf-8"),
+    "/js/shell.js": ("js/shell.js", "text/javascript; charset=utf-8"),
+    "/js/pages.js": ("js/pages.js", "text/javascript; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
 }
 _BROWSER_API_ARITY: dict[str, tuple[int, int]] = {
@@ -222,10 +222,10 @@ class DesktopAPI:
             ).to_public_dict()
         return {"ok": True, "workspace": str(workspace)}
 
-    def open_in_browser(self, theme: str = "neo-brutalist") -> dict[str, object]:
+    def open_in_browser(self, theme: str = "dark") -> dict[str, object]:
         """Open a token-protected loopback mirror in the system browser."""
 
-        normalized_theme = theme if theme in _BROWSER_THEMES else "neo-brutalist"
+        normalized_theme = theme if theme in _BROWSER_THEMES else "dark"
         try:
             with self._browser_lock:
                 if self._browser_host is None:
@@ -584,14 +584,14 @@ def _load_theme_preference() -> str:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return "neo-brutalist"
+        return "dark"
     if not isinstance(payload, Mapping):
-        return "neo-brutalist"
+        return "dark"
     theme = payload.get("theme")
     return (
         theme
         if isinstance(theme, str) and theme in _BROWSER_THEMES
-        else "neo-brutalist"
+        else "dark"
     )
 
 
