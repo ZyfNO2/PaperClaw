@@ -2,14 +2,28 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import os
 from pathlib import Path
+from typing import Any
 
 from paperclaw.agent.flow import default_registry
 from paperclaw.context.orchestration import ContextPolicy
 from paperclaw.context.source_registry import ContextSourceRegistry
+from paperclaw.projects import (
+    ProjectIndexStatus,
+    ProjectManifest,
+    ProjectManifestStore,
+    discover_project_manifest,
+    inspect_project_index,
+    project_index_database,
+)
+from paperclaw.retrieval import (
+    RetrievalContextSource,
+    SQLiteBM25Retriever,
+    register_retrieval_context_source,
+)
 from paperclaw.tools.registry import ToolRegistry
 
 from .source import FrozenFoundationalContextSource, ProjectInstructionLoader
@@ -101,8 +115,8 @@ class MemoryRuntimeSettings:
             max_single_candidate_tokens=self.max_single_candidate_tokens,
             recent_message_limit=self.recent_message_limit,
             recent_tool_result_limit=self.recent_tool_result_limit,
-            prompt_version="paperclaw.prompt.v0.17.0",
-            policy_version="paperclaw.context.v0.17.0",
+            prompt_version="paperclaw.prompt.v0.27.0",
+            policy_version="paperclaw.context.v0.27.0",
         )
 
 
@@ -114,6 +128,15 @@ class MemoryRuntimeComponents:
     source_registry: ContextSourceRegistry
     context_policy: ContextPolicy
     settings: MemoryRuntimeSettings
+    project_manifest: ProjectManifest | None = None
+    project_index_status: ProjectIndexStatus | None = None
+    _closeables: tuple[Any, ...] = field(default=(), repr=False, compare=False)
+
+    def close(self) -> None:
+        for closeable in reversed(self._closeables):
+            close = getattr(closeable, "close", None)
+            if callable(close):
+                close()
 
 
 def build_memory_runtime(
@@ -122,6 +145,7 @@ def build_memory_runtime(
     settings: MemoryRuntimeSettings | None = None,
     store: FileMemoryStore | None = None,
 ) -> MemoryRuntimeComponents:
+    resolved_workspace = Path(workspace).expanduser().resolve(strict=True)
     resolved_settings = settings or MemoryRuntimeSettings.from_env()
     resolved_store = store or FileMemoryStore(
         resolved_settings.memory_root,
@@ -159,7 +183,16 @@ def build_memory_runtime(
     if resolved_settings.memory_enabled and resolved_settings.memory_tool_enabled:
         tools.register(MemoryTool(resolved_store))
 
-    project_snapshot = ProjectInstructionLoader(workspace).snapshot()
+    project_manifest = discover_project_manifest(resolved_workspace)
+    instruction_files = (
+        project_manifest.instruction_files if project_manifest is not None else None
+    )
+    loader = (
+        ProjectInstructionLoader(resolved_workspace, filenames=instruction_files)
+        if instruction_files is not None
+        else ProjectInstructionLoader(resolved_workspace)
+    )
+    project_snapshot = loader.snapshot()
     sources = ContextSourceRegistry()
     sources.register(
         "foundational_context",
@@ -171,6 +204,24 @@ def build_memory_runtime(
         kind="memory",
         priority=1_000,
     )
+
+    closeables: list[Any] = []
+    project_index_status: ProjectIndexStatus | None = None
+    if project_manifest is not None and project_manifest.knowledge_paths:
+        project_store = ProjectManifestStore(resolved_workspace)
+        project_index_status = inspect_project_index(project_store, project_manifest)
+        if project_index_status.current:
+            retriever = SQLiteBM25Retriever(
+                project_index_database(project_store, project_manifest)
+            )
+            register_retrieval_context_source(
+                sources,
+                RetrievalContextSource(retriever),
+                source_id="project.bm25_retrieval",
+                priority=100,
+            )
+            closeables.append(retriever)
+
     return MemoryRuntimeComponents(
         store=resolved_store,
         snapshot=snapshot,
@@ -178,6 +229,9 @@ def build_memory_runtime(
         source_registry=sources,
         context_policy=resolved_settings.context_policy(),
         settings=resolved_settings,
+        project_manifest=project_manifest,
+        project_index_status=project_index_status,
+        _closeables=tuple(closeables),
     )
 
 
