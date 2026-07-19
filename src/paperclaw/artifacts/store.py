@@ -212,7 +212,6 @@ class FileArtifactStore:
         )
         scope_key = f"revise:{artifact_key}:{key}"
         now = self._clock()
-        # Validate the public revision fields before any filesystem mutation.
         ArtifactRevision(
             revision_id="revision-validation",
             artifact_id=artifact_key,
@@ -733,10 +732,11 @@ def _relative_path(value: str) -> str:
     if not isinstance(value, str) or not value.strip() or len(value) > 500:
         raise ValueError("relative_path must be bounded and non-empty")
     normalized = value.strip().replace("\\", "/")
+    raw_parts = normalized.split("/")
     path = PurePosixPath(normalized)
     if path.is_absolute() or ".." in path.parts or normalized == ".":
         raise ValueError("relative_path must stay within destination root")
-    if any(part in {"", "."} for part in path.parts):
+    if any(part in {"", "."} for part in raw_parts):
         raise ValueError("relative_path contains an invalid segment")
     for part in path.parts:
         if ":" in part or part.endswith((" ", ".")):
