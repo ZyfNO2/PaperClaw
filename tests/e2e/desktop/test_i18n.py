@@ -40,7 +40,7 @@ def test_dynamic_messages_follow_selected_language(page: Page) -> None:
     page.locator("#workspace-card").click()
     expect(page.locator("#toast-message")).to_have_text("工作区已更新。")
 
-    page.locator("#theme-select").select_option("terminal-dark")
+    page.locator("#theme-select").select_option("light")
     expect(page.locator("#toast-message")).to_contain_text("主题：")
 
     page.locator("#language-select").select_option("en")
