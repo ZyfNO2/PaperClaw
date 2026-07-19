@@ -6,11 +6,8 @@
   const POLL_INTERVAL_MS = 250;
   const THEME_STORAGE_KEY = "paperclaw.theme.v1";
   const THEMES = new Map([
-    ["neo-brutalist", "Neo Brutalist"],
-    ["soft-minimal", "Soft Minimal"],
-    ["terminal-dark", "Terminal Dark"],
-    ["clean-mono", "Clean Mono"],
-    ["paper-light", "Paper Light"]
+    ["dark", "Dark"],
+    ["light", "Light"]
   ]);
   const bootstrap = readBrowserBootstrap();
   const bridgeClientId = createClientId();
@@ -74,9 +71,6 @@
     });
     document.addEventListener("keydown", onGlobalKeydown);
     ui.closeSettings.addEventListener("click", closeSettings);
-    ui.settingsPanel.addEventListener("click", (event) => {
-      if (event.target === ui.settingsPanel) closeSettings();
-    });
     ui.closeToast.addEventListener("click", hideToast);
     bindFilterGroup(ui.missionFilters, "data-log-filter", applyMissionFilter);
     bindFilterGroup(ui.timelineFilters, "data-tl-filter", applyTimelineFilter);
@@ -308,7 +302,7 @@
   }
 
   function applyTheme(theme, persist) {
-    const normalized = THEMES.has(theme) ? theme : "neo-brutalist";
+    const normalized = THEMES.has(theme) ? theme : "dark";
     currentTheme = normalized;
     document.documentElement.dataset.theme = normalized;
     if (ui.themeSelect) ui.themeSelect.value = normalized;
@@ -334,7 +328,7 @@
     } catch (_error) {
       // Continue with the built-in default when storage is unavailable.
     }
-    return "neo-brutalist";
+    return "dark";
   }
 
   function readBrowserBootstrap() {
@@ -520,11 +514,13 @@
   function bindNavigation() {
     for (const button of ui.sidebarNav.querySelectorAll("[data-nav]")) {
       button.addEventListener("click", () => {
+        const target = button.dataset.nav;
+        if (window.PaperClawShell && typeof window.PaperClawShell.showPage === "function") {
+          window.PaperClawShell.showPage(target);
+          return;
+        }
         for (const candidate of ui.sidebarNav.querySelectorAll("[data-nav]")) candidate.classList.remove("active");
         button.classList.add("active");
-        const target = button.dataset.nav;
-        if (target === "settings") openSettings();
-        else if (target !== "console") showToast(`${button.textContent.trim()} is under development in v0.11.`);
       });
     }
   }
@@ -587,11 +583,19 @@
   }
 
   function openSettings() {
+    if (window.PaperClawShell && typeof window.PaperClawShell.showPage === "function") {
+      window.PaperClawShell.showPage("settings");
+      return;
+    }
     ui.settingsPanel.hidden = false;
     ui.closeSettings.focus();
   }
 
   function closeSettings() {
+    if (window.PaperClawShell && typeof window.PaperClawShell.backFromSettings === "function") {
+      window.PaperClawShell.backFromSettings();
+      return;
+    }
     ui.settingsPanel.hidden = true;
   }
 
@@ -704,6 +708,10 @@
     const number = Number(value);
     return Number.isInteger(number) && number >= 1 && number <= maximum ? number : fallback;
   }
+
+  // Let the workbench shell (mock pages, inspector, modal) reuse the same
+  // toast pipeline as the live console instead of duplicating it.
+  window.PaperClawToast = showToast;
 
   document.addEventListener("DOMContentLoaded", bindDom, {once:true});
   window.addEventListener("pywebviewready", markBridgeReady, {once:true});

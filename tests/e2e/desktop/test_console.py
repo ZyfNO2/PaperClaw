@@ -18,10 +18,15 @@ def test_shell_navigation_workspace_settings_and_sidebar_controls(page: Page) ->
     page.locator("#close-settings").click()
     expect(page.locator("#settings-panel")).to_be_hidden()
 
-    page.locator('#sidebar-nav [data-nav="trace"]').click()
-    expect(page.locator("#toast")).to_be_visible()
-    expect(page.locator("#toast-message")).to_contain_text("under development")
-    page.locator("#close-toast").click()
+    page.locator('#sidebar-nav [data-nav="missions"]').click()
+    expect(page.locator("#page-missions")).to_be_visible()
+    expect(page.locator("#page-title")).to_have_text("MISSIONS")
+    page.locator('#sidebar-nav [data-nav="artifacts"]').click()
+    expect(page.locator("#page-artifacts")).to_be_visible()
+    expect(page.locator("#page-title")).to_have_text("ARTIFACTS")
+    page.locator('#sidebar-nav [data-nav="console"]').click()
+    expect(page.locator("#page-console")).to_be_visible()
+    expect(page.locator("#page-title")).to_have_text("CONSOLE")
 
     page.locator("#workspace-card").click()
     expect(page.locator("#workspace-path")).to_have_text("/tmp/selected-workspace")
@@ -39,15 +44,15 @@ def test_theme_switch_persists_and_browser_mode_receives_selected_theme(
     install_bridge(page)
     load_app(page)
 
-    expect(page.locator("html")).to_have_attribute("data-theme", "neo-brutalist")
-    page.locator("#theme-select").select_option("terminal-dark")
-    expect(page.locator("html")).to_have_attribute("data-theme", "terminal-dark")
-    expect(page.locator("#toast-message")).to_contain_text("Terminal Dark")
-    assert page.evaluate("window.__bridgeCalls.themes") == ["terminal-dark"]
+    expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+    page.locator("#theme-select").select_option("light")
+    expect(page.locator("html")).to_have_attribute("data-theme", "light")
+    expect(page.locator("#toast-message")).to_contain_text("Light")
+    assert page.evaluate("window.__bridgeCalls.themes") == ["light"]
 
     page.locator("#open-browser").click()
     expect(page.locator("#toast-message")).to_contain_text("Browser mode opened")
-    assert page.evaluate("window.__bridgeCalls.browser") == ["terminal-dark"]
+    assert page.evaluate("window.__bridgeCalls.browser") == ["light"]
 
 
 def test_execute_flow_uses_env_payload_and_renders_events_and_result(

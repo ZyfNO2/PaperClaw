@@ -72,8 +72,12 @@ def browser() -> Browser:
 
 @pytest.fixture
 def page(browser: Browser, desktop_origin: str) -> Page:
+    # Pin the browser locale so i18n default-locale assertions do not depend
+    # on the host machine's display language.
     page = browser.new_page(
-        viewport={"width": 1440, "height": 900}, accept_downloads=True
+        viewport={"width": 1440, "height": 900},
+        accept_downloads=True,
+        locale="en-US",
     )
     yield page
     page.close()
@@ -96,7 +100,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             error_code: null, error_message: null
           }};
           let queue = [];
-          let theme = 'neo-brutalist';
+          let theme = 'dark';
           let providerState = {{
             ok: true,
             workspace: '/tmp/paperclaw-workspace',

@@ -48,7 +48,7 @@ where = ["src"]
 include = ["paperclaw*", "pocketflow*"]
 
 [tool.setuptools.package-data]
-"paperclaw.desktop" = ["static/*.html", "static/*.css", "static/*.js"]
+"paperclaw.desktop" = ["static/*.html", "static/*.css", "static/*.js", "static/styles/*.css", "static/js/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

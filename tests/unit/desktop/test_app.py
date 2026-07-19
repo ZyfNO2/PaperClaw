@@ -96,7 +96,7 @@ def test_environment_defaults_never_expose_api_key(tmp_path, monkeypatch) -> Non
         "model": "test-model",
         "configured": True,
         "missing": [],
-        "theme": "neo-brutalist",
+        "theme": "dark",
     }
     assert "secret-value" not in repr(defaults)
     assert "api_key" not in defaults
@@ -106,14 +106,14 @@ def test_theme_preference_is_validated_and_persisted(tmp_path, monkeypatch) -> N
     monkeypatch.setenv("PAPERCLAW_DESKTOP_CONFIG_DIR", str(tmp_path))
     api = app.DesktopAPI(FakeController())
 
-    assert api.set_theme("terminal-dark") == {"ok": True, "theme": "terminal-dark"}
-    assert api.get_defaults()["theme"] == "terminal-dark"
+    assert api.set_theme("light") == {"ok": True, "theme": "light"}
+    assert api.get_defaults()["theme"] == "light"
     invalid = api.set_theme("unknown-theme")
     assert invalid["ok"] is False
     assert invalid["error_code"] == "validation_error"
     assert (
         json.loads((tmp_path / "desktop-preferences.json").read_text())["theme"]
-        == "terminal-dark"
+        == "light"
     )
 
 
@@ -220,17 +220,17 @@ def test_browser_host_serves_assets_and_requires_fragment_token(
     api = app.DesktopAPI(FakeController())
 
     try:
-        response = api.open_in_browser("paper-light")
+        response = api.open_in_browser("light")
         assert response["ok"] is True
         assert response["origin"].startswith("http://127.0.0.1:")
         opened = urlsplit(opened_urls[0])
         fragment = parse_qs(opened.fragment)
-        assert fragment["theme"] == ["paper-light"]
+        assert fragment["theme"] == ["light"]
         token = fragment["token"][0]
 
         with urlopen(response["origin"] + "/", timeout=3) as page:
             assert page.status == 200
-            assert b"PaperClaw Console" in page.read()
+            assert b"PaperClaw Workbench" in page.read()
 
         unauthorized = Request(
             response["origin"] + "/api/get_defaults",
