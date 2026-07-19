@@ -1,7 +1,18 @@
-"""PaperClaw MultiAgent runtime and v0.22 semantic acceptance composition."""
+"""PaperClaw MultiAgent runtime and durable Message Bus choreography."""
 
 from __future__ import annotations
 
+from paperclaw.multiagent.bus_runtime import (
+    AttemptState,
+    BusDrivenTeamRuntime,
+    CoordinatorFactory,
+    SQLiteChoreographyStateStore,
+    TEAM_DLQ_TOPIC,
+    TEAM_EVENT_TOPIC,
+    TEAM_REQUEST_TOPIC,
+    TeamRunOutcome,
+    TeamRunRequest,
+)
 from paperclaw.multiagent.contracts import (
     AgentMessage,
     AgentRole,
@@ -35,7 +46,10 @@ __all__ = [
     "AgentMessage",
     "AgentRole",
     "AgentTask",
+    "AttemptState",
+    "BusDrivenTeamRuntime",
     "Coordinator",
+    "CoordinatorFactory",
     "EventEnvelope",
     "FileLease",
     "LeaseDecision",
@@ -47,14 +61,20 @@ __all__ = [
     "ReviewFinding",
     "Reviewer",
     "ReviewVerdict",
+    "SQLiteChoreographyStateStore",
     "SemanticAcceptanceJudge",
     "SemanticCoordinator",
     "SemanticJudgePolicy",
     "SemanticJudgeResult",
     "SemanticJudgeStatus",
     "SubagentTaskTool",
+    "TEAM_DLQ_TOPIC",
+    "TEAM_EVENT_TOPIC",
+    "TEAM_REQUEST_TOPIC",
     "TaskStatus",
     "TeamBudget",
+    "TeamRunOutcome",
+    "TeamRunRequest",
     "TeamStopReason",
     "Worker",
     "WorkerResult",
