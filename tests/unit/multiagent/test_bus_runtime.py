@@ -136,6 +136,43 @@ def test_exact_submit_retry_reuses_request_message(tmp_path: Path):
     assert first.sequence == second.sequence == 1
 
 
+def test_bus_payload_restores_agent_task_list_contracts(tmp_path: Path):
+    bus = SQLiteMessageBusStore(tmp_path / "bus.sqlite3")
+    states = SQLiteChoreographyStateStore(tmp_path / "state.sqlite3")
+    runtime = BusDrivenTeamRuntime(bus, states, lambda *_args: None)
+    message = runtime.submit(make_request("list-contracts"))
+
+    decoded = TeamRunRequest.from_payload(message.payload)
+    task = decoded.tasks[0]
+    assert isinstance(task.acceptance_criteria, list)
+    assert isinstance(task.allowed_paths, list)
+    assert isinstance(task.allowed_tools, list)
+    assert task.allowed_paths == ["."]
+
+
+def test_terminal_restart_acks_without_reexecuting_coordinator(tmp_path: Path):
+    bus = SQLiteMessageBusStore(tmp_path / "bus.sqlite3")
+    states = SQLiteChoreographyStateStore(tmp_path / "state.sqlite3")
+    called = False
+
+    def must_not_run(*_args):
+        nonlocal called
+        called = True
+        raise AssertionError("terminal request must not re-execute")
+
+    runtime = BusDrivenTeamRuntime(bus, states, must_not_run)
+    message = runtime.submit(make_request("restart-safe"))
+    states.begin_attempt(runtime.consumer_id, message.message_id)
+    states.mark_terminal(runtime.consumer_id, message.message_id)
+
+    outcome = runtime.run_once()[0]
+    assert called is False
+    assert outcome.terminal is True
+    assert outcome.acknowledged is True
+    assert outcome.attempt == 1
+    assert bus.get_cursor(runtime.consumer_id, TEAM_REQUEST_TOPIC).ack_sequence == 1
+
+
 def test_poison_request_retries_then_moves_to_dlq_and_acks(tmp_path: Path):
     bus = SQLiteMessageBusStore(tmp_path / "bus.sqlite3")
     states = SQLiteChoreographyStateStore(tmp_path / "state.sqlite3")
