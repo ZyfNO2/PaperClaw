@@ -14,10 +14,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linearize:
+  linearize-and-validate:
     if: github.repository == 'ZyfNO2/PaperClaw'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 90
+    env:
+      TEMP: ${{ github.workspace }}\tmp\pytest_temp
+      TMP: ${{ github.workspace }}\tmp\pytest_temp
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,28 +104,36 @@ jobs:
           test "$(git rev-list --count origin/main..HEAD)" = 8
           git log --reverse --format='%H %s' origin/main..HEAD | tee linearized-commits.txt
 
+      - name: Prepare temp directories
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path tmp\pytest_temp | Out-Null
+          New-Item -ItemType Directory -Force -Path tmp\pytest | Out-Null
+
       - name: Install project
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
           python -m pip install pytest-reportlog
 
-      - name: Run final non-live regression
-        shell: bash
+      - name: Run canonical full Windows non-live regression
+        shell: pwsh
         run: |
-          set -euo pipefail
-          mkdir -p tmp
-          python -m pytest -q -m "not real_llm" --report-log=tmp/linearized-final-pytest.jsonl \
-            2>&1 | tee tmp/linearized-final-pytest.txt
+          $ErrorActionPreference = "Continue"
+          & python -m pytest `
+            --basetemp=tmp/pytest `
+            --report-log=tmp/linearized-final-pytest.jsonl `
+            -q `
+            -m "not real_llm" *>&1 | Tee-Object -FilePath tmp/linearized-final-pytest.txt
+          $pytestExit = $LASTEXITCODE
+          Set-Content -Path tmp/linearized-final-exit.txt -Value $pytestExit -Encoding ascii
+          exit $pytestExit
 
       - name: Run repository correctness lint
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821 \
-            2>&1 | tee tmp/linearized-final-ruff.txt
+        run: python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 
       - name: Publish validated release branch
+        shell: bash
         run: git push --force-with-lease origin HEAD:refs/heads/release/v023-v030-linearized
 
       - name: Upload linearization evidence
@@ -134,6 +146,6 @@ jobs:
             tmp/linearization-build.log
             tmp/linearized-final-pytest.jsonl
             tmp/linearized-final-pytest.txt
-            tmp/linearized-final-ruff.txt
+            tmp/linearized-final-exit.txt
           retention-days: 30
           if-no-files-found: warn
