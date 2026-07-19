@@ -1,0 +1,9 @@
+/* Compatibility entrypoint for legacy package and embedding checks.
+ * The workbench loads the modular stylesheets directly from index.html.
+ */
+@import url("styles/tokens.css");
+@import url("styles/base.css");
+@import url("styles/layout.css");
+@import url("styles/components.css");
+@import url("styles/pages.css");
+@import url("styles/responsive.css");
