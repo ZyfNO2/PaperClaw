@@ -346,7 +346,7 @@
       } else {
         for (const m of visible) {
           const tr = el("tr");
-          if (m.id === selected.id) tr.style.background = "var(--color-primary-muted)";
+          if (m.id === selected.id) tr.classList.add("selected");
           tr.append(el("td", "cell-sub", m.id));
           tr.append(el("td", "cell-main", m.name));
           const statusCell = el("td");
@@ -366,8 +366,7 @@
       grid.append(listCard);
 
       const timelineCard = panelCard(t("missions.timeline"));
-      const list = el("div", "timeline-list");
-      list.style.maxHeight = "480px";
+      const list = el("div", "timeline-list fixed-h");
       for (const event of timelineFor(selected)) {
         const row = el("div", "event-row clickable");
         row.append(el("span", "event-num", String(event.seq).padStart(2, "0")));
@@ -378,7 +377,8 @@
         const right = el("div", "event-right");
         right.append(el("span", "event-time", fmtTime(event.at)));
         const dot = el("span", "event-dot");
-        dot.classList.add(event.kind === "tool" ? "tool" : event.kind === "verify" ? "verify" : event.status === "running" ? "running" : event.status === "failed" ? "failed" : "");
+        const dotClass = event.kind === "tool" ? "tool" : event.kind === "verify" ? "verify" : event.status === "running" ? "running" : event.status === "failed" ? "failed" : "";
+        if (dotClass) dot.classList.add(dotClass);
         right.append(dot);
         row.append(right);
         row.addEventListener("click", () => openStepDetail(selected, event));
@@ -430,14 +430,9 @@
   }
 
   function callout(tone, text) {
-    const box = el("div", "public-error");
+    const box = el("div", tone === "warning" ? "public-error warning" : "public-error");
     box.hidden = false;
     box.textContent = text;
-    if (tone === "warning") {
-      box.style.background = "var(--color-warning-muted)";
-      box.style.borderColor = "var(--color-warning)";
-      box.style.color = "var(--color-warning)";
-    }
     return box;
   }
 
@@ -567,11 +562,10 @@
         tabs.append(chip);
       }
       head.append(tabs);
-      const search = el("input", "input");
+      const search = el("input", "input filter-search");
       search.type = "search";
       search.placeholder = t("cap.search");
       search.value = ui.capQuery;
-      search.style.maxWidth = "240px";
       search.addEventListener("input", () => { ui.capQuery = search.value; renderCapabilities(); });
       head.append(search);
       root.append(head);
@@ -664,15 +658,13 @@
       }
       const data = mock();
       const head = el("div", "page-head");
-      const search = el("input", "input");
+      const search = el("input", "input filter-search");
       search.type = "search";
       search.placeholder = t("art.search");
       search.value = ui.artifactQuery;
-      search.style.maxWidth = "240px";
       search.addEventListener("input", () => { ui.artifactQuery = search.value; renderArtifacts(false); });
 
-      const typeSelect = el("select", "select");
-      typeSelect.style.maxWidth = "170px";
+      const typeSelect = el("select", "select filter-select");
       const allOpt = el("option", "", t("art.type.all"));
       allOpt.value = "all";
       typeSelect.append(allOpt);
@@ -721,7 +713,10 @@
     const table = el("table", "table table-clickable");
     const thead = el("thead");
     const headRow = el("tr");
-    for (const col of [t("art.col.name"), t("art.col.type"), t("art.col.source"), t("art.col.created"), t("art.col.size"), t("art.col.status")]) headRow.append(el("th", "", col));
+    const artCols = [t("art.col.name"), t("art.col.type"), t("art.col.source"), t("art.col.created"), t("art.col.size"), t("art.col.status")];
+    for (const [index, col] of artCols.entries()) {
+      headRow.append(el("th", index === 2 || index === 3 ? "hide-sm" : "", col));
+    }
     thead.append(headRow);
     table.append(thead);
     const tbody = el("tbody");
@@ -737,8 +732,8 @@
       tb.dataset.tone = a.type === "markdown" ? "primary" : a.type === "json" ? "info" : a.type === "code" ? "tool" : a.type === "image" ? "warning" : "success";
       typeCell.append(tb);
       tr.append(typeCell);
-      tr.append(el("td", "cell-sub", a.sourceTask));
-      tr.append(el("td", "", fmtAgo(a.createdAt)));
+      tr.append(el("td", "cell-sub hide-sm", a.sourceTask));
+      tr.append(el("td", "hide-sm", fmtAgo(a.createdAt)));
       tr.append(el("td", "num", fmtBytes(a.sizeBytes)));
       const statusCell = el("td");
       statusCell.append(statusBadge(a.status === "current" ? "ready" : "cancelled", a.status));
@@ -845,8 +840,7 @@
         chip.addEventListener("click", () => { ui.runStatus = status; renderRuns(); });
         filters.append(chip);
       }
-      const range = el("select", "select");
-      range.style.maxWidth = "150px";
+      const range = el("select", "select filter-select");
       for (const [value, key] of [["all", "runs.range.all"], ["24h", "runs.range.24h"], ["3d", "runs.range.3d"], ["7d", "runs.range.7d"]]) {
         const opt = el("option", "", t(key));
         opt.value = value;
@@ -854,11 +848,10 @@
       }
       range.value = ui.runRange;
       range.addEventListener("change", () => { ui.runRange = range.value; renderRuns(); });
-      const search = el("input", "input");
+      const search = el("input", "input filter-search");
       search.type = "search";
       search.placeholder = t("runs.search");
       search.value = ui.runQuery;
-      search.style.maxWidth = "220px";
       search.addEventListener("input", () => { ui.runQuery = search.value; renderRuns(); });
       const left = el("div", "toolbar-group");
       left.append(filters);
@@ -883,7 +876,11 @@
       const table = el("table", "table table-clickable");
       const thead = el("thead");
       const headRow = el("tr");
-      for (const col of [t("runs.col.id"), t("runs.col.mission"), t("runs.col.status"), t("runs.col.provider"), t("runs.col.model"), t("runs.col.started"), t("runs.col.duration"), t("runs.col.tools"), t("runs.col.artifacts"), t("runs.col.error")]) headRow.append(el("th", "", col));
+      const runCols = [t("runs.col.id"), t("runs.col.mission"), t("runs.col.status"), t("runs.col.provider"), t("runs.col.model"), t("runs.col.started"), t("runs.col.duration"), t("runs.col.tools"), t("runs.col.artifacts"), t("runs.col.error")];
+      for (const [index, col] of runCols.entries()) {
+        const th = el("th", index === 3 || index === 4 ? "hide-sm" : "", col);
+        headRow.append(th);
+      }
       thead.append(headRow);
       table.append(thead);
       const tbody = el("tbody");
@@ -894,15 +891,14 @@
         const statusCell = el("td");
         statusCell.append(statusBadge(run.status));
         tr.append(statusCell);
-        tr.append(el("td", "", run.provider));
-        tr.append(el("td", "cell-sub", run.model));
+        tr.append(el("td", "hide-sm", run.provider));
+        tr.append(el("td", "cell-sub hide-sm", run.model));
         tr.append(el("td", "", fmtDateTime(run.startedAt)));
         tr.append(el("td", "num", fmtDuration(run.durationSec)));
         tr.append(el("td", "num", String(run.toolCalls)));
         tr.append(el("td", "num", String(run.artifacts)));
-        const errCell = el("td", "cell-sub ellipsis");
+        const errCell = el("td", "cell-sub ellipsis cell-clip");
         errCell.textContent = run.error || "—";
-        errCell.style.maxWidth = "220px";
         tr.append(errCell);
         tr.addEventListener("click", () => openRun(run));
         tbody.append(tr);
@@ -954,11 +950,10 @@
       const tag = el("span", "demo-tag", "DEMO");
       const note = el("p", "muted", t("prov.demo.desc"));
       const keyRow = el("div", "toolbar-group");
-      const keyInput = el("input", "input");
+      const keyInput = el("input", "input demo-key-input");
       keyInput.type = "password";
       keyInput.placeholder = t("prov.demo.placeholder");
       keyInput.autocomplete = "off";
-      keyInput.style.maxWidth = "320px";
       const showBtn = el("button", "btn sm", t("prov.demo.show"));
       showBtn.type = "button";
       showBtn.addEventListener("click", () => {

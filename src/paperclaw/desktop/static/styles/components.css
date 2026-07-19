@@ -416,6 +416,7 @@
   overflow-wrap: anywhere;
 }
 .public-error[hidden] { display: none; }
+.public-error.warning { background: var(--color-warning-muted); border-color: var(--color-warning); color: var(--color-warning); }
 
 /* Composer */
 .composer { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border); background: var(--color-surface-1); display: grid; gap: var(--space-2); }
@@ -556,6 +557,7 @@
 .table tbody tr:last-child td { border-bottom: 0; }
 .table tbody tr { transition: background-color var(--dur-fast) var(--ease-out); }
 .table tbody tr:hover { background: var(--color-surface-2); }
+.table tbody tr.selected { background: var(--color-primary-muted); }
 .table-clickable tbody tr { cursor: pointer; }
 .table .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
 .table .cell-main { font-weight: var(--weight-medium); }
@@ -716,3 +718,10 @@
 
 /* ======== Divider ======== */
 .divider { height: 1px; background: var(--color-border); border: 0; margin: 0; }
+
+/* ======== Filter field sizing ======== */
+.filter-search { max-width: 240px; }
+.filter-select { max-width: 170px; }
+.cell-clip { max-width: 220px; }
+.demo-key-input { max-width: 320px; }
+.timeline-list.fixed-h { max-height: 480px; }

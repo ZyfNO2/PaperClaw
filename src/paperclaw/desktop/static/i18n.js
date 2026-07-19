@@ -37,6 +37,7 @@
       "toolbar.language": "LANGUAGE",
       "toolbar.languageAria": "Select interface language",
       "toolbar.browser": "◎ OPEN IN BROWSER",
+      "toolbar.browserAria": "Open in browser",
       "provider.unchecked": "LLM · ENV NOT CHECKED",
       "mission.title": "MISSION LOG",
       "mission.filterAria": "Mission log filters",
@@ -171,7 +172,7 @@
       "ov.no.errors": "No recent errors",
       "ov.runtime.logs": "RUNTIME LOGS",
       "missions.summary": "MISSION",
-      "missions.task": "task",
+      "missions.task": "id",
       "missions.started": "started",
       "missions.provider": "provider",
       "missions.tools": "tool calls",
@@ -321,6 +322,7 @@
       "toolbar.language": "语言",
       "toolbar.languageAria": "选择界面语言",
       "toolbar.browser": "◎ 在浏览器中打开",
+      "toolbar.browserAria": "在浏览器中打开",
       "provider.unchecked": "LLM · 尚未检查 ENV",
       "mission.title": "任务日志",
       "mission.filterAria": "任务日志筛选",
@@ -610,8 +612,8 @@
     ["恢复 ENV 配置失败。", "Failed to restore ENV configuration."],
     ["Verify 与 Reflection Gate 已开启。", "Verify and Reflection Gate are enabled."],
     ["Verify 与 Reflection Gate 已关闭；任务完成后直接结束。", "Verify and Reflection Gate are disabled; the run will end after completion is proposed."],
-    ["显示", "Show"],
-    ["隐藏", "Hide"]
+    ["Show", "显示"],
+    ["Hide", "隐藏"]
   ];
 
   let locale = resolveInitialLocale();
@@ -664,6 +666,10 @@
       for (const element of matchingElements(root, "[data-i18n-aria-label]")) {
         const value = t(element.dataset.i18nAriaLabel);
         if (element.getAttribute("aria-label") !== value) element.setAttribute("aria-label", value);
+      }
+      for (const element of matchingElements(root, "[data-i18n-tooltip]")) {
+        const value = t(element.dataset.i18nTooltip);
+        if (element.getAttribute("data-tooltip") !== value) element.setAttribute("data-tooltip", value);
       }
       translateDynamicText(root);
       const selector = document.getElementById("language-select");
