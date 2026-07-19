@@ -1,0 +1,92 @@
+name: One-shot Review Source Patch
+
+on:
+  push:
+    branches:
+      - fix/v0.30-post-review-hardening
+    paths:
+      - ".github/workflows/review-autopatch.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact reviewed fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          cli = Path("src/paperclaw/product_cli.py")
+          text = cli.read_text(encoding="utf-8")
+          old = '''def _run_artifact(args: argparse.Namespace) -> int:
+              workspace = Path(args.workspace).expanduser().resolve(strict=True)
+              store = _artifact_store(args)
+              if args.artifact_command == "create":
+                  source_file = _workspace_file(workspace, args.file)
+          '''.replace("          ", "")
+          new = '''def _run_artifact(args: argparse.Namespace) -> int:
+              workspace = Path(args.workspace).expanduser().resolve(strict=True)
+              if args.artifact_command == "create":
+                  source_file = _workspace_file(workspace, args.file)
+                  store = _artifact_store(args)
+          '''.replace("          ", "")
+          if text.count(old) != 1:
+              raise SystemExit("product_cli create patch anchor mismatch")
+          text = text.replace(old, new)
+          for command, anchor in (
+              ("list", '    if args.artifact_command == "list":\n'),
+              ("show", '    if args.artifact_command == "show":\n'),
+              ("export", '    if args.artifact_command == "export":\n'),
+          ):
+              replacement = anchor + "        store = _artifact_store(args)\n"
+              if text.count(anchor) != 1:
+                  raise SystemExit(f"product_cli {command} patch anchor mismatch")
+              text = text.replace(anchor, replacement)
+          revise = '''    if args.artifact_command == "revise":
+              source_file = _workspace_file(workspace, args.file)
+          '''.replace("          ", "")
+          revise_new = '''    if args.artifact_command == "revise":
+              source_file = _workspace_file(workspace, args.file)
+              store = _artifact_store(args)
+          '''.replace("          ", "")
+          if text.count(revise) != 1:
+              raise SystemExit("product_cli revise patch anchor mismatch")
+          cli.write_text(text.replace(revise, revise_new), encoding="utf-8")
+
+          store = Path("src/paperclaw/artifacts/store.py")
+          text = store.read_text(encoding="utf-8")
+          old = '''    normalized = value.strip().replace("\\\\", "/")
+              path = PurePosixPath(normalized)
+              if path.is_absolute() or ".." in path.parts or normalized == ".":
+                  raise ValueError("relative_path must stay within destination root")
+              if any(part in {"", "."} for part in path.parts):
+                  raise ValueError("relative_path contains an invalid segment")
+          '''.replace("          ", "")
+          new = '''    normalized = value.strip().replace("\\\\", "/")
+              raw_parts = normalized.split("/")
+              path = PurePosixPath(normalized)
+              if path.is_absolute() or ".." in path.parts or normalized == ".":
+                  raise ValueError("relative_path must stay within destination root")
+              if any(part in {"", "."} for part in raw_parts):
+                  raise ValueError("relative_path contains an invalid segment")
+          '''.replace("          ", "")
+          if text.count(old) != 1:
+              raise SystemExit("artifact relative path patch anchor mismatch")
+          store.write_text(text.replace(old, new), encoding="utf-8")
+      - name: Commit patch and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "PaperClaw Review Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/review-autopatch.yml
+          git add src/paperclaw/product_cli.py src/paperclaw/artifacts/store.py
+          git commit -m "fix(review): validate CLI sources before persistence"
+          git push origin HEAD:${GITHUB_REF_NAME}
