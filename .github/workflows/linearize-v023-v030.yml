@@ -1,0 +1,172 @@
+name: Linearize v0.23-v0.30 releases
+
+on:
+  push:
+    branches:
+      - ops/linearize-v023-v030
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: linearize-v023-v030
+  cancel-in-progress: false
+
+jobs:
+  linearize:
+    if: github.repository == 'ZyfNO2/PaperClaw'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch exact release refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            +refs/heads/feat/v0.22-verification-reliability:refs/remotes/origin/feat/v0.22-verification-reliability \
+            +refs/heads/feat/v0.23-executor-isolation:refs/remotes/origin/feat/v0.23-executor-isolation \
+            +refs/heads/feat/v0.24-remote-worker-gateway:refs/remotes/origin/feat/v0.24-remote-worker-gateway \
+            +refs/heads/feat/v0.25-distributed-store-queue:refs/remotes/origin/feat/v0.25-distributed-store-queue \
+            +refs/heads/feat/v0.26-agent-message-bus:refs/remotes/origin/feat/v0.26-agent-message-bus \
+            +refs/heads/feat/v0.27-forgotten-debt-product-foundation:refs/remotes/origin/feat/v0.27-forgotten-debt-product-foundation \
+            +refs/heads/feat/v0.28-project-knowledge-runtime:refs/remotes/origin/feat/v0.28-project-knowledge-runtime \
+            +refs/heads/feat/v0.29-artifact-revisions:refs/remotes/origin/feat/v0.29-artifact-revisions \
+            +refs/heads/feat/v0.30-desktop-product-integration:refs/remotes/origin/feat/v0.30-desktop-product-integration \
+            +refs/heads/fix/v0.30-post-review-hardening:refs/remotes/origin/fix/v0.30-post-review-hardening
+
+      - name: Build linear release history
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_MAIN=734af1f023118d016da9ad9031cb99f28db8d8ce
+          test "$(git rev-parse origin/main)" = "$EXPECTED_MAIN"
+
+          test "$(git rev-parse origin/feat/v0.22-verification-reliability)" = 798641e146fbe0cd28b5720aead59b65ab9f601f
+          test "$(git rev-parse origin/feat/v0.23-executor-isolation)" = b1e28fd76e0ed05bf6098f29283c6ef71854f566
+          test "$(git rev-parse origin/feat/v0.24-remote-worker-gateway)" = 8e872f4303718d0d287316162a2c3c568b13d6cc
+          test "$(git rev-parse origin/feat/v0.25-distributed-store-queue)" = 52d313ee6cb4421b7f8e1a5d73cda62b2cecbf8b
+          test "$(git rev-parse origin/feat/v0.26-agent-message-bus)" = d089719abebb7a1a66ffb31ba49be6245eb306ea
+          test "$(git rev-parse origin/feat/v0.27-forgotten-debt-product-foundation)" = 95008519a612ab61e552e7099d15d792c0f17752
+          test "$(git rev-parse origin/feat/v0.28-project-knowledge-runtime)" = 361b3399a79f52fa2348c84ad1e907a74b562371
+          test "$(git rev-parse origin/feat/v0.29-artifact-revisions)" = 16788e0dec00c93ddaee70539ff10c9c2c71ca83
+          test "$(git rev-parse origin/feat/v0.30-desktop-product-integration)" = 233bad0a4008f1cce4e7f49dabbed1dbe47cfdfe
+          test "$(git rev-parse origin/fix/v0.30-post-review-hardening)" = 989c820f9f78f8b58f0216cb682071f1a1e8db13
+
+          git config user.name "PaperClaw Release Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout -B release/v023-v030-linearized origin/main
+
+          apply_version() {
+            local parent="$1"
+            local child="$2"
+            local title="$3"
+            git diff --binary "$parent" "$child" -- | git apply --index --3way
+            git diff --cached --check
+            if git diff --cached --quiet; then
+              echo "No staged delta for $title" >&2
+              exit 1
+            fi
+            git commit -m "$title"
+          }
+
+          apply_version \
+            798641e146fbe0cd28b5720aead59b65ab9f601f \
+            b1e28fd76e0ed05bf6098f29283c6ef71854f566 \
+            "feat(v0.23): isolate executor lifecycle and add subprocess worker foundation (#52)"
+
+          apply_version \
+            b1e28fd76e0ed05bf6098f29283c6ef71854f566 \
+            8e872f4303718d0d287316162a2c3c568b13d6cc \
+            "feat(v0.24): add authenticated remote worker gateway (#53)"
+
+          apply_version \
+            8e872f4303718d0d287316162a2c3c568b13d6cc \
+            52d313ee6cb4421b7f8e1a5d73cda62b2cecbf8b \
+            "feat(v0.25): add durable queue fencing and distributed store seam (#54)"
+
+          apply_version \
+            52d313ee6cb4421b7f8e1a5d73cda62b2cecbf8b \
+            d089719abebb7a1a66ffb31ba49be6245eb306ea \
+            "feat(v0.26): add durable agent message bus foundation (#55)"
+
+          apply_version \
+            d089719abebb7a1a66ffb31ba49be6245eb306ea \
+            95008519a612ab61e552e7099d15d792c0f17752 \
+            "feat(v0.27): harden forgotten debt and add product foundations (#56)"
+
+          apply_version \
+            95008519a612ab61e552e7099d15d792c0f17752 \
+            361b3399a79f52fa2348c84ad1e907a74b562371 \
+            "feat(v0.28): project knowledge runtime lifecycle (#57)"
+
+          apply_version \
+            e09678f0111e359296e18ed9881ac2fc9517a278 \
+            16788e0dec00c93ddaee70539ff10c9c2c71ca83 \
+            "feat(v0.29): add first-class artifact revisions (#58)"
+
+          git diff --binary \
+            cc3f656ee2b9d82910913fdd172e557dd5d5307f \
+            233bad0a4008f1cce4e7f49dabbed1dbe47cfdfe -- | git apply --index --3way
+          git diff --binary \
+            233bad0a4008f1cce4e7f49dabbed1dbe47cfdfe \
+            989c820f9f78f8b58f0216cb682071f1a1e8db13 -- | git apply --index --3way
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No staged v0.30 delta" >&2
+            exit 1
+          fi
+          git commit -m "feat(v0.30): integrate desktop product boundaries and post-review hardening (#59, #60)"
+
+          test "$(git rev-list --count origin/main..HEAD)" = 8
+          git log --reverse --format='%H %s' origin/main..HEAD | tee linearized-commits.txt
+
+      - name: Install project
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install pytest-reportlog
+
+      - name: Run final non-live regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp
+          python -m pytest -q -m "not real_llm" \
+            --report-log=tmp/linearized-final-pytest.jsonl \
+            2>&1 | tee tmp/linearized-final-pytest.txt
+
+      - name: Run repository correctness lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m ruff check src/paperclaw tests \
+            --select E9,F63,F7,F82 --ignore F821 \
+            2>&1 | tee tmp/linearized-final-ruff.txt
+
+      - name: Publish validated release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push --force-with-lease origin \
+            HEAD:refs/heads/release/v023-v030-linearized
+
+      - name: Upload linearization evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v023-v030-linearization-${{ github.run_id }}
+          path: |
+            linearized-commits.txt
+            tmp/linearized-final-pytest.jsonl
+            tmp/linearized-final-pytest.txt
+            tmp/linearized-final-ruff.txt
+          retention-days: 30
+          if-no-files-found: warn
