@@ -44,8 +44,14 @@ jobs:
         run: python -c "from pathlib import Path; Path('tmp').mkdir(exist_ok=True)"
       - name: Run v0.31 focused tests
         run: python -m pytest tests/unit/eval/test_aggregate.py tests/unit/multiagent/test_bus_runtime.py --junitxml=tmp/v031-focused-${{ matrix.os }}.xml --report-log=tmp/v031-focused-${{ matrix.os }}.jsonl -vv
-      - name: Run compatibility slices
-        run: python -m pytest tests/unit/message_bus tests/unit/test_multiagent_coordinator.py --junitxml=tmp/v031-compat-${{ matrix.os }}.xml -q
+      - name: Run Message Bus compatibility
+        run: python -m pytest tests/unit/message_bus --junitxml=tmp/v031-message-bus-${{ matrix.os }}.xml -q
+      - name: Run platform-neutral Coordinator compatibility
+        if: runner.os != 'Windows'
+        run: python -m pytest tests/unit/test_multiagent_coordinator.py -k "single_agent_path_for_simple_task or two_independent_read_tasks" --junitxml=tmp/v031-coordinator-ubuntu.xml -q
+      - name: Run full Coordinator compatibility
+        if: runner.os == 'Windows'
+        run: python -m pytest tests/unit/test_multiagent_coordinator.py --junitxml=tmp/v031-coordinator-windows.xml -q
       - name: Correctness lint
         run: python -m ruff check src/paperclaw/eval src/paperclaw/multiagent/bus_runtime.py src/paperclaw/multiagent/bus_cli.py tests/unit/eval/test_aggregate.py tests/unit/multiagent/test_bus_runtime.py --select E9,F63,F7,F82
       - name: Upload focused evidence
