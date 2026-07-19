@@ -28,13 +28,22 @@ def main(argv: list[str] | None = None) -> int:
     from paperclaw.lsp.bootstrap import install_cli_lsp_extension
     from paperclaw.multiagent.bootstrap import install_cli_subagent_extension
     from paperclaw.planning.bootstrap import install_cli_plan_skill_extension
-    from paperclaw.tasks.bootstrap import install_cli_task_extension
+    from paperclaw.tasks.bootstrap import (
+        install_cli_task_extension,
+        shutdown_task_runtimes,
+    )
 
     install_cli_subagent_extension(paperclaw.cli)
     install_cli_task_extension(paperclaw.cli)
     install_cli_plan_skill_extension(paperclaw.cli)
     install_cli_lsp_extension(paperclaw.cli)
-    return paperclaw.cli.main(resolved)
+    try:
+        return paperclaw.cli.main(resolved)
+    finally:
+        # A CLI invocation owns its process-scoped supervisors. Stop them while
+        # Python and asyncio executors are still fully available instead of
+        # relying only on interpreter-finalization ordering.
+        shutdown_task_runtimes()
 
 
 if __name__ == "__main__":
