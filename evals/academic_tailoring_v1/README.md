@@ -22,7 +22,7 @@ The gold data deliberately avoids making one exact paper title the only acceptab
 
 ## Files
 
-- `cases.jsonl`: 20 compact case-specific gold records.
+- `cases-01.jsonl` through `cases-04.jsonl`: 20 compact gold records, five cases per shard.
 - `trace-profile.json`: shared ten-stage gold trace and global hard failures.
 - `validate_cases.py`: dependency-free structural validator.
 - `tests/unit/research_eval/test_academic_tailoring_gold_dataset.py`: repository regression test.
@@ -100,11 +100,11 @@ A stage should not pass merely because the final prose mentions the expected key
 
 ## Suggested runner behavior
 
-1. Feed only `user_input.text` and the declared supplied materials to the system under test.
+1. Feed only `user_input` and the declared `supplied_materials` to the system under test.
 2. Allow the agent to perform retrieval and ask clarification questions.
-3. Simulate user replies from the gold question intent only after the agent asks a relevant question.
+3. Simulate user replies from the gold intent only after the agent asks a relevant question.
 4. Capture the full trace, including queries, retrieved candidates, rejected candidates, evidence bindings, baseline decision, module contracts, and final plan.
-5. Compare the normalized trace with `trace-profile.json` and each case's role, hypothesis, tailoring, experiment, stop-condition and assertion fields.
+5. Compare the normalized trace with `trace-profile.json` and each case's role, hypothesis, tailoring, experiment, stop-condition, and assertion fields.
 6. Treat equivalent methods as acceptable only when the mechanism and role match.
 
 ## Important interpretation rule
