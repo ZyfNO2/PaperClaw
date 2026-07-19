@@ -73,7 +73,7 @@ def test_aggregate_runs_reports_latency_quality_tokens_and_cost():
                     duration=200,
                     provider="mistral",
                     model="small",
-                    payload={"input_tokens": 200, "output_tokens": 100, "retry_count": 1},
+                    payload={"input_tokens": 200, "output_tokens": 100, "total_tokens": 300, "retry_count": 1},
                 ),
                 event("r2", 4, "tool.started"),
                 event("r2", 5, "tool.failed", status="failed", error="tool_timeout", duration=30),
@@ -91,7 +91,7 @@ def test_aggregate_runs_reports_latency_quality_tokens_and_cost():
     assert report.total_retries == 1
     assert report.total_tool_failures == 1
     assert report.tool_failure_rate == 0.5
-    assert report.total_estimated_cost_usd == 0.00075
+    assert report.total_estimated_cost_usd == 0.0006
     assert report.unpriced_model_calls == 0
     assert report.failure_categories["tool_timeout"] == 2
     assert report.p50_wall_duration_ms is not None
