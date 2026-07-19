@@ -59,6 +59,7 @@ def make_request(request_id="req-1"):
                 acceptance_criteria=["complete"],
                 allowed_paths=["."],
                 allowed_tools=[],
+                max_steps=3,
             ),
             AgentTask(
                 task_id="b",
@@ -67,6 +68,7 @@ def make_request(request_id="req-1"):
                 acceptance_criteria=["complete"],
                 allowed_paths=["."],
                 allowed_tools=[],
+                max_steps=3,
             ),
         ),
         budget=TeamBudget(max_agents=2, max_total_steps=10, max_total_model_calls=10),
