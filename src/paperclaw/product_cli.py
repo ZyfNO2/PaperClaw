@@ -232,20 +232,29 @@ def _run_project(args: argparse.Namespace) -> int:
 
 
 def _artifact_store(args: argparse.Namespace) -> FileArtifactStore:
-    workspace = Path(args.workspace).expanduser().resolve(strict=True)
+    raw_workspace = Path(args.workspace).expanduser()
+    if raw_workspace.is_symlink():
+        raise ValueError("workspace must not be a symbolic link")
+    workspace = raw_workspace.resolve(strict=True)
     if not workspace.is_dir():
         raise ValueError("workspace must be a directory")
-    return FileArtifactStore(workspace / ".paperclaw" / "artifacts")
+    return FileArtifactStore(
+        workspace / ".paperclaw" / "artifacts",
+        confinement_root=workspace,
+    )
 
 
 def _workspace_file(workspace: Path, value: Path) -> Path:
     raw = value if value.is_absolute() else workspace / value
-    resolved = raw.expanduser().resolve(strict=True)
+    expanded = raw.expanduser()
+    if expanded.is_symlink():
+        raise ValueError("artifact source must be a regular non-symlink file")
+    resolved = expanded.resolve(strict=True)
     try:
         resolved.relative_to(workspace)
     except ValueError as exc:
         raise ValueError("artifact source file must stay inside workspace") from exc
-    if not resolved.is_file() or resolved.is_symlink():
+    if not resolved.is_file():
         raise ValueError("artifact source must be a regular non-symlink file")
     return resolved
 
