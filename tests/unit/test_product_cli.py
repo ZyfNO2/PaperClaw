@@ -32,7 +32,9 @@ def test_capabilities_cli_json_filter(capsys) -> None:
     )
 
 
-def test_project_cli_init_show_validate_and_index(tmp_path: Path, capsys) -> None:
+def test_project_cli_init_show_validate_index_refresh_and_watch(
+    tmp_path: Path, capsys
+) -> None:
     status = main(
         [
             "project",
@@ -52,9 +54,8 @@ def test_project_cli_init_show_validate_and_index(tmp_path: Path, capsys) -> Non
     )
     knowledge = tmp_path / "knowledge"
     knowledge.mkdir()
-    (knowledge / "notes.md").write_text(
-        "MCP uses capability negotiation.\n", encoding="utf-8"
-    )
+    notes = knowledge / "notes.md"
+    notes.write_text("MCP uses capability negotiation.\n", encoding="utf-8")
     store = ProjectManifestStore(tmp_path)
     manifest = replace(store.load(), knowledge_paths=("knowledge",))
     store.save(manifest)
@@ -72,3 +73,13 @@ def test_project_cli_init_show_validate_and_index(tmp_path: Path, capsys) -> Non
     shown = json.loads(capsys.readouterr().out)
     assert shown["index"]["current"] is True
     assert shown["manifest"]["knowledge_paths"] == ["knowledge"]
+
+    notes.write_text("MCP uses lifecycle negotiation.\n", encoding="utf-8")
+    assert main(["project", "--workspace", str(tmp_path), "watch", "--once"]) == 0
+    watched = json.loads(capsys.readouterr().out)
+    assert watched["knowledge"]["status"]["reason"] == "index_stale"
+
+    assert main(["project", "--workspace", str(tmp_path), "refresh"]) == 0
+    refreshed = json.loads(capsys.readouterr().out)
+    assert refreshed["rebuilt"] is True
+    assert refreshed["knowledge"]["status"]["current"] is True

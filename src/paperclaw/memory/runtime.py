@@ -1,4 +1,4 @@
-"""Runtime composition helpers for default Context and long-memory integration."""
+"""Runtime composition helpers for Context, memory and project knowledge."""
 
 from __future__ import annotations
 
@@ -12,20 +12,18 @@ from paperclaw.agent.flow import default_registry
 from paperclaw.context.orchestration import ContextPolicy
 from paperclaw.context.source_registry import ContextSourceRegistry
 from paperclaw.projects import (
+    ProjectIndexPolicy,
     ProjectIndexStatus,
+    ProjectKnowledgeRuntime,
+    ProjectKnowledgeSnapshot,
     ProjectManifest,
     ProjectManifestStore,
     discover_project_manifest,
-    inspect_project_index,
-    project_index_database,
 )
-from paperclaw.retrieval import (
-    RetrievalContextSource,
-    SQLiteBM25Retriever,
-    register_retrieval_context_source,
-)
+from paperclaw.retrieval import RetrievalContextSource, register_retrieval_context_source
 from paperclaw.tools.registry import ToolRegistry
 
+from .scoped import MemoryStoreProtocol, ProjectScopedMemoryStore
 from .source import FrozenFoundationalContextSource, ProjectInstructionLoader
 from .store import FileMemoryStore, MemoryPolicy, MemorySnapshot
 from .tool import MemoryTool
@@ -36,6 +34,8 @@ class MemoryRuntimeSettings:
     memory_enabled: bool = True
     user_profile_enabled: bool = True
     memory_tool_enabled: bool = True
+    project_memory_isolation: bool = True
+    project_index_policy: str = ProjectIndexPolicy.REQUIRE_CURRENT.value
     memory_root: Path = Path.home() / ".paperclaw" / "memories"
     memory_char_limit: int = 2_200
     user_char_limit: int = 1_375
@@ -47,6 +47,7 @@ class MemoryRuntimeSettings:
     recent_tool_result_limit: int = 8
 
     def __post_init__(self) -> None:
+        ProjectIndexPolicy(self.project_index_policy)
         for name, value in (
             ("memory_char_limit", self.memory_char_limit),
             ("user_char_limit", self.user_char_limit),
@@ -82,6 +83,13 @@ class MemoryRuntimeSettings:
             memory_enabled=_env_bool("PAPERCLAW_MEMORY_ENABLED", True),
             user_profile_enabled=_env_bool("PAPERCLAW_USER_PROFILE_ENABLED", True),
             memory_tool_enabled=_env_bool("PAPERCLAW_MEMORY_TOOL_ENABLED", True),
+            project_memory_isolation=_env_bool(
+                "PAPERCLAW_PROJECT_MEMORY_ISOLATION", True
+            ),
+            project_index_policy=os.getenv(
+                "PAPERCLAW_PROJECT_INDEX_POLICY",
+                ProjectIndexPolicy.REQUIRE_CURRENT.value,
+            ),
             memory_root=Path(
                 os.getenv(
                     "PAPERCLAW_MEMORY_DIR",
@@ -115,14 +123,14 @@ class MemoryRuntimeSettings:
             max_single_candidate_tokens=self.max_single_candidate_tokens,
             recent_message_limit=self.recent_message_limit,
             recent_tool_result_limit=self.recent_tool_result_limit,
-            prompt_version="paperclaw.prompt.v0.27.0",
-            policy_version="paperclaw.context.v0.27.0",
+            prompt_version="paperclaw.prompt.v0.28.0",
+            policy_version="paperclaw.context.v0.28.0",
         )
 
 
 @dataclass(frozen=True)
 class MemoryRuntimeComponents:
-    store: FileMemoryStore
+    store: MemoryStoreProtocol
     snapshot: MemorySnapshot
     tool_registry: ToolRegistry
     source_registry: ContextSourceRegistry
@@ -130,6 +138,7 @@ class MemoryRuntimeComponents:
     settings: MemoryRuntimeSettings
     project_manifest: ProjectManifest | None = None
     project_index_status: ProjectIndexStatus | None = None
+    project_knowledge_snapshot: ProjectKnowledgeSnapshot | None = None
     _closeables: tuple[Any, ...] = field(default=(), repr=False, compare=False)
 
     def close(self) -> None:
@@ -143,17 +152,26 @@ def build_memory_runtime(
     workspace: str | Path,
     *,
     settings: MemoryRuntimeSettings | None = None,
-    store: FileMemoryStore | None = None,
+    store: MemoryStoreProtocol | None = None,
 ) -> MemoryRuntimeComponents:
     resolved_workspace = Path(workspace).expanduser().resolve(strict=True)
     resolved_settings = settings or MemoryRuntimeSettings.from_env()
-    resolved_store = store or FileMemoryStore(
-        resolved_settings.memory_root,
-        policy=MemoryPolicy(
-            memory_char_limit=resolved_settings.memory_char_limit,
-            user_char_limit=resolved_settings.user_char_limit,
-        ),
+    project_manifest = discover_project_manifest(resolved_workspace)
+    policy = MemoryPolicy(
+        memory_char_limit=resolved_settings.memory_char_limit,
+        user_char_limit=resolved_settings.user_char_limit,
     )
+    if store is not None:
+        resolved_store = store
+    elif project_manifest is not None and resolved_settings.project_memory_isolation:
+        resolved_store = ProjectScopedMemoryStore(
+            resolved_settings.memory_root,
+            project_manifest.project_id,
+            policy=policy,
+        )
+    else:
+        resolved_store = FileMemoryStore(resolved_settings.memory_root, policy=policy)
+
     if resolved_settings.memory_enabled:
         snapshot = resolved_store.snapshot()
         if not resolved_settings.user_profile_enabled:
@@ -167,8 +185,6 @@ def build_memory_runtime(
                 fingerprint=snapshot.fingerprint,
             )
     else:
-        # Important for unauthenticated/multi-client service deployments: disabled
-        # personal memory means no filesystem read, not merely no prompt rendering.
         snapshot = MemorySnapshot(
             memory_entries=(),
             user_entries=(),
@@ -183,7 +199,6 @@ def build_memory_runtime(
     if resolved_settings.memory_enabled and resolved_settings.memory_tool_enabled:
         tools.register(MemoryTool(resolved_store))
 
-    project_manifest = discover_project_manifest(resolved_workspace)
     instruction_files = (
         project_manifest.instruction_files if project_manifest is not None else None
     )
@@ -207,13 +222,19 @@ def build_memory_runtime(
 
     closeables: list[Any] = []
     project_index_status: ProjectIndexStatus | None = None
+    knowledge_snapshot: ProjectKnowledgeSnapshot | None = None
     if project_manifest is not None and project_manifest.knowledge_paths:
         project_store = ProjectManifestStore(resolved_workspace)
-        project_index_status = inspect_project_index(project_store, project_manifest)
-        if project_index_status.current:
-            retriever = SQLiteBM25Retriever(
-                project_index_database(project_store, project_manifest)
-            )
+        knowledge_runtime = ProjectKnowledgeRuntime(
+            project_store,
+            project_manifest,
+            policy=resolved_settings.project_index_policy,
+        )
+        knowledge_snapshot = knowledge_runtime.inspect()
+        project_index_status = knowledge_snapshot.status
+        if knowledge_snapshot.retriever_available:
+            retriever = knowledge_runtime.create_retriever()
+            assert retriever is not None
             register_retrieval_context_source(
                 sources,
                 RetrievalContextSource(retriever),
@@ -231,6 +252,7 @@ def build_memory_runtime(
         settings=resolved_settings,
         project_manifest=project_manifest,
         project_index_status=project_index_status,
+        project_knowledge_snapshot=knowledge_snapshot,
         _closeables=tuple(closeables),
     )
 

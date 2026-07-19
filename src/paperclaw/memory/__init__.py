@@ -1,6 +1,7 @@
 """Bounded long-term memory and user-profile support."""
 
 from .runtime import MemoryRuntimeComponents, MemoryRuntimeSettings, build_memory_runtime
+from .scoped import MemoryStoreProtocol, ProjectMemoryPaths, ProjectScopedMemoryStore
 from .source import (
     FrozenFoundationalContextSource,
     ProjectInstructionLoader,
@@ -32,8 +33,11 @@ __all__ = [
     "MemoryRuntimeSettings",
     "MemorySnapshot",
     "MemoryStoreError",
+    "MemoryStoreProtocol",
     "MemoryTool",
     "ProjectInstructionLoader",
     "ProjectInstructionSnapshot",
+    "ProjectMemoryPaths",
+    "ProjectScopedMemoryStore",
     "build_memory_runtime",
 ]

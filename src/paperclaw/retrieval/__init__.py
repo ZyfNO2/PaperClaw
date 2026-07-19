@@ -1,4 +1,4 @@
-"""PaperClaw v0.09.1 local RAG retrieval and grounding foundation."""
+"""PaperClaw local retrieval, grounding and hybrid ranking foundation."""
 
 from paperclaw.retrieval.chunking import build_chunks
 from paperclaw.retrieval.context_source import (
@@ -41,6 +41,12 @@ from paperclaw.retrieval.grounding import (
     cited_anchor_ids,
     evaluate_grounding,
 )
+from paperclaw.retrieval.hybrid import (
+    HybridCorpusMismatchError,
+    HybridRetriever,
+    Retriever,
+    hybrid_configuration_fingerprint,
+)
 from paperclaw.retrieval.incremental import IncrementalIndexer, IncrementalIndexResult
 from paperclaw.retrieval.integrity import (
     IndexIntegrityReport,
@@ -71,6 +77,8 @@ __all__ = [
     "DocumentVersion",
     "GroundingClaimJudgment",
     "GroundingMetrics",
+    "HybridCorpusMismatchError",
+    "HybridRetriever",
     "IncrementalIndexer",
     "IncrementalIndexResult",
     "IndexIntegrityReport",
@@ -82,6 +90,7 @@ __all__ = [
     "PlainTextParser",
     "RankedResult",
     "RegistryMutationResult",
+    "Retriever",
     "RetrievalCandidate",
     "RetrievalContextSource",
     "RetrievalError",
@@ -103,6 +112,7 @@ __all__ = [
     "evaluate_judgment",
     "evaluate_suite",
     "extract_retrieval_query",
+    "hybrid_configuration_fingerprint",
     "ndcg_at_k",
     "recall_at_k",
     "reciprocal_rank",
