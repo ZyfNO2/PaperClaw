@@ -1,0 +1,37 @@
+{
+  "schema_version": "v1",
+  "request_id": "interview-research-check",
+  "user_goal": "Review two independent repository areas and return a bounded, reviewable result.",
+  "tasks": [
+    {
+      "task_id": "runtime-review",
+      "title": "Review runtime boundary",
+      "objective": "Inspect the runtime boundary and summarize one verified observation.",
+      "acceptance_criteria": ["One evidence-backed observation is returned"],
+      "allowed_paths": ["src/paperclaw"],
+      "allowed_tools": ["file_read"],
+      "max_steps": 6,
+      "timeout_seconds": 120
+    },
+    {
+      "task_id": "test-review",
+      "title": "Review tests",
+      "objective": "Inspect the test boundary and summarize one verified observation.",
+      "acceptance_criteria": ["One evidence-backed observation is returned"],
+      "allowed_paths": ["tests"],
+      "allowed_tools": ["file_read"],
+      "max_steps": 6,
+      "timeout_seconds": 120
+    }
+  ],
+  "budget": {
+    "max_agents": 2,
+    "max_total_steps": 20,
+    "max_total_model_calls": 20,
+    "max_wall_time_seconds": 300,
+    "max_fix_rounds": 1
+  },
+  "metadata": {
+    "purpose": "interview-grade end-to-end acceptance"
+  }
+}
