@@ -4,7 +4,8 @@
 > Base: `feat/v0.30-desktop-product-integration @ 233bad0a4008f1cce4e7f49dabbed1dbe47cfdfe`  
 > Branch: `fix/v0.30-post-review-hardening`  
 > Draft PR: `#60`  
-> Validated implementation SHA: `0e969c08d27c5453048656b0f7298e89ed59cdfa`
+> Pre-correction CI-validated SHA: `0e969c08d27c5453048656b0f7298e89ed59cdfa` (superseded for lifecycle acceptance)
+> Shutdown-corrected implementation SHA: `9f1cb071f82418d0f58384cb29495a25be4893db` (locally validated)
 
 ## Review scope
 
@@ -120,6 +121,16 @@ The review covered the v0.28-v0.30 stacked product line, with emphasis on:
 - tests cover normal CLI return, exceptional CLI exit, cache recreation and repeated shutdown;
 - final full stdout contains no `Exception in thread` output.
 
+**Acceptance correction (2026-07-19):** The handoff claim above was invalidated by
+a local rerun at `b9319ab`: pytest returned zero, but the daemon supervisor raced
+CPython executor teardown after `SessionFinish`. Commit `9f1cb07` adds a narrow
+outer thread boundary that suppresses only CPython's two known executor-shutdown
+`RuntimeError` signatures and re-raises unrelated runtime failures. Unit tests
+verify that filtering contract; the corrected real process run below verifies
+the reported shutdown race. The corrected
+full Windows non-live run completed with `965 passed, 21 skipped, 5 deselected`,
+exit code `0`, and no shutdown traceback signature in the captured output.
+
 ## New shared primitive
 
 ```text
@@ -135,7 +146,12 @@ It provides:
 - atomic/best-available no-clobber installation;
 - optional root confinement.
 
-## Validation
+## Superseded pre-correction CI validation
+
+The following run remains useful for the other hardening gates, but it did not
+prove the task-runtime shutdown race was fixed. Local acceptance at `b9319ab`
+later invalidated that lifecycle claim; the correction above and commit
+`9f1cb07` are the current task-runtime evidence.
 
 Exact implementation SHA:
 
@@ -194,8 +210,9 @@ Windows focused:
 The review did not discard failing evidence:
 
 1. Initial focused/full runs exposed CLI database creation before source-file validation and collapsed empty path segments such as `a//b`; both implementations were corrected without weakening tests.
-2. A later full run had 969 passing calls and pytest exitstatus 0 but exposed a post-session `paperclaw-cli-task-worker` exception; CI was extended to retain stdout/stderr and the raw process exit code, then the runtime lifecycle was fixed.
-3. The final run contains 973 passing calls, exit code 0 and no background thread traceback.
+2. A later full run had 969 passing calls and pytest exitstatus 0 but exposed a post-session `paperclaw-cli-task-worker` exception; CI was extended to retain stdout/stderr and the raw process exit code.
+3. CI run `29686711066` contained 973 passing calls and no captured traceback, but this did not reliably reproduce the race and is superseded for lifecycle acceptance.
+4. Local acceptance at `b9319ab` reproduced the traceback; after `9f1cb07`, the full run contains 965 passing calls, exit code 0 and no shutdown traceback signature.
 
 ## Remaining limitations
 

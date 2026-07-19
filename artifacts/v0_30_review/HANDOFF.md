@@ -8,7 +8,8 @@
 - Branch: `fix/v0.30-post-review-hardening`
 - Draft PR: `#60`
 - Base: `feat/v0.30-desktop-product-integration @ 233bad0a4008f1cce4e7f49dabbed1dbe47cfdfe`
-- Exact validated implementation SHA: `0e969c08d27c5453048656b0f7298e89ed59cdfa`
+- Pre-correction CI-validated SHA: `0e969c08d27c5453048656b0f7298e89ed59cdfa` (superseded for lifecycle acceptance)
+- Shutdown-corrected implementation SHA: `9f1cb071f82418d0f58384cb29495a25be4893db` (locally validated)
 - Validation run: `29686711066`
 - Plan: `Plan/PaperClaw_v0.30_Post_Review_Hardening.md`
 
@@ -90,7 +91,43 @@ A swapped database returns `index_database_mismatch`. `allow_stale` accepts only
 - normal and exceptional CLI exit paths are tested;
 - the previous post-pytest `paperclaw-cli-task-worker` traceback is absent from final evidence.
 
-## Validation
+### Acceptance correction — interpreter shutdown race
+
+The original lifecycle fix at `0e969c0` did not fully support the preceding
+claim. Local acceptance at `b9319ab` reproduced a post-`SessionFinish` daemon
+thread failure: `asyncio.to_thread()` attempted to submit work after CPython had
+started executor shutdown. Because it happened after pytest completed, the
+pytest exit code remained zero.
+
+Commit `9f1cb07` closes the remaining race at the supervisor thread boundary:
+
+- suppress exactly the known CPython `cannot schedule new futures after shutdown` and
+  `cannot schedule new futures after interpreter shutdown` errors;
+- continue to raise unrelated `RuntimeError` instances;
+- cover both shutdown signatures and the negative/non-masking filtering contract
+  in unit tests; the full process run below is the acceptance evidence for the
+  actual interpreter-shutdown race.
+
+Corrected local evidence (2026-07-19):
+
+```text
+Focused task lifecycle: 9 passed
+Full Windows non-live: 965 passed, 21 skipped, 5 deselected
+pytest exit code: 0
+Shutdown traceback signature matches: 0
+Ruff correctness lint: passed
+```
+
+The captured evidence is retained locally as
+`tmp/v030-review-full-after-fix-{output,exit}.txt` and
+`tmp/v030-review-full-after-fix.jsonl`; `tmp/` remains intentionally untracked.
+
+## Superseded pre-correction CI validation
+
+The following run remains valid evidence for the other post-review hardening
+gates, but its clean output did not reliably exercise the task-runtime shutdown
+race. It is superseded for lifecycle acceptance by the `9f1cb07` local evidence
+above.
 
 Exact implementation SHA:
 
@@ -150,7 +187,10 @@ sha256:168599b6eea224f14ac5ebf51df9b20d20f114bb7a39cbbb11abf25a51e459b8
 - Initial review CI failed on two real issues: invalid CLI input created SQLite before rejection, and `a//b` was normalized before empty-segment validation.
 - A subsequent full run had all pytest calls passing but printed a background CLI worker exception after SessionFinish.
 - CI was expanded to preserve stdout/stderr and raw process exit code.
-- Both implementation defects were fixed; final output is clean.
+- CI run `29686711066` had clean captured output, but later local acceptance
+  proved the lifecycle fix incomplete.
+- The failure at `b9319ab` is retained in `tmp/v030-review-full-output.txt`;
+  the corrected `9f1cb07` output is clean.
 
 ## Remaining limits
 

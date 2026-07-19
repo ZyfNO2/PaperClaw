@@ -131,9 +131,9 @@ class BackgroundTaskSupervisor:
         try:
             asyncio.run(self._serve())
         except RuntimeError as exc:
-            # ThreadPoolExecutor rejects new work once interpreter teardown has
-            # started. This daemon is only a fallback at that point; suppress the
-            # two CPython shutdown signatures without hiding other runtime bugs.
+            # A shutting-down ThreadPoolExecutor rejects new work. Suppress only
+            # the two known CPython shutdown signatures at this thread boundary;
+            # every other RuntimeError remains visible.
             if str(exc) in _EXECUTOR_SHUTDOWN_ERRORS:
                 return
             raise
