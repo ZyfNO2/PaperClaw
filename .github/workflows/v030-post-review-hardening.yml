@@ -11,11 +11,14 @@ on:
       - "src/paperclaw/desktop/**"
       - "src/paperclaw/projects/**"
       - "src/paperclaw/retrieval/**"
+      - "src/paperclaw/tasks/**"
       - "src/paperclaw/product_cli.py"
+      - "src/paperclaw/entrypoint.py"
       - "tests/unit/artifacts/**"
       - "tests/unit/desktop/**"
       - "tests/unit/projects/**"
       - "tests/unit/retrieval/**"
+      - "tests/unit/tasks/**"
       - "tests/unit/test_storage_safety.py"
       - ".github/workflows/v030-post-review-hardening.yml"
       - "Plan/PaperClaw_v0.30_Post_Review_Hardening.md"
@@ -56,6 +59,7 @@ jobs:
           tests/unit/projects
           tests/unit/retrieval/test_hybrid_retriever.py
           tests/unit/retrieval/test_hybrid_post_review_hardening.py
+          tests/unit/tasks/test_bootstrap_shutdown.py
           tests/unit/test_product_cli.py
       - name: Upload focused evidence
         if: always()
@@ -73,13 +77,16 @@ jobs:
           src/paperclaw/desktop
           src/paperclaw/projects
           src/paperclaw/retrieval/hybrid.py
+          src/paperclaw/tasks/bootstrap.py
           src/paperclaw/product_cli.py
+          src/paperclaw/entrypoint.py
           tests/unit/test_storage_safety.py
           tests/unit/artifacts
           tests/unit/desktop
           tests/unit/projects
           tests/unit/retrieval/test_hybrid_retriever.py
           tests/unit/retrieval/test_hybrid_post_review_hardening.py
+          tests/unit/tasks/test_bootstrap_shutdown.py
           --select E9,F63,F7,F82
 
   full-windows-regression:
