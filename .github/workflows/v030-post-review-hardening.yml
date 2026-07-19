@@ -109,17 +109,24 @@ jobs:
       - name: Run full non-live regression
         shell: pwsh
         run: |
-          python -m pytest `
+          $ErrorActionPreference = "Continue"
+          & python -m pytest `
             --basetemp=tmp/pytest `
             --report-log=tmp/v030-review-full.jsonl `
             -q `
-            -m "not real_llm"
+            -m "not real_llm" *>&1 | Tee-Object -FilePath tmp/v030-review-full-output.txt
+          $pytestExit = $LASTEXITCODE
+          Set-Content -Path tmp/v030-review-full-exit.txt -Value $pytestExit -Encoding ascii
+          exit $pytestExit
       - name: Upload full regression evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: v030-review-full-${{ github.run_id }}
-          path: tmp/v030-review-full.jsonl
+          path: |
+            tmp/v030-review-full.jsonl
+            tmp/v030-review-full-output.txt
+            tmp/v030-review-full-exit.txt
           retention-days: 30
           if-no-files-found: warn
       - name: Run repository correctness lint
