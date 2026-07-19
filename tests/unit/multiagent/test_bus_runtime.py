@@ -99,7 +99,7 @@ def test_bus_drives_coordinator_publishes_events_metrics_and_acks(tmp_path: Path
     assert outcome.acknowledged is True
     assert outcome.dead_lettered is False
     assert outcome.result is not None
-    assert outcome.metrics["succeeded"] is True
+    assert outcome.metrics["succeeded"] is True, outcome.to_dict()
     assert outcome.metrics["model_calls"] == 2
     assert outcome.metrics["input_tokens"] == 20
     assert outcome.metrics["output_tokens"] == 10
