@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from hashlib import sha256
 from pathlib import Path
+import re
 import sqlite3
 import threading
 import time
@@ -24,6 +26,17 @@ from paperclaw.multiagent.coordinator import Coordinator, CoordinatorResult
 TEAM_REQUEST_TOPIC = "multiagent.team.requests.v1"
 TEAM_EVENT_TOPIC = "multiagent.team.events.v1"
 TEAM_DLQ_TOPIC = "multiagent.team.dlq.v1"
+
+_REQUEST_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
+_TASK_LIST_FIELDS = (
+    "acceptance_criteria",
+    "allowed_paths",
+    "writable_paths",
+    "allowed_tools",
+    "dependencies",
+    "input_artifact_ids",
+    "expected_artifacts",
+)
 
 
 class CoordinatorFactory(Protocol):
@@ -44,12 +57,14 @@ class TeamRunRequest:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.request_id, str) or not self.request_id.strip():
-            raise ValueError("request_id must be non-empty")
+        if not isinstance(self.request_id, str) or _REQUEST_ID.fullmatch(self.request_id) is None:
+            raise ValueError("request_id must be 1-120 safe identifier characters")
         if not isinstance(self.user_goal, str) or not self.user_goal.strip():
             raise ValueError("user_goal must be non-empty")
         if not self.tasks:
             raise ValueError("tasks must not be empty")
+        if not all(isinstance(task, AgentTask) for task in self.tasks):
+            raise ValueError("tasks must contain AgentTask values")
         if len({task.task_id for task in self.tasks}) != len(self.tasks):
             raise ValueError("task ids must be unique")
         if not isinstance(self.metadata, Mapping):
@@ -62,7 +77,7 @@ class TeamRunRequest:
             "user_goal": self.user_goal,
             "tasks": [task.to_dict() for task in self.tasks],
             "budget": self.budget.to_dict(),
-            "metadata": dict(self.metadata),
+            "metadata": _thaw_json(self.metadata),
         }
 
     @classmethod
@@ -78,7 +93,7 @@ class TeamRunRequest:
         for row in raw_tasks:
             if not isinstance(row, Mapping):
                 raise ValueError("each task must be an object")
-            tasks.append(AgentTask(**dict(row)))
+            tasks.append(_task_from_mapping(row))
         raw_budget = payload.get("budget", {})
         if not isinstance(raw_budget, Mapping):
             raise ValueError("budget must be an object")
@@ -90,7 +105,7 @@ class TeamRunRequest:
             user_goal=str(payload.get("user_goal", "")),
             tasks=tuple(tasks),
             budget=TeamBudget(**dict(raw_budget)),
-            metadata=dict(raw_metadata),
+            metadata=_thaw_json(raw_metadata),
         )
 
 
@@ -136,7 +151,7 @@ class SQLiteChoreographyStateStore:
         self.database = Path(database).expanduser().resolve()
         self.database.parent.mkdir(parents=True, exist_ok=True)
         self._clock = clock
-        with self._connection() as connection:
+        with self._transaction() as connection:
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS team_bus_attempts (
@@ -224,7 +239,8 @@ class SQLiteChoreographyStateStore:
             """,
             (consumer_id, message_id),
         ).fetchone()
-        assert row is not None
+        if row is None:
+            raise RuntimeError("choreography state row is missing")
         return self._from_row(row)
 
     @staticmethod
@@ -252,7 +268,7 @@ class SQLiteChoreographyStateStore:
         finally:
             connection.close()
 
-    def _transaction(self):
+    def _transaction(self) -> "_SQLiteTransaction":
         connection = sqlite3.connect(self.database, timeout=10)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
@@ -432,15 +448,19 @@ class BusDrivenTeamRuntime:
                 MessageDraft(
                     topic=target_topic,
                     sender_id=self.consumer_id,
-                    idempotency_key=(
-                        f"{message.message_id}:attempt-{state.attempts}:"
-                        f"{'dlq' if terminal else 'retry'}"
+                    idempotency_key=_bounded_idempotency_key(
+                        message.message_id,
+                        f"attempt-{state.attempts}-{'dlq' if terminal else 'retry'}",
                     ),
                     payload={
                         "schema_version": "v1",
                         "request_id": request_id,
                         "request_message_id": message.message_id,
-                        "event_type": "team.run.dead_lettered" if terminal else "team.run.retry_scheduled",
+                        "event_type": (
+                            "team.run.dead_lettered"
+                            if terminal
+                            else "team.run.retry_scheduled"
+                        ),
                         "attempt": state.attempts,
                         "max_attempts": self.max_attempts,
                         "failure_category": failure_category,
@@ -477,7 +497,7 @@ class BusDrivenTeamRuntime:
             MessageDraft(
                 topic=TEAM_EVENT_TOPIC,
                 sender_id=self.consumer_id,
-                idempotency_key=f"{request_id}:{idempotency_suffix}",
+                idempotency_key=_bounded_idempotency_key(request_id, idempotency_suffix),
                 payload={
                     "schema_version": "v1",
                     "request_id": request_id,
@@ -500,20 +520,53 @@ class BusDrivenTeamRuntime:
             "schema_version": "v1",
             "attempt": attempt,
             "wall_duration_ms": max(0, round((self._clock() - started) * 1000)),
-            "succeeded": _enum_value(result.stop_reason) in {"completed", "all_tasks_completed"},
+            "succeeded": _enum_value(result.stop_reason)
+            in {"completed", "all_tasks_completed"},
             "stop_reason": _enum_value(result.stop_reason),
             "worker_count": len(result.task_results),
             "completed_workers": sum(
-                _enum_value(item.status) == "completed" for item in result.task_results.values()
+                _enum_value(item.status) == "completed"
+                for item in result.task_results.values()
             ),
             "step_count": sum(item.step_count for item in result.task_results.values()),
             "model_call_count": sum(
                 item.model_call_count for item in result.task_results.values()
             ),
-            "tool_call_count": sum(item.tool_call_count for item in result.task_results.values()),
+            "tool_call_count": sum(
+                item.tool_call_count for item in result.task_results.values()
+            ),
             "review_finding_count": len(result.review_findings),
             **observations,
         }
+
+
+def _task_from_mapping(row: Mapping[str, Any]) -> AgentTask:
+    data = {str(key): _thaw_json(value) for key, value in row.items()}
+    for field_name in _TASK_LIST_FIELDS:
+        value = data.get(field_name, [])
+        if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+            raise ValueError(f"task.{field_name} must be a list of strings")
+        if not all(isinstance(item, str) for item in value):
+            raise ValueError(f"task.{field_name} must contain only strings")
+        data[field_name] = list(value)
+    return AgentTask(**data)
+
+
+def _thaw_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _thaw_json(child) for key, child in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_thaw_json(child) for child in value]
+    return value
+
+
+def _bounded_idempotency_key(prefix: str, suffix: str) -> str:
+    candidate = f"{prefix}:{suffix}"
+    if len(candidate) <= 200 and re.fullmatch(r"[A-Za-z0-9_.:-]+", candidate):
+        return candidate
+    digest = sha256(candidate.encode("utf-8")).hexdigest()
+    safe_prefix = re.sub(r"[^A-Za-z0-9_.:-]", "_", prefix)[:120] or "message"
+    return f"{safe_prefix}:{digest}"
 
 
 def _enum_value(value: Any) -> str:
