@@ -1,0 +1,172 @@
+/* PaperClaw Design Tokens
+   Single source of truth for color, typography, spacing, radius, shadow,
+   and motion. Themes: dark (default) and light. Density: comfortable
+   (default) and compact. All component styles must consume these tokens;
+   hard-coded values belong here, not in component rules.
+*/
+
+:root {
+  /* Typography */
+  --font-sans: system-ui, "Segoe UI", "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "SF Mono", ui-monospace, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --leading-tight: 1.25;
+  --leading-base: 1.55;
+
+  /* Spacing (4px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Motion: fast, quiet, functional */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Layout metrics */
+  --sidebar-w: 232px;
+  --sidebar-w-collapsed: 58px;
+  --topbar-h: 50px;
+  --inspector-w: 430px;
+  --content-max: 1760px;
+
+  /* Component metrics (density-aware) */
+  --row-h: 34px;
+  --control-h: 30px;
+  --cell-pad-y: 7px;
+  --cell-pad-x: 12px;
+  --card-pad: 16px;
+  --console-font-size: 12.5px;
+}
+
+/* ======== THEME: dark (default) ======== */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #0e1116;
+  --color-surface-1: #14181f;
+  --color-surface-2: #1a1f29;
+  --color-surface-3: #232a37;
+  --color-text: #e3e7ef;
+  --color-text-muted: #8a93a6;
+  --color-text-faint: #5d6678;
+  --color-border: #252c3a;
+  --color-border-strong: #343d50;
+  --color-primary: #5b8def;
+  --color-primary-strong: #7ba3f2;
+  --color-primary-fg: #ffffff;
+  --color-primary-muted: rgba(91, 141, 239, 0.16);
+  --color-success: #3fb970;
+  --color-success-muted: rgba(63, 185, 112, 0.15);
+  --color-warning: #d99a2b;
+  --color-warning-muted: rgba(217, 154, 43, 0.15);
+  --color-danger: #e5534b;
+  --color-danger-muted: rgba(229, 83, 75, 0.15);
+  --color-info: #4aa8d8;
+  --color-info-muted: rgba(74, 168, 216, 0.15);
+  --color-tool: #9d7bea;
+  --color-tool-muted: rgba(157, 123, 234, 0.15);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.38);
+  --shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.5);
+  --shadow-focus: 0 0 0 2px rgba(91, 141, 239, 0.38);
+  --code-bg: #0a0d12;
+  --scrollbar-thumb: #2e3646;
+  --backdrop: rgba(6, 8, 12, 0.62);
+}
+
+/* ======== THEME: light ======== */
+[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #f3f4f7;
+  --color-surface-1: #ffffff;
+  --color-surface-2: #edeff4;
+  --color-surface-3: #e1e5ec;
+  --color-text: #1d2433;
+  --color-text-muted: #5d6a80;
+  --color-text-faint: #98a1b3;
+  --color-border: #dee2ea;
+  --color-border-strong: #c6cdd9;
+  --color-primary: #3568d4;
+  --color-primary-strong: #2a54ad;
+  --color-primary-fg: #ffffff;
+  --color-primary-muted: rgba(53, 104, 212, 0.1);
+  --color-success: #1e9e57;
+  --color-success-muted: rgba(30, 158, 87, 0.12);
+  --color-warning: #b57a14;
+  --color-warning-muted: rgba(181, 122, 20, 0.13);
+  --color-danger: #cf3f38;
+  --color-danger-muted: rgba(207, 63, 56, 0.1);
+  --color-info: #1f86b8;
+  --color-info-muted: rgba(31, 134, 184, 0.12);
+  --color-tool: #7a55d6;
+  --color-tool-muted: rgba(122, 85, 214, 0.12);
+  --shadow-sm: 0 1px 2px rgba(29, 36, 51, 0.07);
+  --shadow-md: 0 4px 14px rgba(29, 36, 51, 0.1);
+  --shadow-lg: 0 14px 36px rgba(29, 36, 51, 0.16);
+  --shadow-focus: 0 0 0 2px rgba(53, 104, 212, 0.28);
+  --code-bg: #14181f;
+  --scrollbar-thumb: #c2c9d6;
+  --backdrop: rgba(29, 36, 51, 0.4);
+}
+
+/* ======== DENSITY: compact ======== */
+[data-density="compact"] {
+  --row-h: 29px;
+  --control-h: 27px;
+  --cell-pad-y: 4px;
+  --cell-pad-x: 10px;
+  --card-pad: 12px;
+  --console-font-size: 12px;
+}
+
+/* ======== Console font size preference ======== */
+[data-console-font="sm"] { --console-font-size: 11.5px; }
+[data-console-font="lg"] { --console-font-size: 14px; }
+
+/* ======== Compatibility aliases
+   product.css and provider-config.css predate this design system and consume
+   --pc-* variables. Aliases keep those packaged styles functional without
+   forking them; new styles must use --color-*/--space-* tokens directly.
+*/
+:root {
+  --pc-background: var(--color-bg);
+  --pc-foreground: var(--color-text);
+  --pc-card: var(--color-surface-1);
+  --pc-card-foreground: var(--color-text);
+  --pc-muted: var(--color-surface-2);
+  --pc-muted-foreground: var(--color-text-muted);
+  --pc-accent: var(--color-primary);
+  --pc-destructive: var(--color-danger);
+  --pc-success: var(--color-success);
+  --pc-border: var(--color-border);
+  --pc-input: var(--color-surface-2);
+  --pc-secondary: var(--color-surface-2);
+  --pc-radius-md: var(--radius-md);
+  --pc-radius-lg: var(--radius-lg);
+  --pc-shadow-xs: var(--shadow-sm);
+  --pc-shadow-focus: var(--shadow-focus);
+  --pc-shadow-xl: var(--shadow-lg);
+  --pc-text-xs: var(--text-xs);
+  --pc-text-sm: var(--text-sm);
+  --pc-font-mono: var(--font-mono);
+}
