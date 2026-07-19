@@ -7,7 +7,7 @@ import sys
 
 def main(argv: list[str] | None = None) -> int:
     resolved = list(sys.argv[1:] if argv is None else argv)
-    if resolved and resolved[0] in {"capabilities", "project"}:
+    if resolved and resolved[0] in {"artifact", "capabilities", "project"}:
         from paperclaw.product_cli import main as product_main
 
         return product_main(resolved)
