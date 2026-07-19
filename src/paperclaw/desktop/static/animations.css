@@ -1,0 +1,567 @@
+/* PaperClaw Motion System
+   Animation tokens and interaction effects.
+   All durations use cubic-bezier for precise, non-bouncy feel.
+   Reduced-motion users get instant transitions only.
+*/
+
+:root {
+  --pc-dur-instant: 60ms;
+  --pc-dur-fast: 120ms;
+  --pc-dur-base: 200ms;
+  --pc-dur-slow: 320ms;
+  --pc-dur-entrance: 480ms;
+  --pc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --pc-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --pc-ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+/* ======== REDUCED MOTION ======== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .boot-overlay { display: none !important; }
+}
+
+/* ======== BOOT SEQUENCE OVERLAY ======== */
+.boot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--pc-background);
+  display: grid;
+  place-items: center;
+  pointer-events: all;
+  opacity: 1;
+}
+.boot-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+.boot-content {
+  font-family: var(--pc-font-mono);
+  font-size: 13px;
+  letter-spacing: var(--pc-tracking);
+  color: var(--pc-foreground);
+  text-align: left;
+  width: min(420px, 80vw);
+}
+.boot-line {
+  opacity: 0;
+  transform: translateY(4px);
+  animation: bootLineIn 0.2s var(--pc-ease-out) forwards;
+  margin-bottom: 2px;
+}
+.boot-line:nth-child(1) { animation-delay: 0s; }
+.boot-line:nth-child(2) { animation-delay: 0.08s; }
+.boot-line:nth-child(3) { animation-delay: 0.16s; }
+.boot-line:nth-child(4) { animation-delay: 0.24s; }
+.boot-line:nth-child(5) { animation-delay: 0.32s; }
+.boot-line:nth-child(6) { animation-delay: 0.40s; }
+.boot-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  background: var(--pc-accent);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: cursorBlink 0.6s step-end infinite;
+}
+.boot-progress {
+  margin-top: 12px;
+  height: 2px;
+  background: var(--pc-muted);
+  border-radius: var(--pc-radius-sm);
+  overflow: hidden;
+}
+.boot-progress-bar {
+  height: 100%;
+  width: 0;
+  background: var(--pc-accent);
+  animation: bootProgressFill 1.1s var(--pc-ease-out-expo) 0.15s forwards;
+}
+@keyframes bootLineIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes bootProgressFill {
+  to { width: 100%; }
+}
+@keyframes bootFadeOut {
+  to { opacity: 0; visibility: hidden; }
+}
+
+/* ======== ENTRANCE STAGGER (applied after boot) ======== */
+#app {
+  opacity: 1;
+}
+body.booted #app {
+  animation: appEntrance var(--pc-dur-entrance) var(--pc-ease-out-expo) both;
+}
+
+@keyframes appEntrance {
+  from {
+    transform: translateY(4px) scale(0.997);
+  }
+  to {
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Stagger children of main panels - only after boot */
+body.booted .sidebar > * {
+  opacity: 0;
+  transform: translateX(-8px);
+  animation: panelSlideIn var(--pc-dur-base) var(--pc-ease-out) forwards;
+}
+body.booted .sidebar > *:nth-child(1) { animation-delay: 0.05s; }
+body.booted .sidebar > *:nth-child(2) { animation-delay: 0.12s; }
+body.booted .sidebar > *:nth-child(3) { animation-delay: 0.19s; }
+body.booted .sidebar > *:nth-child(4) { animation-delay: 0.26s; }
+body.booted .sidebar > *:nth-child(5) { animation-delay: 0.33s; }
+body.booted .sidebar > *:nth-child(n+6) { animation-delay: 0.4s; }
+
+body.booted .header {
+  opacity: 0;
+  transform: translateY(-6px);
+  animation: panelSlideDown var(--pc-dur-base) var(--pc-ease-out) 0.1s forwards;
+}
+body.booted .toolbar {
+  opacity: 0;
+  transform: translateY(-6px);
+  animation: panelSlideDown var(--pc-dur-base) var(--pc-ease-out) 0.18s forwards;
+}
+body.booted .content {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: panelSlideUp var(--pc-dur-base) var(--pc-ease-out) 0.26s forwards;
+}
+
+@keyframes panelSlideIn {
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes panelSlideDown {
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes panelSlideUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ======== THEME TRANSITION SMOOTHING ======== */
+html, body, #app, .card, .sidebar, .header, .toolbar, .content,
+.side-toggle, .ghost-btn, .btn, .chip, .tool-chip, .send-btn,
+.nav-btn, .status-badge, .avatar, .kbd, .nav-badge,
+.msg, .event-row, .search, .composer-box, .workspace,
+.metric-value, .progress-seg, .theme-picker, .progress-track,
+.log-messages, .timeline-list, .panel-head, .public-error,
+.toast, .settings-card, .product-card {
+  transition:
+    background-color var(--pc-dur-base) var(--pc-ease-in-out),
+    border-color var(--pc-dur-base) var(--pc-ease-in-out),
+    color var(--pc-dur-base) var(--pc-ease-in-out),
+    box-shadow var(--pc-dur-base) var(--pc-ease-in-out),
+    opacity var(--pc-dur-base) var(--pc-ease-out),
+    transform var(--pc-dur-fast) var(--pc-ease-out);
+}
+
+/* ======== BUTTON RIPPLE CONTAINER ======== */
+.btn, .chip, .send-btn, .ghost-btn, .side-toggle, .tool-chip, .icon-btn, .workspace {
+  position: relative;
+  overflow: hidden;
+}
+/* Ripple spans are injected by animations.js at click coordinates */
+.btn > .ripple, .chip > .ripple, .send-btn > .ripple,
+.ghost-btn > .ripple, .side-toggle > .ripple, .tool-chip > .ripple,
+.icon-btn > .ripple, .workspace > .ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.2;
+  pointer-events: none;
+  transform: scale(0);
+  animation: rippleExpand 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes rippleExpand {
+  to { transform: scale(2.5); opacity: 0; }
+}
+
+/* ======== IMPROVED HOVER STATES ======== */
+.btn:hover {
+  transform: translate(-1px, -2px);
+  box-shadow: var(--pc-shadow-md);
+}
+[data-theme="terminal-dark"] .btn:hover,
+[data-theme="neo-brutalist"] .btn:hover {
+  transform: translate(-1px, -1px);
+}
+.chip:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--pc-shadow-sm);
+}
+.chip.active {
+  transform: none;
+}
+.nav-btn {
+  position: relative;
+  overflow: hidden;
+}
+.nav-btn::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--pc-accent);
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform var(--pc-dur-fast) var(--pc-ease-out);
+}
+.nav-btn:hover::before, .nav-btn.active::before {
+  transform: scaleY(1);
+}
+.nav-btn.active::before {
+  background: var(--pc-sidebar-primary-foreground);
+  opacity: 0.5;
+}
+[data-theme="neo-brutalist"] .nav-btn::before { display: none; }
+[data-theme="terminal-dark"] .nav-btn::before { width: 2px; }
+
+/* ======== CARD HOVER LIFT ======== */
+.card {
+  transition:
+    transform var(--pc-dur-base) var(--pc-ease-out),
+    box-shadow var(--pc-dur-base) var(--pc-ease-out),
+    border-color var(--pc-dur-base) var(--pc-ease-in-out),
+    background-color var(--pc-dur-base) var(--pc-ease-in-out);
+}
+.card:hover {
+  box-shadow: var(--pc-shadow-md);
+}
+[data-theme="terminal-dark"] .card:hover,
+[data-theme="neo-brutalist"] .card:hover {
+  box-shadow: var(--pc-shadow);
+}
+
+/* ======== EVENT ROW INTERACTION ======== */
+.event-row {
+  position: relative;
+  cursor: pointer;
+  transition: background-color var(--pc-dur-fast) ease,
+              transform var(--pc-dur-fast) var(--pc-ease-out),
+              padding-left var(--pc-dur-fast) var(--pc-ease-out);
+}
+.event-row:hover {
+  background: var(--pc-card);
+  padding-left: 20px;
+}
+.event-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--pc-accent);
+  transform: scaleY(0);
+  transition: transform var(--pc-dur-fast) var(--pc-ease-out);
+}
+.event-row:hover::before {
+  transform: scaleY(1);
+}
+[data-theme="neo-brutalist"] .event-row::before { display: none; }
+
+/* ======== MESSAGE ENTRY ANIMATION ======== */
+.msg {
+  animation: msgEnter var(--pc-dur-base) var(--pc-ease-out);
+}
+@keyframes msgEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.msg-head .msg-marker {
+  animation: markerPulse 0.6s var(--pc-ease-out);
+}
+@keyframes markerPulse {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ======== VERIFICATION BAR SLIDE ======== */
+.verify-bar {
+  animation: verifySlide var(--pc-dur-slow) var(--pc-ease-out-expo);
+  overflow: hidden;
+  position: relative;
+}
+.verify-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  animation: shimmerSlide 2s ease-in-out 0.3s;
+}
+@keyframes verifySlide {
+  from { opacity: 0; transform: scaleX(0.8); transform-origin: left; }
+  to { opacity: 1; transform: scaleX(1); }
+}
+@keyframes shimmerSlide {
+  to { left: 100%; }
+}
+
+/* ======== PROGRESS BAR ANIMATION ======== */
+.progress-seg {
+  position: relative;
+  overflow: hidden;
+  transition: width var(--pc-dur-slow) var(--pc-ease-out), background-color var(--pc-dur-base);
+}
+.progress-seg::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.15) 50%,
+    transparent 100%
+  );
+  animation: progressShimmer 2s linear infinite;
+}
+@keyframes progressShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ======== STATUS BADGE BREATHING ======== */
+.status-badge {
+  transition: background-color var(--pc-dur-base), transform var(--pc-dur-fast);
+}
+.status-badge[data-status="running"],
+.status-badge[data-status="starting"] {
+  animation: badgeBreath 2s ease-in-out infinite;
+}
+@keyframes badgeBreath {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+/* ======== RUNNING DOT PULSE ENHANCED ======== */
+.event-dot.running {
+  animation: dotPulse 1.2s ease-in-out infinite;
+  box-shadow: 0 0 0 0 var(--pc-accent);
+}
+@keyframes dotPulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--pc-accent) 50%, transparent);
+  }
+  50% {
+    opacity: 0.6;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+/* ======== METRIC VALUE COUNT FLASH ======== */
+.metric-value {
+  transition: color var(--pc-dur-fast), transform var(--pc-dur-fast);
+  display: inline-block;
+}
+.metric-value.flash {
+  color: var(--pc-accent);
+  transform: scale(1.08);
+}
+
+/* ======== COMPOSER FOCUS GLOW ======== */
+.composer-box {
+  transition: border-color var(--pc-dur-base), box-shadow var(--pc-dur-base), background-color var(--pc-dur-base);
+}
+.composer-box:focus-within {
+  border-color: var(--pc-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pc-accent) 15%, transparent), var(--pc-shadow-sm);
+}
+[data-theme="neo-brutalist"] .composer-box:focus-within {
+  box-shadow: 3px 3px 0px 0px rgba(0,0,0,1);
+}
+[data-theme="terminal-dark"] .composer-box:focus-within {
+  box-shadow: 0 0 0 2px var(--pc-accent);
+}
+
+.search:focus-within {
+  border-color: var(--pc-accent);
+  box-shadow: var(--pc-shadow-focus);
+}
+
+/* ======== SETTINGS / PRODUCT PANEL ANIMATIONS ======== */
+.settings-panel, .product-panel {
+  opacity: 0;
+  transition: opacity var(--pc-dur-base) var(--pc-ease-out);
+}
+.settings-panel:not([hidden]), .product-panel:not([hidden]) {
+  opacity: 1;
+}
+.settings-card, .product-card {
+  transform: translateY(16px) scale(0.98);
+  opacity: 0;
+  transition: transform var(--pc-dur-slow) var(--pc-ease-out-expo),
+              opacity var(--pc-dur-slow) var(--pc-ease-out);
+}
+.settings-panel:not([hidden]) .settings-card,
+.product-panel:not([hidden]) .product-card {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+[data-theme="neo-brutalist"] .settings-card,
+[data-theme="neo-brutalist"] .product-card {
+  transform: translateY(8px);
+}
+
+/* ======== TOAST ANIMATION ======== */
+.toast {
+  transform: translateY(100%);
+  opacity: 0;
+  transition: transform var(--pc-dur-base) var(--pc-ease-out),
+              opacity var(--pc-dur-base) var(--pc-ease-out);
+}
+.toast:not([hidden]) {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* ======== TOOL CHIP INSERT ANIMATION ======== */
+.tool-chip:hover {
+  background: var(--pc-card);
+  color: var(--pc-foreground);
+  transform: translateY(-1px);
+}
+[data-theme="terminal-dark"] .tool-chip:hover,
+[data-theme="neo-brutalist"] .tool-chip:hover {
+  transform: none;
+}
+
+/* ======== KBD KEYCAP EFFECT ======== */
+.kbd {
+  transition: transform var(--pc-dur-fast) ease, background-color var(--pc-dur-fast);
+}
+.search:focus-within .kbd {
+  background: var(--pc-accent);
+  color: var(--pc-accent-foreground);
+  border-color: var(--pc-accent);
+}
+
+/* ======== SIDEBAR COLLAPSE ANIMATION ======== */
+.sidebar, .main-col {
+  transition: grid-template-columns var(--pc-dur-base) var(--pc-ease-out);
+}
+#app {
+  transition: grid-template-columns var(--pc-dur-base) var(--pc-ease-out),
+              border-color var(--pc-dur-base),
+              box-shadow var(--pc-dur-base),
+              opacity var(--pc-dur-entrance) var(--pc-ease-out-expo) 0.6s,
+              transform var(--pc-dur-entrance) var(--pc-ease-out-expo) 0.6s;
+}
+.sidebar .brand-mark, .sidebar .workspace,
+.sidebar .nav-btn span:nth-child(2), .sidebar .nav-badge, .sidebar .ghost-btn {
+  transition: opacity var(--pc-dur-fast) ease, transform var(--pc-dur-fast) ease;
+}
+
+/* ======== CODE BLOCK ANIMATION (for future code blocks) ======== */
+.code-block {
+  animation: codeReveal var(--pc-dur-slow) var(--pc-ease-out);
+}
+@keyframes codeReveal {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 600px; }
+}
+
+/* ======== SCROLLBAR SUBTLE TRANSITION ======== */
+::-webkit-scrollbar-thumb {
+  transition: background-color var(--pc-dur-base);
+}
+
+/* ======== FILTER CHIP GROUP ACTIVE INDICATOR ======== */
+.filters {
+  position: relative;
+}
+
+/* ======== PRODUCT TAB TRANSITION ======== */
+.product-pane {
+  animation: paneFadeIn var(--pc-dur-base) var(--pc-ease-out);
+}
+@keyframes paneFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ======== NUMBER CHANGE FLASH ======== */
+@keyframes numFlash {
+  0% { color: var(--pc-accent); transform: scale(1.1); }
+  100% { color: inherit; transform: scale(1); }
+}
+.metric-value.changing {
+  animation: numFlash 0.4s var(--pc-ease-out);
+}
+
+/* ======== TYPING CURSOR FOR MISSION LOG ======== */
+.typing-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1em;
+  background: var(--pc-foreground);
+  vertical-align: text-bottom;
+  animation: cursorBlink 0.7s step-end infinite;
+  margin-left: 1px;
+}
+
+/* ======== WORKSPACE CARD SELECTED STATE ======== */
+.workspace {
+  transition: background-color var(--pc-dur-base), border-color var(--pc-dur-base),
+              box-shadow var(--pc-dur-base), transform var(--pc-dur-fast);
+}
+.workspace:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: var(--pc-shadow-xs);
+}
+[data-theme="terminal-dark"] .workspace:hover,
+[data-theme="neo-brutalist"] .workspace:hover {
+  transform: none;
+}
+
+/* ======== INPUT / TEXTAREA PLACEHOLDER TRANSITION ======== */
+input::placeholder, textarea::placeholder {
+  transition: color var(--pc-dur-fast);
+}
+input:focus::placeholder, textarea:focus::placeholder {
+  color: var(--pc-muted-foreground);
+  opacity: 0.5;
+}
+
+/* ======== SELECT (THEME/LANGUAGE PICKER) ======== */
+.theme-picker {
+  transition: border-color var(--pc-dur-base), background-color var(--pc-dur-base),
+              box-shadow var(--pc-dur-base);
+}
+.theme-picker:hover {
+  border-color: var(--pc-accent);
+}
+.theme-picker:focus-within {
+  box-shadow: var(--pc-shadow-focus);
+  border-color: var(--pc-accent);
+}

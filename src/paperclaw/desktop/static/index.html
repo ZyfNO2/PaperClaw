@@ -3,13 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>PaperClaw Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="provider-config.css">
   <link rel="stylesheet" href="product.css">
+  <link rel="stylesheet" href="animations.css">
 </head>
 <body>
+  <div class="boot-overlay" id="boot-overlay" aria-hidden="true">
+    <div class="boot-content">
+      <div class="boot-line">PAPERCLAW v0.30</div>
+      <div class="boot-line">Initializing runtime bridge...</div>
+      <div class="boot-line">Loading theme configuration... OK</div>
+      <div class="boot-line">Establishing LLM channel...</div>
+      <div class="boot-line">System ready.<span class="boot-cursor"></span></div>
+      <div class="boot-progress"><div class="boot-progress-bar"></div></div>
+    </div>
+  </div>
   <main id="app" data-viewport-mode="app-shell">
     <aside class="sidebar" id="sidebar">
       <div class="brand">
@@ -130,6 +144,6 @@
   </section>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-message"></span><button id="close-toast" type="button" data-i18n-aria-label="toast.close">×</button></div>
-  <script src="i18n.js"></script><script src="provider-config.js"></script><script src="product.js"></script><script src="app.js"></script>
+  <script src="i18n.js"></script><script src="provider-config.js"></script><script src="product.js"></script><script src="animations.js"></script><script src="app.js"></script>
 </body>
 </html>
