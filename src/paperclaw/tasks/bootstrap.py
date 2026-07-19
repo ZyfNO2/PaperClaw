@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -58,6 +59,8 @@ def get_or_create_task_runtime(
     with _CACHE_LOCK:
         existing = _CACHE.get(key)
         if existing is not None:
+            if not existing.supervisor.running():
+                existing.supervisor.start()
             return existing
         # Production composition forbids the historical unfenced owner APIs.
         # Runtime claims and all owner-only mutations must carry a lease generation.
@@ -81,6 +84,36 @@ def get_or_create_task_runtime(
         components = TaskRuntimeComponents(store, supervisor)
         _CACHE[key] = components
         return components
+
+
+def shutdown_task_runtimes(*, timeout: float = 10.0) -> None:
+    """Stop and detach every process-scoped cached task runtime.
+
+    The cache is cleared before joining threads so concurrent callers cannot
+    receive a supervisor that is already shutting down. Store implementations
+    may optionally expose ``close``; SQLite stores open short-lived connections
+    and therefore do not require it.
+    """
+
+    if timeout < 0:
+        raise ValueError("timeout must be non-negative")
+    with _CACHE_LOCK:
+        components = tuple(_CACHE.values())
+        _CACHE.clear()
+
+    for component in components:
+        try:
+            component.supervisor.stop(wait=True, timeout=timeout)
+        except Exception:
+            # Process shutdown is best-effort; supervisors retain their own
+            # failure state for explicit runtime inspection.
+            pass
+        close = getattr(component.store, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
 
 
 def install_cli_task_extension(cli_module: Any) -> None:
@@ -118,9 +151,13 @@ def _normalize_executor_mode(value: str) -> str:
     raise ValueError("executor_mode must be inprocess or subprocess")
 
 
+atexit.register(shutdown_task_runtimes)
+
+
 __all__ = [
     "TaskRuntimeComponents",
     "default_task_database",
     "get_or_create_task_runtime",
     "install_cli_task_extension",
+    "shutdown_task_runtimes",
 ]
