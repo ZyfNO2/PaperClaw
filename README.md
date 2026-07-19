@@ -2,7 +2,7 @@
 
 PaperClaw 是一个面向 Coding、Research 与多 Agent 工作流的可审计 Agent Runtime。
 
-本 README 描述的是当前 **v0.27 stacked Draft 开发线**。`main` 只有在仓库所有者按顺序审查并合并对应 PR 后才会具备这些能力；Plan 文件或 Draft PR 不等于已发布版本。
+本 README 描述当前 **v0.30 stacked Draft 开发线**。`main` 只有在仓库所有者按依赖顺序审查并合并对应 PR 后，才会具备这里列出的能力；Plan、Handoff 或 Draft PR 不等于正式发布。
 
 ## 当前开发栈
 
@@ -20,22 +20,28 @@ v0.25 Durable Queue Fencing
 v0.26 Agent Message Bus
   ↓
 v0.27 Forgotten Debt / Product Foundation
+  ↓
+v0.28 Project Knowledge Runtime
+  ↓
+v0.29 Artifact Revisions
+  ↓
+v0.30 Desktop Product Integration
 ```
 
-当前 v0.27 开发线对应 Draft PR #56。它不会自动合并，也不声称 SQLite 已具备多机分布式数据库或外部 Broker 能力。
+当前顶部开发线对应 Draft PR #59。所有 stacked PR 均保持未合并状态。
 
-## 能力状态不是二元值
+## Capability Catalog
 
-PaperClaw 使用以下成熟度：
+PaperClaw 不再简单使用“有/没有”描述能力：
 
 | 状态 | 含义 |
 |---|---|
-| `shipped` | 已接入正常运行路径，并有相应验收证据 |
-| `foundation` | 底层合同和参考实现已完成，但产品整合或外部基础设施仍有限制 |
+| `shipped` | 已接入正常运行路径并有验收证据 |
+| `foundation` | 合同与参考实现完成，但产品整合或外部基础设施仍有限制 |
 | `experimental` | 可使用，但接口、生命周期或产品表面仍可能调整 |
-| `planned` | 仅进入开发债务/计划，不得描述为已实现 |
+| `planned` | 仅进入后续计划，不得描述为已实现 |
 
-机器可读事实源：
+查看机器可读事实源：
 
 ```bash
 paperclaw capabilities
@@ -44,70 +50,74 @@ paperclaw capabilities --status foundation
 paperclaw capabilities --surface desktop
 ```
 
-Capability Catalog 会返回稳定 capability ID、引入版本、成熟度、支持表面、依赖与明确限制。
+v0.30 catalog 已明确记录：
 
-## 已实现的主要层次
+- `project.knowledge_runtime`：v0.28 foundation；
+- `retrieval.hybrid_rrf`：v0.28 foundation；
+- `artifact.revisions`：v0.29 foundation；
+- `desktop.product_management`：v0.30 experimental。
 
-### Agent 与验证
+## 核心运行层
+
+### Agent、验证与工具
 
 - 有界 ReAct Runtime；
-- allowlisted 工具与路径权限；
+- allowlisted 工具、路径权限与权限二次检查；
 - deterministic evidence verification；
 - semantic acceptance judge 与执行模型解耦；
-- Plan Mode、AskUserQuestion 和静态 Skills；
-- read-only LSP diagnostics / definition / references / symbols / hover。
+- Plan Mode、AskUserQuestion、静态 Skills；
+- read-only LSP diagnostics、definition、references、symbols、hover；
+- MCP discovery、schema adaptation、permission recheck 与调用 foundation。
 
 ### Context、Memory 与 Retrieval
 
 - trust-aware Context Orchestration；
 - Session、Checkpoint 与安全恢复；
-- bounded user profile / long-term memory；
+- bounded global USER profile；
+- project-scoped MEMORY namespace；
 - `PAPERCLAW.md`、`CLAUDE.md`、`AGENTS.md` 项目说明；
 - 本地增量 BM25、citation anchors、grounding 与 abstention；
-- v0.27 Project Manifest 将说明文件、知识路径、Skills 与 Connectors 声明放入同一项目边界。
+- 显式 `require_current / allow_stale / disabled` 索引策略；
+- 显式 start/stop 的 bounded polling watcher；
+- backend-neutral Retriever Protocol；
+- deterministic citation-preserving weighted RRF Hybrid fusion。
 
-### Multi-Agent 与任务执行
+内置检索仍以本地 lexical BM25 为主。Semantic/Vector backend 只是 adapter seam，不包含托管 embedding 服务或外部向量数据库。
+
+### Multi-Agent、任务与远程执行
 
 - Coordinator / Worker / Reviewer；
 - Task DAG、并行 Worker、权限与 FileLease；
 - durable background task lifecycle；
 - subprocess isolation 与跨平台进程树终止；
 - authenticated Remote Worker Gateway；
-- generation-fenced queue ownership；
+- generation-fenced durable ownership；
 - durable ordered Agent Message Bus foundation。
 
-当前限制：Message Bus 尚未自动接入 Coordinator choreography；Remote Gateway 的内存幂等只保证同一 Gateway 进程生命周期；SQLite fencing 只证明同文件系统多进程竞争安全。
+限制：
 
-### Trace 与产品表面
-
-- durable redacted Trace；
-- inspect / replay / per-trace evaluation；
-- CLI、TUI、Desktop thin client 与 Service API；
-- Provider/Model policy 与 bounded fallback；
-- v0.27 Capability Catalog 与 Project CLI。
+- Message Bus 尚未自动接入 Coordinator choreography；
+- Remote Gateway 内存幂等只保证同一 Gateway 进程生命周期；
+- SQLite fencing 只证明同文件系统多进程竞争安全；
+- 没有声称 PostgreSQL、Redis、NATS 或 Kafka 已实现。
 
 ## Project Workspace
 
-v0.27 引入工作区内的项目清单：
+项目清单：
 
 ```text
 .paperclaw/project.json
 ```
 
-初始化：
+初始化与检查：
 
 ```bash
 paperclaw project --workspace . init --name "My Research Project"
-```
-
-检查：
-
-```bash
 paperclaw project --workspace . show
 paperclaw project --workspace . validate
 ```
 
-项目清单 v1 可以声明：
+Manifest v1：
 
 ```json
 {
@@ -124,22 +134,25 @@ paperclaw project --workspace . validate
 
 安全规则：
 
+- 固定字段和严格 JSON 数组；
+- credential-shaped 字段拒绝；
 - 只允许工作区内相对路径；
-- `..`、绝对路径、外部 symlink 和 symlink manifest 被拒绝；
-- manifest 只允许固定字段和严格 JSON 数组；
-- credential-shaped 字段被拒绝；
+- `..`、绝对路径、外部/broken symlink 和 symlink manifest 拒绝；
 - manifest、知识文件与索引操作都有 byte bound；
-- 不会隐式访问网络。
+- 不隐式访问网络。
 
-## Project Knowledge
+## Project Knowledge Runtime
 
-构建项目本地索引：
+构建、刷新与显式检查：
 
 ```bash
 paperclaw project --workspace . index
+paperclaw project --workspace . refresh
+paperclaw project --workspace . watch --once
+paperclaw project --workspace . watch --once --rebuild-on-change
 ```
 
-当前支持 UTF-8 Markdown 和纯文本：
+支持 UTF-8：
 
 ```text
 .md
@@ -147,36 +160,122 @@ paperclaw project --workspace . index
 .txt
 ```
 
-索引产生：
+索引：
 
 ```text
 .paperclaw/data/project-knowledge.sqlite3
 .paperclaw/data/project-index.json
 ```
 
-每次构建会记录知识文件路径、大小、SHA-256 和 source fingerprint。正常 Runtime 只会在 metadata 与当前知识文件 fingerprint 一致时注册 `project.bm25_retrieval`；缺失或 stale 索引不会被静默使用。
+每次构建记录文件路径、大小、SHA-256 和 aggregate source fingerprint。
 
-当前 Project Knowledge 是本地 lexical BM25 foundation，不包含向量 Embedding、Hybrid Search、Reranker 或后台文件 watcher。
+默认 Runtime 使用 `require_current`：只有 fingerprint 当前时才注册 Project Retrieval Source。`allow_stale` 只接受结构有效、单纯源 fingerprint 变化的旧索引；metadata 损坏或 project ID 不匹配继续 fail-closed。
 
-## Message Bus 安全修复
+Memory 默认路由为：
 
-v0.27 对 v0.26 审查发现的债务进行了修复：
+```text
+~/.paperclaw/memories/USER.md
+~/.paperclaw/memories/projects/<project_id>/MEMORY.md
+```
 
-- `AgentMessageBus` 正式公开导出；
-- payload/header 在构造时 JSON 规范化并深层冻结；
-- 修改原始 dict/list 不会改变已校验消息或幂等 digest；
-- 非字符串 JSON object key 被拒绝，不做静默强制转换；
-- payload、headers 和完整 draft 有独立 byte limit；
-- topic 容量拒绝审计在独立事务中持久化，不再随业务异常回滚；
-- 满容量时，同内容幂等重试仍可返回既有消息。
+USER profile 全局共享，项目经验和约定按 Project 隔离。
+
+## Artifact Revisions
+
+v0.29 引入一等 Product Artifact，独立于 Chat Message 和 Retrieval SourceArtifact。
+
+存储：
+
+```text
+.paperclaw/artifacts/
+  artifacts.sqlite3
+  blobs/sha256/<prefix>/<content_hash>
+```
+
+能力：
+
+- stable Artifact ID/type；
+- append-only contiguous revisions；
+- content-addressed SHA-256 blob；
+- Project / Run / Task / Trace source links；
+- deeply immutable bounded metadata；
+- exact idempotent create/revise；
+- conflicting idempotency key fail-closed；
+- blob hash/length verification；
+- destination-root-confined export；
+- default no-overwrite。
+
+CLI：
+
+```bash
+paperclaw artifact --workspace . create ...
+paperclaw artifact --workspace . list
+paperclaw artifact --workspace . show <artifact_id>
+paperclaw artifact --workspace . revise <artifact_id> ...
+paperclaw artifact --workspace . export <artifact_id> ...
+```
+
+当前仍是本地文件/SQLite foundation：没有公共分享、协同编辑、云对象存储或 blob garbage collector。
+
+## Desktop Product Integration
+
+运行：
+
+```bash
+paperclaw gui
+```
+
+v0.30 在现有 thin pywebview / protected loopback Desktop 上增加 Product Panel：
+
+- Overview：Project、Artifact、Capability 状态；
+- Capabilities：版本、成熟度、surface 与限制；
+- Project：manifest、validation、index 状态和显式 refresh；
+- Artifacts：bounded list、revision detail、latest export。
+
+Desktop 仍然是 projection：
+
+```text
+Desktop HTML/JS
+  -> allow-listed DesktopAPI
+  -> DesktopProductService
+  -> CapabilityCatalog / ProjectKnowledgeRuntime / FileArtifactStore
+```
+
+安全边界：
+
+- Product API 只针对当前 Workspace；
+- Workspace、Artifact root 和数据库 symlink 拒绝；
+- 不接受任意 SQLite/Blob 路径；
+- export 固定在 `.paperclaw/exports`；
+- artifact list、revision history 和 public JSON 均有上限；
+- Artifact summary 不返回任意 metadata；
+- Product API 不接受或返回 Provider API key、Authorization 或 Cookie；
+- UI 使用 `textContent`，不执行 Artifact HTML/Script。
+
+当前 Desktop 不提供：
+
+- Skill 安装/启停；
+- Connector OAuth/密钥管理；
+- Artifact 编辑；
+- Artifact 分享/发布；
+- 后台 Project watcher。
+
+## Message Bus 安全边界
+
+v0.27 已修复：
+
+- `AgentMessageBus` 公共导出；
+- payload/header JSON 规范化与深层冻结；
+- 非字符串 JSON object key 拒绝；
+- payload/header/draft byte limit；
+- capacity rejection audit 独立事务；
+- topic 满容量时 exact idempotent retry 仍返回旧消息。
 
 ## 常用入口
 
 ```bash
-# 单 Agent
+# 单 Agent / Multi-Agent
 paperclaw agent "检查这个项目"
-
-# Multi-Agent
 paperclaw team --plan plan.json
 
 # TUI / Desktop / Service
@@ -184,41 +283,34 @@ paperclaw tui
 paperclaw gui
 paperclaw api
 
-# 能力与项目
+# 产品能力
 paperclaw capabilities --format json
 paperclaw project --workspace . validate
-paperclaw project --workspace . index
+paperclaw project --workspace . refresh
+paperclaw artifact --workspace . list
 ```
 
 部分入口需要对应 optional dependency，例如 `.[tui]`、`.[gui]` 或 `.[service]`。
 
 ## 明确保留的开发债务
 
-以下内容没有在 v0.27 冒充已实现：
-
-1. **Artifact revisions**：一等 Artifact ID、不可变 revision、Run/Task/Trace 来源、预览、编辑、导出与分享策略。
-2. **Project-scoped Skills / Connector 管理**：发现、启停、信任来源、版本、MCP Auth/Permission 状态与 Desktop UI。
-3. **Aggregate Eval Dashboard**：Task Success、Tool-call Accuracy、协作效率、P50/P95/P99、Token/API Cost 和多运行失败分类。
-4. **Message Bus choreography wiring**：Coordinator、Worker、Reviewer 和 durable Task runtime 的消费身份、重试与失败策略。
-5. **真实外部基础设施适配器**：PostgreSQL、Redis、NATS 或 Kafka 必须在实际共享服务上通过同等幂等、fencing、ordering 和恢复矩阵。
-6. **Project Knowledge v2**：向量检索、Hybrid Search、Reranker、stale-index policy 与 watcher。
-7. **Desktop 产品整合**：Capabilities、Projects、Skills、Connectors、Artifacts 的统一管理表面。
-
-详细审计和开发计划：
-
-```text
-Plan/PaperClaw_v0.27_Forgotten_Debt_Product_Foundation.md
-```
+1. **Project-scoped Skills / Connectors**：发现、启停、信任来源、版本、MCP Auth/Permission 与真正的项目级激活。
+2. **Aggregate Eval Dashboard**：Task Success、Tool-call Accuracy、协作效率、P50/P95/P99、Token/API Cost 和多运行失败分类。
+3. **Message Bus choreography wiring**：Coordinator、Worker、Reviewer 与 durable Task runtime 的消费身份、重试、poison message 和 causal trace。
+4. **真实外部设施适配器**：PostgreSQL、Redis、NATS、Kafka 或外部 Vector DB 必须在真实共享服务上验收。
+5. **Artifact Lifecycle v2**：Blob GC、分享/发布、协同编辑和可控预览。
+6. **Desktop v2**：Skill/Connector 管理、Artifact 编辑、完整 i18n 和更细粒度产品权限。
+7. **Hybrid Retrieval v2**：实际 Semantic/Vector adapter、Reranker 与离线质量评估。
 
 ## 安全与架构边界
 
-- Secret 不写入 manifest、Message Bus payload、ExecutionRequest、Trace 或普通配置文件；
-- Remote Workspace 路径由 Worker Host 白名单验证；
+- Secret 不写入 Manifest、Message Bus、ExecutionRequest、Trace 或 Artifact metadata；
+- Remote Workspace 由 Worker Host 白名单验证；
 - 不允许远程上传任意 Python module/function；
-- 网络取消未确认时返回 `UNKNOWN_OUTCOME`，不伪造成功取消；
+- 网络取消未确认时返回 `UNKNOWN_OUTCOME`；
 - stale lease generation 不能 heartbeat、标记 side effect、complete 或 requeue；
-- SQLite 多进程测试不等价于多机分布式共识；
-- Draft PR、Plan 和基础合同不自动等价于最终产品能力。
+- SQLite 多进程证据不等于多机分布式共识；
+- Draft PR、Plan 与 foundation 不自动等于正式发布。
 
 ## 开发与验收
 
@@ -228,4 +320,4 @@ python -m pytest -q -m "not real_llm"
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 ```
 
-涉及 Provider 的测试必须明确标记 `real_llm`；Fake/Mock、离线 Provider 和真实 Provider 证据必须分开记录。
+涉及 Provider 的测试必须明确标记 `real_llm`；Fake/Mock、离线 Provider 和真实 Provider 证据必须分别记录。

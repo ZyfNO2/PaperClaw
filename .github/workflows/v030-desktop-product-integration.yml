@@ -1,0 +1,137 @@
+name: v0.30 Desktop Product Integration
+
+on:
+  pull_request:
+    branches:
+      - feat/v0.29-artifact-revisions
+      - main
+    paths:
+      - "src/paperclaw/desktop/**"
+      - "src/paperclaw/capabilities/**"
+      - "tests/unit/desktop/**"
+      - "tests/unit/artifacts/**"
+      - "tests/e2e/desktop/**"
+      - ".github/workflows/v030-desktop-product-integration.yml"
+      - "Plan/PaperClaw_v0.30_Desktop_Product_Integration.md"
+      - "artifacts/v0_30/HANDOFF.md"
+      - "README.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -c "from pathlib import Path; Path('tmp').mkdir(exist_ok=True)"
+      - name: Run desktop product acceptance
+        run: >-
+          python -m pytest -q
+          --report-log=tmp/v030-focused-${{ runner.os }}.jsonl
+          tests/unit/desktop
+          tests/unit/artifacts
+          tests/unit/capabilities
+          tests/unit/projects/test_project_knowledge_runtime.py
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v030-focused-${{ runner.os }}-${{ github.run_id }}
+          path: tmp/v030-focused-${{ runner.os }}.jsonl
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Run desktop compatibility selection
+        run: >-
+          python -m pytest -q
+          -k "desktop or product_cli"
+          tests/unit
+      - name: Run correctness lint
+        run: >-
+          python -m ruff check
+          src/paperclaw/desktop
+          src/paperclaw/capabilities
+          tests/unit/desktop
+          --select E9,F63,F7,F82
+
+  playwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PAPERCLAW_RUN_PLAYWRIGHT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install project and browser
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install pytest-timeout
+          python -m playwright install --with-deps chromium
+      - name: Run desktop browser interactions
+        run: >-
+          python -m pytest -q tests/e2e/desktop
+          --timeout=30
+          --timeout-method=thread
+
+  full-windows-regression:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      TEMP: ${{ github.workspace }}\tmp\pytest_temp
+      TMP: ${{ github.workspace }}\tmp\pytest_temp
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Prepare temp dirs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path tmp\pytest_temp | Out-Null
+          New-Item -ItemType Directory -Force -Path tmp\pytest | Out-Null
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install pytest-reportlog
+      - name: Run full non-live pytest regression
+        shell: pwsh
+        run: |
+          python -m pytest `
+            --basetemp=tmp/pytest `
+            --report-log=tmp/v030-pytest-report.jsonl `
+            -q `
+            -m "not real_llm"
+      - name: Upload regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v030-full-regression-${{ github.run_id }}
+          path: tmp/v030-pytest-report.jsonl
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Run repository correctness lint
+        run: python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821

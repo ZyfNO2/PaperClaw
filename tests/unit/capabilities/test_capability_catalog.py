@@ -14,22 +14,31 @@ def test_default_catalog_is_deterministic_and_dependency_complete() -> None:
     assert ids == sorted(ids)
     assert len(ids) == len(set(ids))
     assert "project.workspace" in ids
+    assert "project.knowledge_runtime" in ids
     assert "artifact.revisions" in ids
+    assert "desktop.product_management" in ids
 
 
-def test_catalog_distinguishes_foundation_from_shipped_and_planned() -> None:
+def test_catalog_distinguishes_delivered_foundations_from_planned_work() -> None:
     catalog = default_capability_catalog()
 
     shipped = {item.capability_id for item in catalog.select(maturity="shipped")}
     foundation = {
         item.capability_id for item in catalog.select(maturity="foundation")
     }
+    experimental = {
+        item.capability_id for item in catalog.select(maturity="experimental")
+    }
     planned = {item.capability_id for item in catalog.select(maturity="planned")}
 
     assert "agent.react_runtime" in shipped
     assert "worker.remote_gateway" in foundation
     assert "multiagent.message_bus" in foundation
-    assert "artifact.revisions" in planned
+    assert "project.knowledge_runtime" in foundation
+    assert "artifact.revisions" in foundation
+    assert "desktop.product_management" in experimental
+    assert "evaluation.aggregate_dashboard" in planned
+    assert "artifact.revisions" not in planned
     assert shipped.isdisjoint(foundation)
 
 
@@ -43,6 +52,10 @@ def test_surface_filter_and_json_contract() -> None:
     assert payload["schema_version"] == 1
     assert payload["count"] == len(desktop)
     assert payload["filters"] == {"maturity": None, "surface": "desktop"}
+    assert any(
+        item["capability_id"] == "desktop.product_management"
+        for item in payload["capabilities"]
+    )
 
 
 def test_text_render_exposes_limitations_without_secrets() -> None:

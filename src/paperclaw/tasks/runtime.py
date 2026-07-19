@@ -13,6 +13,14 @@ from .contracts import TaskExecutionResult, TaskRecord, TaskStatus
 from .distributed_store import DurableTaskStore, TaskLease
 
 
+_EXECUTOR_SHUTDOWN_ERRORS = frozenset(
+    {
+        "cannot schedule new futures after shutdown",
+        "cannot schedule new futures after interpreter shutdown",
+    }
+)
+
+
 class TaskExecutor(Protocol):
     def __call__(
         self,
@@ -120,7 +128,15 @@ class BackgroundTaskSupervisor:
             time.sleep(poll_seconds)
 
     def _thread_main(self) -> None:
-        asyncio.run(self._serve())
+        try:
+            asyncio.run(self._serve())
+        except RuntimeError as exc:
+            # A shutting-down ThreadPoolExecutor rejects new work. Suppress only
+            # the two known CPython shutdown signatures at this thread boundary;
+            # every other RuntimeError remains visible.
+            if str(exc) in _EXECUTOR_SHUTDOWN_ERRORS:
+                return
+            raise
 
     async def _serve(self) -> None:
         self._loop = asyncio.get_running_loop()

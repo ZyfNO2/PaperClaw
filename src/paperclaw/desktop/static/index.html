@@ -7,12 +7,13 @@
   <title>PaperClaw Console</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="provider-config.css">
+  <link rel="stylesheet" href="product.css">
 </head>
 <body>
   <main id="app" data-viewport-mode="app-shell">
     <aside class="sidebar" id="sidebar">
       <div class="brand">
-        <div class="brand-mark"><span class="kicker">PAPERCLAW</span><span class="brand-name">v0.18</span></div>
+        <div class="brand-mark"><span class="kicker">PAPERCLAW</span><span class="brand-name">v0.30</span></div>
         <button class="side-toggle" id="sidebar-toggle" type="button" data-i18n-aria-label="sidebar.collapse" title="Collapse">←</button>
       </div>
 
@@ -24,6 +25,7 @@
 
       <nav class="nav" id="sidebar-nav" data-i18n-aria-label="nav.main">
         <button class="nav-btn active" type="button" data-nav="console"><span>▣</span><span data-i18n="nav.console">Console</span><span class="nav-badge"></span></button>
+        <button class="nav-btn" id="product-nav" type="button"><span>◫</span><span>Product</span><span class="nav-badge" id="product-badge">—</span></button>
         <button class="nav-btn" type="button" data-nav="trace"><span>▦</span><span data-i18n="nav.trace">Trace</span><span class="nav-badge" id="trace-count">0</span></button>
         <button class="nav-btn" type="button" data-nav="sessions"><span>▤</span><span data-i18n="nav.sessions">Sessions</span><span class="nav-badge">—</span></button>
         <button class="nav-btn" type="button" data-nav="team"><span>⋮⋮</span><span data-i18n="nav.team">Team</span><span class="nav-badge">—</span></button>
@@ -51,6 +53,7 @@
           <button class="btn destructive" id="cancel-button" type="button" disabled data-i18n="run.stop">■ STOP</button>
           <button class="btn" id="export-button" type="button" data-i18n="run.export">⇩ EXPORT TRACE</button>
           <button class="btn" id="select-workspace" type="button" data-i18n="run.workspace">▣ WORKSPACE</button>
+          <button class="btn" id="open-product" type="button">◫ PRODUCT</button>
           <label class="theme-picker" for="theme-select"><span data-i18n="toolbar.theme">THEME</span><select id="theme-select" aria-label="Select interface theme">
             <option value="neo-brutalist">Neo Brutalist</option><option value="soft-minimal">Soft Minimal</option><option value="terminal-dark">Terminal Dark</option><option value="clean-mono">Clean Mono</option><option value="paper-light">Paper Light</option>
           </select></label>
@@ -114,7 +117,19 @@
     <label class="verify-toggle"><input id="verification-enabled" type="checkbox" checked> <span data-i18n="gate.enable">Enable verification &amp; reflection gate</span></label><p class="gate-mode-status" id="gate-mode-status" data-i18n="gate.enabled">Verify and Reflection Gate are enabled.</p>
   </div></section>
 
+  <section class="product-panel" id="product-panel" role="dialog" aria-modal="true" aria-labelledby="product-title" hidden>
+    <div class="product-card">
+      <div class="panel-head"><div><span class="section-label">PRODUCT FOUNDATION</span><h2 class="panel-title" id="product-title">PROJECTS · CAPABILITIES · ARTIFACTS</h2></div><button class="icon-btn" id="close-product" type="button" aria-label="Close product panel">×</button></div>
+      <div class="product-tabs" role="tablist"><button class="chip active" type="button" data-product-tab="overview">OVERVIEW</button><button class="chip" type="button" data-product-tab="capabilities">CAPABILITIES</button><button class="chip" type="button" data-product-tab="project">PROJECT</button><button class="chip" type="button" data-product-tab="artifacts">ARTIFACTS</button></div>
+      <div class="product-status" id="product-status" role="status" aria-live="polite">Select a workspace to inspect product foundations.</div>
+      <section class="product-pane" data-product-pane="overview"><div class="product-grid" id="product-overview"></div></section>
+      <section class="product-pane" data-product-pane="capabilities" hidden><div class="product-list" id="capability-list"></div></section>
+      <section class="product-pane" data-product-pane="project" hidden><div class="product-actions"><button class="btn" id="reload-project" type="button">RELOAD STATUS</button><button class="btn primary" id="refresh-project-index" type="button">REFRESH INDEX</button></div><div class="product-list" id="project-details"></div></section>
+      <section class="product-pane" data-product-pane="artifacts" hidden><div class="product-actions"><button class="btn" id="reload-artifacts" type="button">RELOAD</button></div><div class="artifact-layout"><div class="product-list" id="artifact-list"></div><div class="product-list artifact-detail" id="artifact-detail"><p class="tiny">Select an artifact to inspect revisions.</p></div></div></section>
+    </div>
+  </section>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-message"></span><button id="close-toast" type="button" data-i18n-aria-label="toast.close">×</button></div>
-  <script src="i18n.js"></script><script src="provider-config.js"></script><script src="app.js"></script>
+  <script src="i18n.js"></script><script src="provider-config.js"></script><script src="product.js"></script><script src="app.js"></script>
 </body>
 </html>

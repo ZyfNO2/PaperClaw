@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import math
 from typing import Protocol, Sequence
 
 from .contracts import canonical_json, sha256_text, stable_id
@@ -15,6 +16,10 @@ class Retriever(Protocol):
 
 class HybridCorpusMismatchError(RuntimeError):
     """Raised when retrieval backends do not describe the same active corpus."""
+
+
+class HybridCandidateMismatchError(RuntimeError):
+    """Raised when backends disagree about citation-bound chunk identity."""
 
 
 class HybridRetriever:
@@ -33,14 +38,28 @@ class HybridRetriever:
     ) -> None:
         if not backends:
             raise ValueError("at least one retrieval backend is required")
-        if rrf_constant < 1:
-            raise ValueError("rrf_constant must be positive")
+        if (
+            isinstance(rrf_constant, bool)
+            or not isinstance(rrf_constant, int)
+            or rrf_constant < 1
+        ):
+            raise ValueError("rrf_constant must be a positive integer")
         names = [name for name, _backend, _weight in backends]
-        if len(names) != len(set(names)) or any(not name.strip() for name in names):
-            raise ValueError("retrieval backend names must be unique and non-empty")
-        if any(weight <= 0 for _name, _backend, weight in backends):
-            raise ValueError("retrieval backend weights must be positive")
-        self.backends = tuple(backends)
+        if any(not isinstance(name, str) or not name.strip() for name in names):
+            raise ValueError("retrieval backend names must be non-empty strings")
+        if len(names) != len(set(names)):
+            raise ValueError("retrieval backend names must be unique")
+        for _name, _backend, weight in backends:
+            if (
+                isinstance(weight, bool)
+                or not isinstance(weight, (int, float))
+                or not math.isfinite(weight)
+                or weight <= 0
+            ):
+                raise ValueError("retrieval backend weights must be finite and positive")
+        self.backends = tuple(
+            (name, backend, float(weight)) for name, backend, weight in backends
+        )
         self.rrf_constant = rrf_constant
 
     def query(self, request: RetrievalRequest) -> RankedResult:
@@ -61,8 +80,22 @@ class HybridRetriever:
         corpus_hash = next(iter(corpus_hashes))
         candidates: dict[str, RetrievalCandidate] = {}
         scores: dict[str, float] = {}
-        for _name, weight, result in results:
+        for name, weight, result in results:
+            backend_seen: set[str] = set()
             for candidate in result.candidates:
+                if candidate.chunk_id in backend_seen:
+                    raise HybridCandidateMismatchError(
+                        f"retrieval backend {name} returned duplicate chunk_id"
+                    )
+                backend_seen.add(candidate.chunk_id)
+                existing = candidates.get(candidate.chunk_id)
+                if existing is not None and _citation_identity(existing) != _citation_identity(
+                    candidate
+                ):
+                    raise HybridCandidateMismatchError(
+                        "retrieval backends returned conflicting citation identity "
+                        f"for chunk_id {candidate.chunk_id}"
+                    )
                 candidates.setdefault(candidate.chunk_id, candidate)
                 scores[candidate.chunk_id] = scores.get(candidate.chunk_id, 0.0) + (
                     weight / (self.rrf_constant + candidate.rank)
@@ -126,18 +159,49 @@ class HybridRetriever:
                 close()
 
 
+def _citation_identity(candidate: RetrievalCandidate) -> tuple[object, ...]:
+    return (
+        candidate.document_id,
+        candidate.version_id,
+        candidate.display_name,
+        candidate.canonical_uri,
+        candidate.text,
+        candidate.content_hash,
+        candidate.source_hash,
+        candidate.chunk_config_hash,
+        candidate.locator,
+    )
+
+
 def hybrid_configuration_fingerprint(
     backends: Sequence[tuple[str, float]],
     *,
     rrf_constant: int = 60,
 ) -> str:
+    if (
+        isinstance(rrf_constant, bool)
+        or not isinstance(rrf_constant, int)
+        or rrf_constant < 1
+    ):
+        raise ValueError("rrf_constant must be a positive integer")
+    normalized: list[dict[str, object]] = []
+    for name, weight in backends:
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("retrieval backend names must be non-empty strings")
+        if (
+            isinstance(weight, bool)
+            or not isinstance(weight, (int, float))
+            or not math.isfinite(weight)
+            or weight <= 0
+        ):
+            raise ValueError("retrieval backend weights must be finite and positive")
+        normalized.append({"name": name, "weight": float(weight)})
+    if len({item["name"] for item in normalized}) != len(normalized):
+        raise ValueError("retrieval backend names must be unique")
     return sha256_text(
         canonical_json(
             {
-                "backends": [
-                    {"name": name, "weight": weight}
-                    for name, weight in sorted(backends)
-                ],
+                "backends": sorted(normalized, key=lambda item: str(item["name"])),
                 "rrf_constant": rrf_constant,
             }
         )
@@ -145,6 +209,7 @@ def hybrid_configuration_fingerprint(
 
 
 __all__ = [
+    "HybridCandidateMismatchError",
     "HybridCorpusMismatchError",
     "HybridRetriever",
     "Retriever",
