@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import dataclass
 import threading
 import time
 from typing import Protocol
 
 from .contracts import TaskExecutionResult, TaskRecord, TaskStatus
-from .store import SQLiteDurableTaskStore
+from .distributed_store import DurableTaskStore, TaskLease
 
 
 class TaskExecutor(Protocol):
@@ -20,16 +21,23 @@ class TaskExecutor(Protocol):
     ) -> TaskExecutionResult: ...
 
 
+@dataclass(frozen=True)
+class _ClaimContext:
+    task: TaskRecord
+    lease_generation: int | None
+
+
 class BackgroundTaskSupervisor:
     """Run durable tasks in a bounded asyncio pool on a dedicated loop thread.
 
-    SQLite remains the source of truth. The in-memory asyncio tasks are disposable;
-    expired leases are reconciled when this supervisor or a replacement starts.
+    The durable store is the source of truth. Production composition uses the
+    fenced store contract; a legacy non-fenced store remains accepted for direct
+    compatibility tests while the migration line is stacked.
     """
 
     def __init__(
         self,
-        store: SQLiteDurableTaskStore,
+        store: DurableTaskStore,
         executor: TaskExecutor,
         *,
         worker_id: str = "task-worker",
@@ -125,16 +133,12 @@ class BackgroundTaskSupervisor:
                 active = {task for task in active if not task.done()}
                 await asyncio.to_thread(self.store.refresh_dependencies)
                 while len(active) < self.max_concurrency and not self._stop.is_set():
-                    claimed = await asyncio.to_thread(
-                        self.store.claim_next,
-                        self.worker_id,
-                        lease_seconds=self.lease_seconds,
-                    )
+                    claimed = await asyncio.to_thread(self._claim_next)
                     if claimed is None:
                         break
                     runner = asyncio.create_task(
                         self._execute_claimed(claimed, provider_semaphore),
-                        name=f"background-task:{claimed.task_id}",
+                        name=f"background-task:{claimed.task.task_id}",
                     )
                     active.add(runner)
                 if active:
@@ -153,7 +157,9 @@ class BackgroundTaskSupervisor:
                     await asyncio.sleep(self.poll_seconds)
                 if self._wake.is_set():
                     self._wake.clear()
-            for task in self.store.list_tasks(statuses=[TaskStatus.RUNNING, TaskStatus.CLAIMED]):
+            for task in self.store.list_tasks(
+                statuses=[TaskStatus.RUNNING, TaskStatus.CLAIMED]
+            ):
                 if task.lease_owner == self.worker_id:
                     await asyncio.to_thread(
                         self.store.request_cancel,
@@ -165,24 +171,35 @@ class BackgroundTaskSupervisor:
         finally:
             self._loop = None
 
+    def _claim_next(self) -> _ClaimContext | None:
+        fenced_claim = getattr(self.store, "claim_next_lease", None)
+        if callable(fenced_claim):
+            lease: TaskLease | None = fenced_claim(
+                self.worker_id,
+                lease_seconds=self.lease_seconds,
+            )
+            if lease is None:
+                return None
+            return _ClaimContext(lease.task, lease.generation)
+        legacy_claim = getattr(self.store, "claim_next", None)
+        if not callable(legacy_claim):
+            raise RuntimeError("durable task store does not implement a claim operation")
+        task = legacy_claim(self.worker_id, lease_seconds=self.lease_seconds)
+        return _ClaimContext(task, None) if task is not None else None
+
     async def _execute_claimed(
         self,
-        claimed: TaskRecord,
+        claimed: _ClaimContext,
         provider_semaphore: asyncio.Semaphore,
     ) -> None:
         try:
-            running = await asyncio.to_thread(
-                self.store.start_task,
-                claimed.task_id,
-                self.worker_id,
-                expected_version=claimed.version,
-            )
+            running = await asyncio.to_thread(self._start_claimed, claimed)
         except Exception:
             return
 
         heartbeat_stop = asyncio.Event()
         heartbeat = asyncio.create_task(
-            self._heartbeat_loop(running, heartbeat_stop),
+            self._heartbeat_loop(running, claimed.lease_generation, heartbeat_stop),
             name=f"task-heartbeat:{running.task_id}",
         )
 
@@ -213,11 +230,10 @@ class BackgroundTaskSupervisor:
                     output_tokens=result.output_tokens,
                 )
             await asyncio.to_thread(
-                self.store.complete_task,
-                running.task_id,
-                self.worker_id,
-                expected_version=running.version,
-                result=result,
+                self._complete,
+                running,
+                claimed.lease_generation,
+                result,
             )
         except TimeoutError:
             current = await asyncio.to_thread(self.store.get_task, running.task_id)
@@ -227,11 +243,10 @@ class BackgroundTaskSupervisor:
                 else TaskStatus.TIMED_OUT
             )
             await asyncio.to_thread(
-                self.store.complete_task,
-                running.task_id,
-                self.worker_id,
-                expected_version=running.version,
-                result=TaskExecutionResult(
+                self._complete,
+                running,
+                claimed.lease_generation,
+                TaskExecutionResult(
                     terminal,
                     error={"code": "task_timeout"},
                     stop_reason="task_timeout",
@@ -247,11 +262,10 @@ class BackgroundTaskSupervisor:
             ):
                 try:
                     await asyncio.to_thread(
-                        self.store.requeue_task,
-                        running.task_id,
-                        self.worker_id,
-                        expected_version=running.version,
-                        reason=f"retryable:{type(exc).__name__}",
+                        self._requeue,
+                        running,
+                        claimed.lease_generation,
+                        f"retryable:{type(exc).__name__}",
                     )
                 except Exception:
                     pass
@@ -263,11 +277,10 @@ class BackgroundTaskSupervisor:
                 )
                 try:
                     await asyncio.to_thread(
-                        self.store.complete_task,
-                        running.task_id,
-                        self.worker_id,
-                        expected_version=running.version,
-                        result=TaskExecutionResult(
+                        self._complete,
+                        running,
+                        claimed.lease_generation,
+                        TaskExecutionResult(
                             terminal,
                             error={
                                 "code": "task_execution_failed",
@@ -288,9 +301,72 @@ class BackgroundTaskSupervisor:
             except (asyncio.CancelledError, Exception):
                 pass
 
+    def _start_claimed(self, claimed: _ClaimContext) -> TaskRecord:
+        if claimed.lease_generation is not None:
+            method = getattr(self.store, "start_task_fenced")
+            return method(
+                claimed.task.task_id,
+                self.worker_id,
+                expected_version=claimed.task.version,
+                lease_generation=claimed.lease_generation,
+            )
+        method = getattr(self.store, "start_task")
+        return method(
+            claimed.task.task_id,
+            self.worker_id,
+            expected_version=claimed.task.version,
+        )
+
+    def _complete(
+        self,
+        running: TaskRecord,
+        generation: int | None,
+        result: TaskExecutionResult,
+    ) -> TaskRecord:
+        if generation is not None:
+            method = getattr(self.store, "complete_task_fenced")
+            return method(
+                running.task_id,
+                self.worker_id,
+                expected_version=running.version,
+                lease_generation=generation,
+                result=result,
+            )
+        method = getattr(self.store, "complete_task")
+        return method(
+            running.task_id,
+            self.worker_id,
+            expected_version=running.version,
+            result=result,
+        )
+
+    def _requeue(
+        self,
+        running: TaskRecord,
+        generation: int | None,
+        reason: str,
+    ) -> TaskRecord:
+        if generation is not None:
+            method = getattr(self.store, "requeue_task_fenced")
+            return method(
+                running.task_id,
+                self.worker_id,
+                expected_version=running.version,
+                lease_generation=generation,
+                reason=reason,
+            )
+        method = getattr(self.store, "requeue_task")
+        return method(
+            running.task_id,
+            self.worker_id,
+            expected_version=running.version,
+            reason=reason,
+        )
+
     async def _heartbeat_loop(
         self,
         task: TaskRecord,
+        generation: int | None,
         stopped: asyncio.Event,
     ) -> None:
         while not stopped.is_set() and not self._stop.is_set():
@@ -298,13 +374,25 @@ class BackgroundTaskSupervisor:
             if stopped.is_set() or self._stop.is_set():
                 break
             try:
-                await asyncio.to_thread(
-                    self.store.heartbeat,
-                    task.task_id,
-                    self.worker_id,
-                    expected_version=task.version,
-                    lease_seconds=self.lease_seconds,
-                )
+                if generation is not None:
+                    method = getattr(self.store, "heartbeat_fenced")
+                    await asyncio.to_thread(
+                        method,
+                        task.task_id,
+                        self.worker_id,
+                        expected_version=task.version,
+                        lease_generation=generation,
+                        lease_seconds=self.lease_seconds,
+                    )
+                else:
+                    method = getattr(self.store, "heartbeat")
+                    await asyncio.to_thread(
+                        method,
+                        task.task_id,
+                        self.worker_id,
+                        expected_version=task.version,
+                        lease_seconds=self.lease_seconds,
+                    )
             except Exception:
                 break
 
