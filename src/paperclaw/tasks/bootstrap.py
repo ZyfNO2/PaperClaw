@@ -11,16 +11,17 @@ from typing import Any, Callable
 from paperclaw.models.base import ChatModel
 from paperclaw.multiagent.judge_factory import build_judge_model_from_env
 
+from .distributed_store import DurableTaskStore
 from .process_executor import SubprocessSubagentTaskExecutor
 from .runtime import BackgroundTaskSupervisor
-from .store import SQLiteDurableTaskStore
+from .strict_store import StrictFencedSQLiteDurableTaskStore
 from .subagent import SubagentTaskExecutor
 from .tools import register_task_tools
 
 
 @dataclass(frozen=True)
 class TaskRuntimeComponents:
-    store: SQLiteDurableTaskStore
+    store: DurableTaskStore
     supervisor: BackgroundTaskSupervisor
 
 
@@ -58,7 +59,9 @@ def get_or_create_task_runtime(
         existing = _CACHE.get(key)
         if existing is not None:
             return existing
-        store = SQLiteDurableTaskStore(resolved_database)
+        # Production composition forbids the historical unfenced owner APIs.
+        # Runtime claims and all owner-only mutations must carry a lease generation.
+        store = StrictFencedSQLiteDurableTaskStore(resolved_database)
         if normalized_mode == "subprocess":
             executor = SubprocessSubagentTaskExecutor()
         else:
@@ -97,7 +100,7 @@ def install_cli_task_extension(cli_module: Any) -> None:
         )
         register_task_tools(
             components.tool_registry,
-            runtime.store,
+            runtime.store,  # type: ignore[arg-type] - protocol-compatible store
             runtime.supervisor,
         )
         return components

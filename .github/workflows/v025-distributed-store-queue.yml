@@ -1,0 +1,85 @@
+name: v0.25 Distributed Store Queue Foundation
+
+on:
+  pull_request:
+    branches:
+      - feat/v0.24-remote-worker-gateway
+      - main
+    paths:
+      - "src/paperclaw/tasks/**"
+      - "tests/unit/tasks/**"
+      - ".github/workflows/v025-distributed-store-queue.yml"
+      - "Plan/PaperClaw_v0.25_Distributed_Store_Queue_Foundation.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fenced-store-focused:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Run fenced queue acceptance
+        run: python -m pytest -q tests/unit/tasks/test_fenced_store.py tests/unit/tasks/test_executor_mode.py
+      - name: Run all task compatibility tests
+        run: python -m pytest -q tests/unit/tasks
+      - name: Run correctness lint
+        run: python -m ruff check src/paperclaw/tasks tests/unit/tasks --select E9,F63,F7,F82
+
+  full-windows-regression:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      TEMP: ${{ github.workspace }}\tmp\pytest_temp
+      TMP: ${{ github.workspace }}\tmp\pytest_temp
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Prepare temp dirs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path tmp\pytest_temp | Out-Null
+          New-Item -ItemType Directory -Force -Path tmp\pytest | Out-Null
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install pytest-reportlog
+      - name: Run full non-live pytest regression
+        shell: pwsh
+        run: |
+          python -m pytest `
+            --basetemp=tmp/pytest `
+            --report-log=tmp/v025-pytest-report.jsonl `
+            -q `
+            -m "not real_llm"
+      - name: Upload regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v025-full-regression-${{ github.run_id }}
+          path: tmp/v025-pytest-report.jsonl
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Run repository correctness lint
+        run: python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
