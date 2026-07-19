@@ -42,6 +42,7 @@ from paperclaw.retrieval.grounding import (
     evaluate_grounding,
 )
 from paperclaw.retrieval.hybrid import (
+    HybridCandidateMismatchError,
     HybridCorpusMismatchError,
     HybridRetriever,
     Retriever,
@@ -77,6 +78,7 @@ __all__ = [
     "DocumentVersion",
     "GroundingClaimJudgment",
     "GroundingMetrics",
+    "HybridCandidateMismatchError",
     "HybridCorpusMismatchError",
     "HybridRetriever",
     "IncrementalIndexer",
