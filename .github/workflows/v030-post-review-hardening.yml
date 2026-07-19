@@ -60,6 +60,7 @@ jobs:
           tests/unit/retrieval/test_hybrid_retriever.py
           tests/unit/retrieval/test_hybrid_post_review_hardening.py
           tests/unit/tasks/test_bootstrap_shutdown.py
+          tests/unit/tasks/test_runtime.py
           tests/unit/test_product_cli.py
       - name: Upload focused evidence
         if: always()
@@ -78,6 +79,7 @@ jobs:
           src/paperclaw/projects
           src/paperclaw/retrieval/hybrid.py
           src/paperclaw/tasks/bootstrap.py
+          src/paperclaw/tasks/runtime.py
           src/paperclaw/product_cli.py
           src/paperclaw/entrypoint.py
           tests/unit/test_storage_safety.py
@@ -87,6 +89,7 @@ jobs:
           tests/unit/retrieval/test_hybrid_retriever.py
           tests/unit/retrieval/test_hybrid_post_review_hardening.py
           tests/unit/tasks/test_bootstrap_shutdown.py
+          tests/unit/tasks/test_runtime.py
           --select E9,F63,F7,F82
 
   full-windows-regression:
