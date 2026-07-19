@@ -89,13 +89,24 @@
   }
 
   function demoGate(root, renderFn) {
-    if (shell().isDemo()) { renderFn(); return; }
-    root.append(emptyState(
-      t("demo.off.title"),
-      t("demo.off.desc"),
-      t("demo.off.action"),
-      () => shell().setPref("demoMode", true)
-    ));
+    if (!shell().isDemo()) {
+      root.append(emptyState(
+        t("demo.off.title"),
+        t("demo.off.desc"),
+        t("demo.off.action"),
+        () => shell().setPref("demoMode", true)
+      ));
+      return;
+    }
+    try {
+      renderFn();
+    } catch (error) {
+      root.replaceChildren(errorState(
+        t("state.error.title"),
+        error && error.message ? error.message : t("state.error.desc"),
+        () => shell().showPage(shell().currentPage(), { force: true })
+      ));
+    }
   }
 
   function kv(rows) {
