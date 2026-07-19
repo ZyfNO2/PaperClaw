@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import sqlite3
 import time
-from typing import Callable, Protocol, Sequence
+from typing import Callable, Protocol
 from uuid import uuid4
 
 from .contracts import (
@@ -21,15 +21,39 @@ from .contracts import (
     MessageEnvelope,
     PublishResult,
     canonical_draft_bytes,
+    canonical_json_bytes,
+    thaw_json,
 )
 
 
 class MessageBusStore(Protocol):
     def publish(self, draft: MessageDraft) -> PublishResult: ...
-    def pull(self, consumer_id: str, topic: str, *, limit: int = 50) -> tuple[MessageEnvelope, ...]: ...
+
+    def pull(
+        self,
+        consumer_id: str,
+        topic: str,
+        *,
+        limit: int = 50,
+    ) -> tuple[MessageEnvelope, ...]: ...
+
     def ack(self, consumer_id: str, topic: str, sequence: int) -> ConsumerCursor: ...
+
     def get_cursor(self, consumer_id: str, topic: str) -> ConsumerCursor: ...
-    def list_events(self, *, topic: str | None = None, after_event_id: int = 0, limit: int = 500) -> tuple[MessageBusEvent, ...]: ...
+
+    def list_events(
+        self,
+        *,
+        topic: str | None = None,
+        after_event_id: int = 0,
+        limit: int = 500,
+    ) -> tuple[MessageBusEvent, ...]: ...
+
+
+class _TopicAtCapacity(RuntimeError):
+    def __init__(self, retained_count: int) -> None:
+        super().__init__("topic at capacity")
+        self.retained_count = retained_count
 
 
 class SQLiteMessageBusStore:
@@ -45,119 +69,145 @@ class SQLiteMessageBusStore:
         database: str | Path,
         *,
         max_messages_per_topic: int = 10_000,
+        max_payload_bytes: int = 1_048_576,
+        max_headers_bytes: int = 65_536,
+        max_draft_bytes: int = 1_310_720,
         clock: Callable[[], float] = time.time,
         busy_timeout_ms: int = 10_000,
     ) -> None:
-        if max_messages_per_topic < 1:
-            raise ValueError("max_messages_per_topic must be positive")
-        if busy_timeout_ms < 1:
-            raise ValueError("busy_timeout_ms must be positive")
+        for name, value in (
+            ("max_messages_per_topic", max_messages_per_topic),
+            ("max_payload_bytes", max_payload_bytes),
+            ("max_headers_bytes", max_headers_bytes),
+            ("max_draft_bytes", max_draft_bytes),
+            ("busy_timeout_ms", busy_timeout_ms),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if max_draft_bytes < max_payload_bytes:
+            raise ValueError("max_draft_bytes must not be below max_payload_bytes")
         self.database = Path(database).expanduser().resolve()
         self.database.parent.mkdir(parents=True, exist_ok=True)
         self.max_messages_per_topic = max_messages_per_topic
+        self.max_payload_bytes = max_payload_bytes
+        self.max_headers_bytes = max_headers_bytes
+        self.max_draft_bytes = max_draft_bytes
         self._clock = clock
         self._busy_timeout_ms = busy_timeout_ms
         self._initialize()
 
     def publish(self, draft: MessageDraft) -> PublishResult:
-        digest = hashlib.sha256(canonical_draft_bytes(draft)).hexdigest()
+        encoded_draft = canonical_draft_bytes(draft)
+        self._validate_draft_size(draft, encoded_draft)
+        digest = hashlib.sha256(encoded_draft).hexdigest()
         now = self._clock()
-        with self._transaction() as connection:
-            existing = connection.execute(
-                """
-                SELECT * FROM agent_bus_messages
-                WHERE topic = ? AND sender_id = ? AND idempotency_key = ?
-                """,
-                (draft.topic, draft.sender_id, draft.idempotency_key),
-            ).fetchone()
-            if existing is not None:
-                if existing["request_digest"] != digest:
-                    raise MessageBusConflictError(
-                        "idempotency key is already bound to a different message"
+        try:
+            with self._transaction() as connection:
+                existing = connection.execute(
+                    """
+                    SELECT * FROM agent_bus_messages
+                    WHERE topic = ? AND sender_id = ? AND idempotency_key = ?
+                    """,
+                    (draft.topic, draft.sender_id, draft.idempotency_key),
+                ).fetchone()
+                if existing is not None:
+                    if existing["request_digest"] != digest:
+                        raise MessageBusConflictError(
+                            "idempotency key is already bound to a different message"
+                        )
+                    envelope = self._message_from_row(existing)
+                    self._append_event(
+                        connection,
+                        "message.publish_deduplicated",
+                        draft.topic,
+                        sequence=envelope.sequence,
+                        message_id=envelope.message_id,
+                        metadata={"sender_id": draft.sender_id},
+                        created_at=now,
                     )
-                envelope = self._message_from_row(existing)
-                self._append_event(
-                    connection,
-                    "message.publish_deduplicated",
-                    draft.topic,
-                    sequence=envelope.sequence,
-                    message_id=envelope.message_id,
-                    metadata={"sender_id": draft.sender_id},
-                    created_at=now,
-                )
-                return PublishResult(envelope, False)
+                    return PublishResult(envelope, False)
 
-            count = int(
-                connection.execute(
-                    "SELECT COUNT(*) AS count FROM agent_bus_messages WHERE topic = ?",
+                count = int(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) AS count FROM agent_bus_messages
+                        WHERE topic = ?
+                        """,
+                        (draft.topic,),
+                    ).fetchone()["count"]
+                )
+                if count >= self.max_messages_per_topic:
+                    raise _TopicAtCapacity(count)
+
+                state = connection.execute(
+                    "SELECT last_sequence FROM agent_bus_topics WHERE topic = ?",
                     (draft.topic,),
-                ).fetchone()["count"]
-            )
-            if count >= self.max_messages_per_topic:
+                ).fetchone()
+                sequence = (
+                    int(state["last_sequence"]) + 1 if state is not None else 1
+                )
+                connection.execute(
+                    """
+                    INSERT INTO agent_bus_topics(topic, last_sequence, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(topic) DO UPDATE SET
+                        last_sequence = excluded.last_sequence,
+                        updated_at = excluded.updated_at
+                    """,
+                    (draft.topic, sequence, now),
+                )
+                message_id = f"msg-{uuid4().hex}"
+                connection.execute(
+                    """
+                    INSERT INTO agent_bus_messages(
+                        message_id, topic, sequence, sender_id, recipient_id,
+                        idempotency_key, request_digest, payload_json,
+                        headers_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        message_id,
+                        draft.topic,
+                        sequence,
+                        draft.sender_id,
+                        draft.recipient_id,
+                        draft.idempotency_key,
+                        digest,
+                        _json_dump(draft.payload),
+                        _json_dump(draft.headers),
+                        now,
+                    ),
+                )
                 self._append_event(
                     connection,
-                    "message.publish_rejected_capacity",
+                    "message.published",
                     draft.topic,
-                    metadata={"retained_count": count},
+                    sequence=sequence,
+                    message_id=message_id,
+                    metadata={
+                        "sender_id": draft.sender_id,
+                        "recipient_id": draft.recipient_id,
+                    },
                     created_at=now,
                 )
-                raise MessageBusCapacityError("topic retained-message capacity is exhausted")
-
-            state = connection.execute(
-                "SELECT last_sequence FROM agent_bus_topics WHERE topic = ?",
-                (draft.topic,),
-            ).fetchone()
-            sequence = (int(state["last_sequence"]) + 1) if state is not None else 1
-            connection.execute(
-                """
-                INSERT INTO agent_bus_topics(topic, last_sequence, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(topic) DO UPDATE SET
-                    last_sequence = excluded.last_sequence,
-                    updated_at = excluded.updated_at
-                """,
-                (draft.topic, sequence, now),
-            )
-            message_id = f"msg-{uuid4().hex}"
-            connection.execute(
-                """
-                INSERT INTO agent_bus_messages(
-                    message_id, topic, sequence, sender_id, recipient_id,
-                    idempotency_key, request_digest, payload_json, headers_json,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    message_id,
-                    draft.topic,
-                    sequence,
-                    draft.sender_id,
-                    draft.recipient_id,
-                    draft.idempotency_key,
-                    digest,
-                    _json_dump(draft.payload),
-                    _json_dump(draft.headers),
-                    now,
-                ),
-            )
-            self._append_event(
-                connection,
-                "message.published",
+                row = connection.execute(
+                    "SELECT * FROM agent_bus_messages WHERE message_id = ?",
+                    (message_id,),
+                ).fetchone()
+                assert row is not None
+                return PublishResult(self._message_from_row(row), True)
+        except _TopicAtCapacity as exc:
+            # The publish transaction has rolled back and released its writer
+            # lock. Record the rejection in a distinct transaction so the audit
+            # survives the business exception returned to the caller.
+            self._record_capacity_rejection(
                 draft.topic,
-                sequence=sequence,
-                message_id=message_id,
-                metadata={
-                    "sender_id": draft.sender_id,
-                    "recipient_id": draft.recipient_id,
-                },
+                retained_count=exc.retained_count,
                 created_at=now,
             )
-            row = connection.execute(
-                "SELECT * FROM agent_bus_messages WHERE message_id = ?",
-                (message_id,),
-            ).fetchone()
-            assert row is not None
-            return PublishResult(self._message_from_row(row), True)
+            raise MessageBusCapacityError(
+                "topic retained-message capacity is exhausted"
+            ) from exc
 
     def pull(
         self,
@@ -208,8 +258,9 @@ class SQLiteMessageBusStore:
                 )
             connection.execute(
                 """
-                INSERT INTO agent_bus_cursors(consumer_id, topic, ack_sequence, updated_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO agent_bus_cursors(
+                    consumer_id, topic, ack_sequence, updated_at
+                ) VALUES (?, ?, ?, ?)
                 ON CONFLICT(consumer_id, topic) DO UPDATE SET
                     ack_sequence = excluded.ack_sequence,
                     updated_at = excluded.updated_at
@@ -261,7 +312,10 @@ class SQLiteMessageBusStore:
         with self._connection() as connection:
             return int(
                 connection.execute(
-                    "SELECT COUNT(*) AS count FROM agent_bus_messages WHERE topic = ?",
+                    """
+                    SELECT COUNT(*) AS count FROM agent_bus_messages
+                    WHERE topic = ?
+                    """,
                     (topic,),
                 ).fetchone()["count"]
             )
@@ -274,6 +328,42 @@ class SQLiteMessageBusStore:
                 (topic,),
             ).fetchone()
             return int(row["last_sequence"]) if row is not None else 0
+
+    def _validate_draft_size(
+        self,
+        draft: MessageDraft,
+        encoded_draft: bytes,
+    ) -> None:
+        payload_size = len(canonical_json_bytes(draft.payload))
+        headers_size = len(canonical_json_bytes(draft.headers))
+        if payload_size > self.max_payload_bytes:
+            raise MessageBusCapacityError(
+                f"message payload exceeds {self.max_payload_bytes} bytes"
+            )
+        if headers_size > self.max_headers_bytes:
+            raise MessageBusCapacityError(
+                f"message headers exceed {self.max_headers_bytes} bytes"
+            )
+        if len(encoded_draft) > self.max_draft_bytes:
+            raise MessageBusCapacityError(
+                f"message draft exceeds {self.max_draft_bytes} bytes"
+            )
+
+    def _record_capacity_rejection(
+        self,
+        topic: str,
+        *,
+        retained_count: int,
+        created_at: float,
+    ) -> None:
+        with self._transaction() as connection:
+            self._append_event(
+                connection,
+                "message.publish_rejected_capacity",
+                topic,
+                metadata={"retained_count": retained_count},
+                created_at=created_at,
+            )
 
     def _initialize(self) -> None:
         with self._connection() as connection:
@@ -425,7 +515,9 @@ class SQLiteMessageBusStore:
             event_id=int(row["event_id"]),
             event_type=row["event_type"],
             topic=row["topic"],
-            sequence=int(row["sequence"]) if row["sequence"] is not None else None,
+            sequence=(
+                int(row["sequence"]) if row["sequence"] is not None else None
+            ),
             message_id=row["message_id"],
             consumer_id=row["consumer_id"],
             metadata=_json_object(row["metadata_json"]),
@@ -434,10 +526,16 @@ class SQLiteMessageBusStore:
 
 
 def _json_dump(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return json.dumps(
+        thaw_json(value),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
 
 
-def _json_object(value: str) -> dict:
+def _json_object(value: str) -> dict[str, object]:
     decoded = json.loads(value)
     if not isinstance(decoded, dict):
         raise ValueError("persisted message JSON is not an object")
@@ -447,7 +545,8 @@ def _json_object(value: str) -> dict:
 def _bounded_id(value: str, name: str) -> str:
     if not isinstance(value, str) or not value or len(value) > 200:
         raise ValueError(f"{name} must be a bounded non-empty string")
-    if any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:-" for char in value):
+    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:-"
+    if any(char not in allowed for char in value):
         raise ValueError(f"{name} contains unsupported characters")
     return value
 
@@ -455,7 +554,8 @@ def _bounded_id(value: str, name: str) -> str:
 def _bounded_topic(value: str) -> str:
     if not isinstance(value, str) or not value or len(value) > 200:
         raise ValueError("topic must be a bounded non-empty string")
-    if any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:/-" for char in value):
+    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:/-"
+    if any(char not in allowed for char in value):
         raise ValueError("topic contains unsupported characters")
     return value
 

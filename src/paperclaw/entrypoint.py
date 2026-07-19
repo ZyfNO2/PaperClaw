@@ -1,4 +1,4 @@
-"""Installed console entry point with optional desktop and service shims."""
+"""Installed console entry point with optional product, desktop and service shims."""
 
 from __future__ import annotations
 
@@ -7,6 +7,10 @@ import sys
 
 def main(argv: list[str] | None = None) -> int:
     resolved = list(sys.argv[1:] if argv is None else argv)
+    if resolved and resolved[0] in {"capabilities", "project"}:
+        from paperclaw.product_cli import main as product_main
+
+        return product_main(resolved)
     if resolved and resolved[0] == "gui":
         from paperclaw.desktop.bootstrap import main as desktop_main
 

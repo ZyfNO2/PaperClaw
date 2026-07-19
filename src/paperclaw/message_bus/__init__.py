@@ -11,9 +11,11 @@ from .contracts import (
     MessageEnvelope,
     PublishResult,
 )
+from .service import AgentMessageBus
 from .store import MessageBusStore, SQLiteMessageBusStore
 
 __all__ = [
+    "AgentMessageBus",
     "ConsumerCursor",
     "MessageBusAckError",
     "MessageBusCapacityError",
