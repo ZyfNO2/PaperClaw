@@ -6,13 +6,18 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from paperclaw.artifacts import ArtifactNotFoundError, FileArtifactStore
+from paperclaw.artifacts import (
+    ArtifactCapacityError,
+    ArtifactNotFoundError,
+    FileArtifactStore,
+)
 from paperclaw.capabilities import default_capability_catalog
 from paperclaw.projects import (
     ProjectKnowledgeRuntime,
     ProjectManifestStore,
     inspect_project_index,
 )
+from paperclaw.storage_safety import resolve_confined_path
 
 from .contracts import DesktopPublicError
 
@@ -171,7 +176,7 @@ class DesktopProductService:
         )
         store = self._existing_artifact_store(root)
         if store is None:
-            return {"ok": True, "count": 0, "artifacts": []}
+            return self._public({"ok": True, "count": 0, "artifacts": []})
         try:
             artifacts = store.list_artifacts(
                 artifact_type=artifact_type,
@@ -199,20 +204,23 @@ class DesktopProductService:
         if store is None:
             raise DesktopPublicError("artifact_not_found", "Artifact was not found.")
         try:
-            bundle = store.get_bundle(identifier)
+            bundle = store.get_bundle(
+                identifier,
+                max_revisions=_MAX_ARTIFACT_REVISIONS,
+            )
         except ArtifactNotFoundError as exc:
             raise DesktopPublicError("artifact_not_found", "Artifact was not found.") from exc
+        except ArtifactCapacityError as exc:
+            raise DesktopPublicError(
+                "artifact_too_large",
+                "Artifact revision history exceeds the desktop display limit.",
+            ) from exc
         except DesktopPublicError:
             raise
         except (OSError, RuntimeError, ValueError) as exc:
             raise DesktopPublicError(
                 "artifact_read_failed", self._bounded(str(exc), 500)
             ) from exc
-        if len(bundle.revisions) > _MAX_ARTIFACT_REVISIONS:
-            raise DesktopPublicError(
-                "artifact_too_large",
-                "Artifact revision history exceeds the desktop display limit.",
-            )
         return self._public({"ok": True, "bundle": bundle.to_dict()})
 
     def export_artifact(
@@ -237,14 +245,11 @@ class DesktopProductService:
             raise DesktopPublicError(
                 "validation_error", "overwrite must be a boolean."
             )
-        path = (
-            self._relative_path(relative_path)
-            if relative_path is not None
-            else None
-        )
+        path = self._relative_path(relative_path) if relative_path is not None else None
         store = self._existing_artifact_store(root)
         if store is None:
             raise DesktopPublicError("artifact_not_found", "Artifact was not found.")
+        export_root = self._export_root(root)
         try:
             revision = store.get_revision(identifier, revision_number)
             resolved_path = path or self._default_export_path(
@@ -252,8 +257,6 @@ class DesktopProductService:
                 revision.revision_number,
                 revision.media_type,
             )
-            export_root = root / ".paperclaw" / "exports"
-            export_root.mkdir(parents=True, exist_ok=True)
             exported = store.export_revision(
                 identifier,
                 export_root,
@@ -289,10 +292,12 @@ class DesktopProductService:
         project = self.get_project_status(str(root))["project"]
         store = self._existing_artifact_store(root)
         if store is None:
-            all_artifacts = ()
+            artifact_count = 0
+            recent_artifacts = ()
         else:
             try:
-                all_artifacts = store.list_artifacts(limit=5_000)
+                artifact_count = store.count_artifacts()
+                recent_artifacts = store.list_artifacts(limit=10)
             except (OSError, RuntimeError, ValueError) as exc:
                 raise DesktopPublicError(
                     "artifact_list_failed", self._bounded(str(exc), 500)
@@ -306,9 +311,9 @@ class DesktopProductService:
                 "ok": True,
                 "overview": {
                     "project": project,
-                    "artifact_count": len(all_artifacts),
+                    "artifact_count": artifact_count,
                     "recent_artifacts": [
-                        self._artifact_summary(item) for item in all_artifacts[:10]
+                        self._artifact_summary(item) for item in recent_artifacts
                     ],
                     "capability_count": len(catalog.capabilities),
                     "capability_maturity": maturity_counts,
@@ -342,16 +347,68 @@ class DesktopProductService:
 
     @staticmethod
     def _existing_artifact_store(workspace: Path) -> FileArtifactStore | None:
-        root = workspace / ".paperclaw" / "artifacts"
-        database = root / "artifacts.sqlite3"
-        if root.is_symlink() or database.is_symlink():
+        unresolved = workspace / ".paperclaw" / "artifacts"
+        database_unresolved = unresolved / "artifacts.sqlite3"
+        if unresolved.is_symlink() or database_unresolved.is_symlink():
             raise DesktopPublicError(
                 "artifact_policy_denied",
                 "Artifact storage must not be a symbolic link.",
             )
+        try:
+            root = resolve_confined_path(
+                workspace,
+                unresolved,
+                strict=False,
+                label="artifact storage",
+            )
+        except ValueError as exc:
+            raise DesktopPublicError(
+                "artifact_policy_denied",
+                "Artifact storage escapes the selected workspace.",
+            ) from exc
+        database = root / "artifacts.sqlite3"
+        if database.is_symlink():
+            raise DesktopPublicError(
+                "artifact_policy_denied",
+                "Artifact database must not be a symbolic link.",
+            )
         if not database.is_file():
             return None
-        return FileArtifactStore(root)
+        try:
+            return FileArtifactStore(root, confinement_root=workspace)
+        except ValueError as exc:
+            raise DesktopPublicError(
+                "artifact_policy_denied",
+                "Artifact storage violates workspace policy.",
+            ) from exc
+
+    @staticmethod
+    def _export_root(workspace: Path) -> Path:
+        unresolved = workspace / ".paperclaw" / "exports"
+        if unresolved.is_symlink():
+            raise DesktopPublicError(
+                "artifact_policy_denied",
+                "Artifact export directory must not be a symbolic link.",
+            )
+        try:
+            resolved = resolve_confined_path(
+                workspace,
+                unresolved,
+                strict=False,
+                label="artifact export directory",
+            )
+            resolved.mkdir(parents=True, exist_ok=True)
+            return resolve_confined_path(
+                workspace,
+                resolved,
+                strict=True,
+                label="artifact export directory",
+            )
+        except (OSError, ValueError) as exc:
+            raise DesktopPublicError(
+                "artifact_policy_denied",
+                "Artifact export directory escapes the selected workspace.",
+            ) from exc
 
     @staticmethod
     def _identifier(value: Any, name: str) -> str:
@@ -406,7 +463,6 @@ class DesktopProductService:
 
     @staticmethod
     def _artifact_summary(item: Any) -> dict[str, object]:
-        source = item.source.to_dict()
         return {
             "artifact_id": item.artifact_id,
             "artifact_type": item.artifact_type,
@@ -414,7 +470,7 @@ class DesktopProductService:
             "created_at": item.created_at,
             "updated_at": item.updated_at,
             "latest_revision_number": item.latest_revision_number,
-            "source": source,
+            "source": item.source.to_dict(),
         }
 
     @staticmethod
