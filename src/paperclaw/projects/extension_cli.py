@@ -73,7 +73,10 @@ def main(argv: list[str] | None = None) -> int:
         issues = registry.validate()
         payload = {"ok": not issues, "issues": list(issues)}
     elif args.command == "audit":
-        payload = {"events": list(registry.audit_events(limit=args.limit))}
+        payload = {
+            "events": list(registry.audit_events(limit=args.limit)),
+            "invocations": list(registry.invocation_events(limit=args.limit)),
+        }
     elif args.command in {"register-skill", "register-connector"}:
         descriptor = ProjectExtensionDescriptor(
             extension_id=args.id,
