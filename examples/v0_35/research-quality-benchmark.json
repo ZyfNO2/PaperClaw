@@ -1,0 +1,24 @@
+{
+  "cases": [
+    {
+      "case_id": "hybrid-retrieval",
+      "query": "How does weighted hybrid retrieval combine lexical and vector evidence?",
+      "relevant_chunk_ids": ["chunk-bm25", "chunk-vector", "chunk-rrf"],
+      "relevant_document_ids": ["doc-lexical", "doc-semantic", "doc-fusion"],
+      "required_claim_ids": ["claim-lexical", "claim-semantic", "claim-fusion"],
+      "required_answer_terms": ["BM25", "vector", "RRF"],
+      "should_abstain": false,
+      "tags": ["retrieval", "hybrid"]
+    },
+    {
+      "case_id": "unsupported-current-claim",
+      "query": "What unpublished result will appear next year?",
+      "relevant_chunk_ids": [],
+      "relevant_document_ids": [],
+      "required_claim_ids": [],
+      "required_answer_terms": [],
+      "should_abstain": true,
+      "tags": ["abstention"]
+    }
+  ]
+}
