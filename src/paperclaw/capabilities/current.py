@@ -1,4 +1,4 @@
-"""Current-stack capability catalog transformations through v0.34."""
+"""Current-stack capability catalog transformations through v0.35."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .catalog import (
 
 
 def default_capability_catalog() -> CapabilityCatalog:
-    """Return the audited capability catalog for the v0.34 development line."""
+    """Return the audited capability catalog for the v0.35 development line."""
 
     replacements: dict[str, CapabilityDescriptor] = {}
     for item in _baseline_catalog().capabilities:
@@ -27,8 +27,18 @@ def default_capability_catalog() -> CapabilityCatalog:
             item = replace(
                 item,
                 limitations=(
-                    "Lexical retrieval remains the built-in local backend.",
+                    "Lexical BM25 remains the authoritative local keyword backend.",
                     "Project lifecycle and stale-index policy are integrated in v0.28.",
+                ),
+            )
+        elif item.capability_id == "retrieval.hybrid_rrf":
+            item = replace(
+                item,
+                maturity="foundation",
+                surfaces=("library",),
+                limitations=(
+                    "The bundled semantic backend uses deterministic feature hashing, not transformer embeddings.",
+                    "No hosted vector database or embedding service is bundled.",
                 ),
             )
         elif item.capability_id == "product.capability_catalog":
@@ -71,9 +81,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                 item,
                 maturity="shipped",
                 surfaces=("library", "cli"),
-                limitations=(
-                    "The built-in Trace projection remains SQLite-backed.",
-                ),
+                limitations=("The built-in Trace projection remains SQLite-backed.",),
             )
         elif item.capability_id == "multiagent.resilient_choreography":
             item = replace(
@@ -100,9 +108,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                 "project.workspace",
                 "retrieval.local_bm25",
             ),
-            limitations=(
-                "No implicit watcher or hosted semantic retrieval provider.",
-            ),
+            limitations=("No implicit watcher or hosted retrieval provider.",),
         ),
         CapabilityDescriptor(
             capability_id="retrieval.hybrid_rrf",
@@ -110,11 +116,12 @@ def default_capability_catalog() -> CapabilityCatalog:
             maturity="foundation",
             surfaces=("library",),
             summary=(
-                "Deterministic citation-preserving reciprocal-rank fusion over compatible retrievers."
+                "Deterministic citation-preserving weighted reciprocal-rank fusion over compatible retrievers."
             ),
             dependencies=("retrieval.local_bm25",),
             limitations=(
-                "Semantic/vector retrievers are adapter-provided; no hosted backend is bundled.",
+                "The bundled semantic backend uses deterministic feature hashing, not transformer embeddings.",
+                "No hosted vector database or embedding service is bundled.",
             ),
         ),
         CapabilityDescriptor(
@@ -175,9 +182,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                 "multiagent.bus_choreography",
                 "trace.durable",
             ),
-            limitations=(
-                "The built-in Trace projection remains SQLite-backed.",
-            ),
+            limitations=("The built-in Trace projection remains SQLite-backed.",),
         ),
         CapabilityDescriptor(
             capability_id="multiagent.resilient_choreography",
@@ -214,6 +219,40 @@ def default_capability_catalog() -> CapabilityCatalog:
                 "PostgreSQL and Redis do not form one distributed transaction.",
                 "The Trace projection remains SQLite-backed.",
                 "No Kafka or NATS adapter is claimed.",
+            ),
+        ),
+        CapabilityDescriptor(
+            capability_id="retrieval.semantic_hybrid",
+            introduced_version="v0.35",
+            maturity="foundation",
+            surfaces=("library",),
+            summary=(
+                "Persistent local semantic vectors, weighted RRF and evidence-aware citation-preserving reranking."
+            ),
+            dependencies=(
+                "retrieval.hybrid_rrf",
+                "retrieval.local_bm25",
+            ),
+            limitations=(
+                "Semantic vectors use deterministic feature hashing rather than transformer embeddings.",
+                "No external vector database or hosted embedding service is included.",
+            ),
+        ),
+        CapabilityDescriptor(
+            capability_id="evaluation.research_quality",
+            introduced_version="v0.35",
+            maturity="shipped",
+            surfaces=("library", "cli"),
+            summary=(
+                "Reproducible retrieval, citation, grounding, abstention, latency, token and cost evaluation."
+            ),
+            dependencies=(
+                "retrieval.semantic_hybrid",
+                "evaluation.aggregate_dashboard",
+            ),
+            limitations=(
+                "Quality depends on curated relevance and explicit claim-support labels.",
+                "Groundedness is not inferred by the answer-generating model.",
             ),
         ),
     )
