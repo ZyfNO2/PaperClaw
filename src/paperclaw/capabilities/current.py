@@ -1,4 +1,4 @@
-"""Current-stack capability catalog transformations beyond the v0.27 baseline."""
+"""Current-stack capability catalog transformations through v0.32."""
 
 from __future__ import annotations
 
@@ -7,14 +7,19 @@ from dataclasses import replace
 from .catalog import (
     CapabilityCatalog,
     CapabilityDescriptor,
-    default_capability_catalog as _v027_catalog,
+    default_capability_catalog as _baseline_catalog,
 )
 
 
 def default_capability_catalog() -> CapabilityCatalog:
-    """Return the audited capability catalog for the v0.30 stacked line."""
+    """Return the audited capability catalog for the v0.32 development line.
+
+    The baseline may already contain descriptors that older stacked transforms
+    appended. Replace by capability id and append only genuinely missing rows.
+    """
+
     replacements: dict[str, CapabilityDescriptor] = {}
-    for item in _v027_catalog().capabilities:
+    for item in _baseline_catalog().capabilities:
         if item.capability_id == "ui.desktop":
             item = replace(
                 item,
@@ -105,8 +110,56 @@ def default_capability_catalog() -> CapabilityCatalog:
                 "No Skill installation, Connector authentication or Artifact editing.",
             ),
         ),
+        CapabilityDescriptor(
+            capability_id="multiagent.bus_choreography",
+            introduced_version="v0.31",
+            maturity="foundation",
+            surfaces=("library", "cli"),
+            summary=(
+                "Message Bus requests drive Coordinator, Worker and Reviewer execution with retry and DLQ."
+            ),
+            dependencies=("multiagent.coordinator", "multiagent.message_bus"),
+            limitations=(
+                "Delivery is at-least-once, not exactly-once.",
+                "Terminal state and event publication are not one atomic Outbox transaction.",
+            ),
+        ),
+        CapabilityDescriptor(
+            capability_id="evaluation.aggregate_dashboard",
+            introduced_version="v0.31",
+            maturity="foundation",
+            surfaces=("library", "cli"),
+            summary=(
+                "Aggregate success, tool failure, latency, retry, token and cost evaluation."
+            ),
+            dependencies=("trace.durable",),
+            limitations=(
+                "Pricing is operator supplied.",
+                "No Desktop dashboard surface is claimed.",
+            ),
+        ),
+        CapabilityDescriptor(
+            capability_id="evaluation.team_trace_closure",
+            introduced_version="v0.32",
+            maturity="shipped",
+            surfaces=("library", "cli"),
+            summary=(
+                "Team Run, durable Trace and aggregate Eval share one stable run identity."
+            ),
+            dependencies=(
+                "evaluation.aggregate_dashboard",
+                "multiagent.bus_choreography",
+                "trace.durable",
+            ),
+            limitations=(
+                "Failure injection, cancellation and Outbox hardening are v0.33 scope.",
+            ),
+        ),
     )
-    return CapabilityCatalog(tuple(replacements.values()) + additions)
+    missing = tuple(
+        item for item in additions if item.capability_id not in replacements
+    )
+    return CapabilityCatalog(tuple(replacements.values()) + missing)
 
 
 __all__ = ["default_capability_catalog"]
