@@ -14,11 +14,13 @@ from paperclaw.multiagent.bus_runtime import (
 )
 from paperclaw.multiagent.contracts import AgentTask, TeamBudget, TeamStopReason
 from paperclaw.multiagent.coordinator import CoordinatorResult
+from paperclaw.multiagent.ordered_outbox import (
+    SQLiteOrderedResilientChoreographyStore,
+)
 from paperclaw.multiagent.resilient_runtime import (
     FailureDisposition,
     InjectedCrash,
     ResilientBusDrivenTeamRuntime,
-    SQLiteResilientChoreographyStore,
     TEAM_CANCEL_TOPIC,
     TeamCancellationRequest,
 )
@@ -103,7 +105,7 @@ def build_runtime(
     max_attempts=3,
 ):
     bus = SQLiteMessageBusStore(tmp_path / "bus.sqlite3")
-    store = SQLiteResilientChoreographyStore(tmp_path / "state.sqlite3")
+    store = SQLiteOrderedResilientChoreographyStore(tmp_path / "state.sqlite3")
     runtime = ResilientBusDrivenTeamRuntime(
         bus,
         store,
@@ -136,7 +138,12 @@ def test_restart_flushes_terminal_outbox_before_ack_without_reexecution(tmp_path
 
     state = store.get_attempt(runtime.consumer_id, message.message_id)
     assert state is not None and state.terminal is True
-    assert len(store.pending_outbox(runtime.consumer_id, message.message_id)) == 2
+    pending = store.pending_outbox(runtime.consumer_id, message.message_id)
+    assert len(pending) == 2
+    assert [item.payload["event_type"] for item in pending] == [
+        "team.run.metrics",
+        "team.run.terminal",
+    ]
     assert bus.get_cursor(runtime.consumer_id, TEAM_REQUEST_TOPIC).ack_sequence == 0
     assert coordinator.run_count == 1
 
@@ -154,6 +161,25 @@ def test_restart_flushes_terminal_outbox_before_ack_without_reexecution(tmp_path
     assert bus.get_cursor(runtime.consumer_id, TEAM_REQUEST_TOPIC).ack_sequence == message.sequence
     assert event_types(bus).count("team.run.metrics") == 1
     assert event_types(bus).count("team.run.terminal") == 1
+
+
+def test_order_is_not_derived_from_hash_identity(tmp_path: Path):
+    coordinator = CompletingCoordinator()
+    _, store, runtime = build_runtime(
+        tmp_path,
+        lambda *_args: coordinator,
+        fault_injector=CrashOnce("after_terminal_committed"),
+    )
+    message = runtime.submit(make_request("live-v033-outbox-recovery"))
+
+    with pytest.raises(InjectedCrash):
+        runtime.run_once()
+
+    pending = store.pending_outbox(runtime.consumer_id, message.message_id)
+    assert [item.payload["event_type"] for item in pending] == [
+        "team.run.metrics",
+        "team.run.terminal",
+    ]
 
 
 def test_publish_before_delivered_mark_is_exactly_idempotent_on_restart(tmp_path: Path):
@@ -206,7 +232,7 @@ def test_ack_crash_window_recovers_without_republishing_or_reexecution(tmp_path:
 
 
 def test_permanent_failure_dead_letters_and_acks_without_retry(tmp_path: Path):
-    bus, store, runtime = build_runtime(
+    bus, _, runtime = build_runtime(
         tmp_path,
         lambda *_args: (_ for _ in ()).throw(ValueError("invalid provider config")),
         max_attempts=5,
