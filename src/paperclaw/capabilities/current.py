@@ -1,4 +1,4 @@
-"""Current-stack capability catalog transformations through v0.33."""
+"""Current-stack capability catalog transformations through v0.34."""
 
 from __future__ import annotations
 
@@ -12,11 +12,7 @@ from .catalog import (
 
 
 def default_capability_catalog() -> CapabilityCatalog:
-    """Return the audited capability catalog for the v0.33 development line.
-
-    The baseline may already contain descriptors that older stacked transforms
-    appended. Replace by capability id and append only genuinely missing rows.
-    """
+    """Return the audited capability catalog for the v0.34 development line."""
 
     replacements: dict[str, CapabilityDescriptor] = {}
     for item in _baseline_catalog().capabilities:
@@ -67,7 +63,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                 surfaces=("library", "cli"),
                 limitations=(
                     "Delivery is at-least-once, not exactly-once.",
-                    "The built-in broker remains SQLite-backed.",
+                    "SQLite and Redis Streams backends have different deployment boundaries.",
                 ),
             )
         elif item.capability_id == "evaluation.team_trace_closure":
@@ -76,7 +72,16 @@ def default_capability_catalog() -> CapabilityCatalog:
                 maturity="shipped",
                 surfaces=("library", "cli"),
                 limitations=(
-                    "Trace and choreography use local SQLite reference stores.",
+                    "The built-in Trace projection remains SQLite-backed.",
+                ),
+            )
+        elif item.capability_id == "multiagent.resilient_choreography":
+            item = replace(
+                item,
+                maturity="shipped",
+                surfaces=("library", "cli"),
+                limitations=(
+                    "External Tool side effects still require Tool-level idempotency.",
                 ),
             )
         replacements[item.capability_id] = item
@@ -140,7 +145,7 @@ def default_capability_catalog() -> CapabilityCatalog:
             dependencies=("multiagent.coordinator", "multiagent.message_bus"),
             limitations=(
                 "Delivery is at-least-once, not exactly-once.",
-                "The built-in broker remains SQLite-backed.",
+                "SQLite and Redis Streams backends have different deployment boundaries.",
             ),
         ),
         CapabilityDescriptor(
@@ -171,7 +176,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                 "trace.durable",
             ),
             limitations=(
-                "Trace and choreography use local SQLite reference stores.",
+                "The built-in Trace projection remains SQLite-backed.",
             ),
         ),
         CapabilityDescriptor(
@@ -188,15 +193,31 @@ def default_capability_catalog() -> CapabilityCatalog:
                 "tasks.fenced_queue",
             ),
             limitations=(
-                "Outbox atomicity is local to the choreography SQLite database.",
                 "External Tool side effects still require Tool-level idempotency.",
-                "PostgreSQL and Redis Streams are v0.34 scope.",
+            ),
+        ),
+        CapabilityDescriptor(
+            capability_id="multiagent.distributed_runtime",
+            introduced_version="v0.34",
+            maturity="shipped",
+            surfaces=("library", "cli", "service"),
+            summary=(
+                "Redis Streams messaging and PostgreSQL choreography state for multi-process workers."
+            ),
+            dependencies=(
+                "multiagent.resilient_choreography",
+                "multiagent.message_bus",
+                "tasks.fenced_queue",
+            ),
+            limitations=(
+                "Redis Cluster cross-slot Lua deployment is not claimed.",
+                "PostgreSQL and Redis do not form one distributed transaction.",
+                "The Trace projection remains SQLite-backed.",
+                "No Kafka or NATS adapter is claimed.",
             ),
         ),
     )
-    missing = tuple(
-        item for item in additions if item.capability_id not in replacements
-    )
+    missing = tuple(item for item in additions if item.capability_id not in replacements)
     return CapabilityCatalog(tuple(replacements.values()) + missing)
 
 
