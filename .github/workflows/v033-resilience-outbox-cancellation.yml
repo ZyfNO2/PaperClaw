@@ -35,6 +35,7 @@ jobs:
         run: >-
           python -m ruff check
           src/paperclaw/multiagent/resilient_runtime.py
+          src/paperclaw/multiagent/ordered_outbox.py
           src/paperclaw/multiagent/cancel_cli.py
           src/paperclaw/multiagent/bus_cli.py
           tests/unit/multiagent/test_resilient_runtime.py
