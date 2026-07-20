@@ -8,21 +8,6 @@ permissions:
   contents: read
 
 jobs:
-  source-snapshot:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.37-extension-execution-closure'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - name: Package source snapshot
-        shell: bash
-        run: tar --exclude=.git -czf /tmp/paperclaw-v037-source.tgz .
-      - uses: actions/upload-artifact@v4
-        with:
-          name: paperclaw-v037-source-${{ github.run_id }}
-          path: /tmp/paperclaw-v037-source.tgz
-          if-no-files-found: error
-
   focused:
     if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.37-extension-execution-closure'
     strategy:
