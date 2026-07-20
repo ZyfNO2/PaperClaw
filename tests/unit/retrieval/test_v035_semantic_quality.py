@@ -25,18 +25,26 @@ from paperclaw.retrieval.query import RankedResult
 
 
 def candidate(chunk_id: str, document_id: str, text: str, rank: int) -> RetrievalCandidate:
+    uri = f"file:///{document_id}.md"
     digest = sha256_text(text)
     return RetrievalCandidate(
         chunk_id=chunk_id,
         document_id=document_id,
         version_id=f"version-{document_id}",
         display_name=f"{document_id}.md",
-        canonical_uri=f"file:///{document_id}.md",
+        canonical_uri=uri,
         text=text,
         content_hash=digest,
         source_hash=digest,
         chunk_config_hash="c" * 64,
-        locator=ChunkLocator(kind="line", value="1", end_value="4"),
+        locator=ChunkLocator(
+            source_uri=uri,
+            heading_path=(),
+            start_line=1,
+            end_line=4,
+            start_paragraph=0,
+            end_paragraph=0,
+        ),
         bm25_score=1.0 / rank,
         rank=rank,
     )
@@ -84,13 +92,13 @@ def test_semantic_index_is_persistent_and_version_bound(tmp_path: Path) -> None:
 
 
 def test_hybrid_rrf_and_reranker_preserve_citation_identity(tmp_path: Path) -> None:
-    lexical_relevant = candidate(
+    lexical = candidate(
         "chunk-bm25",
         "doc-bm25",
         "BM25 exact term matching is effective for lexical retrieval.",
         1,
     )
-    semantic_relevant = candidate(
+    semantic_candidate = candidate(
         "chunk-vector",
         "doc-vector",
         "Neural vector passage retrieval improves semantic recall.",
@@ -102,10 +110,9 @@ def test_hybrid_rrf_and_reranker_preserve_citation_identity(tmp_path: Path) -> N
         "A database transaction uses write ahead logging.",
         3,
     )
-
     semantic = SQLiteHashingVectorRetriever(tmp_path / "semantic.sqlite3")
     semantic.replace_documents(
-        [document(semantic_relevant), document(lexical_relevant), document(distractor)]
+        [document(semantic_candidate), document(lexical), document(distractor)]
     )
     semantic_result = semantic.query(request("neural vector passage retrieval"))
     shared_corpus = semantic_result.corpus_hash
@@ -115,7 +122,7 @@ def test_hybrid_rrf_and_reranker_preserve_citation_identity(tmp_path: Path) -> N
             request_id=retrieval_request.request_id,
             manifest_id="lexical",
             corpus_hash=shared_corpus,
-            candidates=(lexical_relevant, distractor),
+            candidates=(lexical, distractor),
             total_matches=2,
             filtered_stale=0,
             filtered_duplicates=0,
@@ -150,7 +157,7 @@ def test_hybrid_rrf_and_reranker_preserve_citation_identity(tmp_path: Path) -> N
     assert "chunk-bm25" in ids
     assert "chunk-vector" in ids
     assert reranked.candidates[0].chunk_id == "chunk-vector"
-    original = {item.chunk_id: item for item in (lexical_relevant, semantic_relevant)}
+    original = {item.chunk_id: item for item in (lexical, semantic_candidate)}
     for item in reranked.candidates:
         if item.chunk_id in original:
             assert item.locator == original[item.chunk_id].locator
