@@ -33,6 +33,9 @@ from paperclaw.multiagent.worker import Worker
 
 _TRACE_SCHEMA_VERSION = 1
 _SUCCESS_STOP_REASONS = frozenset({"completed", "all_tasks_completed"})
+_TERMINAL_TRACE_TYPES = frozenset(
+    {"run.completed", "run.failed", "run.stopped", "run.cancelled"}
+)
 
 
 def team_run_id(request_id: str) -> str:
@@ -176,8 +179,7 @@ class SQLiteTeamTraceBridge:
             return
 
         source_type = str(payload.get("event_type") or "team.event")
-        nested = payload.get("event")
-        body = dict(nested) if isinstance(nested, Mapping) else dict(payload)
+        body = _flatten_event_body(payload.get("event"), payload)
         body.update(
             {
                 "schema_version": _TRACE_SCHEMA_VERSION,
@@ -285,10 +287,15 @@ class SQLiteTeamTraceBridge:
             payload=normalized,
             created_at=created_at,
         )
-        if event_type in {"run.completed", "run.failed", "run.stopped", "run.cancelled"}:
+        if event_type in _TERMINAL_TRACE_TYPES:
             self._repository.end_run(
                 team_run_id(request_id),
-                stop_reason=str(normalized.get("error_code") or normalized.get("status") or event_type),
+                stop_reason=str(
+                    normalized.get("error_code")
+                    or normalized.get("stop_reason")
+                    or normalized.get("status")
+                    or event_type
+                ),
             )
 
 
@@ -357,6 +364,26 @@ class ObservedCoordinator(Coordinator):
             team_state=self._team_state,
             enable_verification_gate=self.enable_verification_gate,
         )
+
+
+def _flatten_event_body(nested: Any, fallback: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(nested, Mapping):
+        return dict(fallback)
+    envelope = dict(nested)
+    inner = envelope.pop("payload", None)
+    if not isinstance(inner, Mapping):
+        return envelope
+    body = dict(inner)
+    identity_fields = {
+        "team_event_id": envelope.get("event_id"),
+        "team_run_id": envelope.get("run_id"),
+        "agent_id": envelope.get("agent_id"),
+        "task_id": envelope.get("task_id"),
+        "team_sequence": envelope.get("sequence"),
+        "team_timestamp": envelope.get("timestamp"),
+    }
+    body.update({key: value for key, value in identity_fields.items() if value is not None})
+    return body
 
 
 def _timestamp(value: float) -> str:
