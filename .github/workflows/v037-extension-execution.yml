@@ -16,11 +16,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Package source snapshot
         shell: bash
-        run: tar --exclude=.git -czf paperclaw-v037-source.tgz .
+        run: tar --exclude=.git -czf /tmp/paperclaw-v037-source.tgz .
       - uses: actions/upload-artifact@v4
         with:
           name: paperclaw-v037-source-${{ github.run_id }}
-          path: paperclaw-v037-source.tgz
+          path: /tmp/paperclaw-v037-source.tgz
           if-no-files-found: error
 
   focused:
