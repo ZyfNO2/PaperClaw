@@ -34,6 +34,14 @@ from paperclaw.multiagent.contracts import (
 from paperclaw.multiagent.coordinator import Coordinator
 from paperclaw.multiagent.events import EventEnvelope, emit_team_event
 from paperclaw.multiagent.lease import LeaseManager
+from paperclaw.multiagent.observed_runtime import (
+    ObservedCoordinator,
+    ObservedWorker,
+    SQLiteTeamTraceBridge,
+    TraceUsageCollector,
+    team_conversation_id,
+    team_run_id,
+)
 from paperclaw.multiagent.permissions import PermissionGuardLite
 from paperclaw.multiagent.reliable_tool import ReliableSubagentTaskTool
 from paperclaw.multiagent.reviewer import Reviewer
@@ -55,6 +63,8 @@ __all__ = [
     "LeaseDecision",
     "LeaseManager",
     "MessageType",
+    "ObservedCoordinator",
+    "ObservedWorker",
     "PermissionDecision",
     "PermissionGuardLite",
     "ReliableSubagentTaskTool",
@@ -62,6 +72,7 @@ __all__ = [
     "Reviewer",
     "ReviewVerdict",
     "SQLiteChoreographyStateStore",
+    "SQLiteTeamTraceBridge",
     "SemanticAcceptanceJudge",
     "SemanticCoordinator",
     "SemanticJudgePolicy",
@@ -76,8 +87,11 @@ __all__ = [
     "TeamRunOutcome",
     "TeamRunRequest",
     "TeamStopReason",
+    "TraceUsageCollector",
     "Worker",
     "WorkerResult",
     "WorkerStatus",
     "emit_team_event",
+    "team_conversation_id",
+    "team_run_id",
 ]
