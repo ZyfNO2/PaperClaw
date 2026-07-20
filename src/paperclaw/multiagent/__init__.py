@@ -42,6 +42,9 @@ from paperclaw.multiagent.observed_runtime import (
     team_conversation_id,
     team_run_id,
 )
+from paperclaw.multiagent.ordered_outbox import (
+    SQLiteOrderedResilientChoreographyStore,
+)
 from paperclaw.multiagent.permissions import PermissionGuardLite
 from paperclaw.multiagent.reliable_tool import ReliableSubagentTaskTool
 from paperclaw.multiagent.resilient_runtime import (
@@ -89,6 +92,7 @@ __all__ = [
     "Reviewer",
     "ReviewVerdict",
     "SQLiteChoreographyStateStore",
+    "SQLiteOrderedResilientChoreographyStore",
     "SQLiteResilientChoreographyStore",
     "SQLiteTeamTraceBridge",
     "SemanticAcceptanceJudge",
