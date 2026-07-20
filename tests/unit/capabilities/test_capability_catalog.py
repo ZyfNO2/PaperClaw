@@ -17,6 +17,9 @@ def test_default_catalog_is_deterministic_and_dependency_complete() -> None:
     assert "project.knowledge_runtime" in ids
     assert "artifact.revisions" in ids
     assert "desktop.product_management" in ids
+    assert "multiagent.bus_choreography" in ids
+    assert "evaluation.aggregate_dashboard" in ids
+    assert "evaluation.team_trace_closure" in ids
 
 
 def test_catalog_distinguishes_delivered_foundations_from_planned_work() -> None:
@@ -32,12 +35,15 @@ def test_catalog_distinguishes_delivered_foundations_from_planned_work() -> None
     planned = {item.capability_id for item in catalog.select(maturity="planned")}
 
     assert "agent.react_runtime" in shipped
+    assert "evaluation.team_trace_closure" in shipped
     assert "worker.remote_gateway" in foundation
     assert "multiagent.message_bus" in foundation
+    assert "multiagent.bus_choreography" in foundation
+    assert "evaluation.aggregate_dashboard" in foundation
     assert "project.knowledge_runtime" in foundation
     assert "artifact.revisions" in foundation
     assert "desktop.product_management" in experimental
-    assert "evaluation.aggregate_dashboard" in planned
+    assert "evaluation.aggregate_dashboard" not in planned
     assert "artifact.revisions" not in planned
     assert shipped.isdisjoint(foundation)
 

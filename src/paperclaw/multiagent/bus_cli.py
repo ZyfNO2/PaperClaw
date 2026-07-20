@@ -1,4 +1,4 @@
-"""CLI for one durable bus-driven MultiAgent run."""
+"""CLI for one durable bus-driven and trace-observable MultiAgent run."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import sys
 from uuid import uuid4
 
 from paperclaw.cli import load_dotenv
-from paperclaw.eval.aggregate import MeteredChatModel, PricingTable, UsageCollector
+from paperclaw.eval.aggregate import MeteredChatModel, PricingTable
 from paperclaw.message_bus import SQLiteMessageBusStore
 from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.multiagent.bus_runtime import (
@@ -18,7 +18,12 @@ from paperclaw.multiagent.bus_runtime import (
     SQLiteChoreographyStateStore,
     TeamRunRequest,
 )
-from paperclaw.multiagent.coordinator import Coordinator
+from paperclaw.multiagent.observed_runtime import (
+    ObservedCoordinator,
+    SQLiteTeamTraceBridge,
+    TraceUsageCollector,
+    team_run_id,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,6 +35,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--state-database",
         type=Path,
         default=Path(".paperclaw/team-choreography.sqlite3"),
+    )
+    parser.add_argument(
+        "--trace-database",
+        type=Path,
+        default=Path(".paperclaw/traces.sqlite3"),
+        help="durable SessionEvent database consumed by paperclaw-observe",
     )
     parser.add_argument("--pricing", type=Path)
     parser.add_argument("--output", type=Path)
@@ -53,7 +64,9 @@ def main(argv: list[str] | None = None) -> int:
 
     database = _resolve_under_workspace(workspace, args.database)
     state_database = _resolve_under_workspace(workspace, args.state_database)
-    bus = SQLiteMessageBusStore(database)
+    trace_database = _resolve_under_workspace(workspace, args.trace_database)
+    raw_bus = SQLiteMessageBusStore(database)
+    trace_bridge = SQLiteTeamTraceBridge(raw_bus, trace_database)
     state = SQLiteChoreographyStateStore(state_database)
 
     def coordinator_factory(budget, event_handler, usage):
@@ -65,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
                 model=os.environ.get("PAPERCLAW_MODEL"),
             )
 
-        return Coordinator(
+        return ObservedCoordinator(
             model_factory,
             workspace,
             budget=budget,
@@ -74,15 +87,26 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     runtime = BusDrivenTeamRuntime(
-        bus,
+        trace_bridge,
         state,
         coordinator_factory,
         consumer_id=args.consumer_id,
         max_attempts=args.max_attempts,
-        usage_factory=lambda: UsageCollector(pricing),
+        usage_factory=lambda: TraceUsageCollector(
+            pricing,
+            trace_bridge,
+            request.request_id,
+        ),
     )
-    outcome = runtime.execute(request)
-    encoded = json.dumps(outcome.to_dict(), ensure_ascii=False, indent=2) + "\n"
+    try:
+        outcome = runtime.execute(request)
+        payload = outcome.to_dict()
+        payload["run_id"] = team_run_id(request.request_id)
+        payload["trace_database"] = str(trace_database)
+        encoded = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    finally:
+        trace_bridge.close()
+
     if args.output:
         output = _resolve_under_workspace(workspace, args.output)
         output.parent.mkdir(parents=True, exist_ok=True)

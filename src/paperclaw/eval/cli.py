@@ -9,13 +9,20 @@ from pathlib import Path
 import sys
 
 from paperclaw.eval.aggregate import PricingTable, aggregate_runs, render_aggregate_eval_text
+from paperclaw.multiagent.observed_runtime import team_run_id
 from paperclaw.trace import SQLiteTraceReader, TraceRedactor
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="paperclaw-observe")
     parser.add_argument("--database", type=Path, required=True)
-    parser.add_argument("--run-id", action="append", required=True)
+    identity = parser.add_mutually_exclusive_group(required=True)
+    identity.add_argument("--run-id", action="append")
+    identity.add_argument(
+        "--request-id",
+        action="append",
+        help="team request id emitted by paperclaw-team-run",
+    )
     parser.add_argument("--pricing", type=Path)
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument("--output", type=Path)
@@ -35,9 +42,11 @@ def main(argv: list[str] | None = None) -> int:
         args.database,
         redactor=TraceRedactor(secret_values=[os.environ.get("PAPERCLAW_API_KEY", "")]),
     )
+    run_ids = list(args.run_id or ())
+    run_ids.extend(team_run_id(request_id) for request_id in (args.request_id or ()))
     report = aggregate_runs(
         reader,
-        args.run_id,
+        run_ids,
         pricing=pricing,
         require_terminal=not args.allow_partial,
     )
