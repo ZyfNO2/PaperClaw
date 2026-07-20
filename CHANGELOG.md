@@ -4,6 +4,35 @@ All notable PaperClaw changes are recorded here. Versions are developed on isola
 branches and are intended to be squash-merged so one released version contributes
 one commit to `main`.
 
+## [0.35.0] — Unreleased
+
+### Added
+
+- persistent SQLite hashing-vector retrieval with encoder and corpus fingerprints;
+- bounded atomic replace/upsert and deterministic cosine ranking;
+- named retrieval backend adapters and explicit weighted-RRF configuration;
+- evidence-aware reranking that preserves citation hashes, versions and locators;
+- benchmark and observation contracts for research-quality evaluation;
+- Recall@5/10, MRR, nDCG@10 and document Recall@10;
+- citation precision/recall, grounded-claim rate, claim coverage and abstention accuracy;
+- latency, token, estimated-cost and baseline-delta reporting;
+- `paperclaw-retrieval-quality` CLI and deterministic example fixtures;
+- Linux/Windows focused tests, package smoke and full non-live regression gate.
+
+### Changed
+
+- package version updated to `0.35.0`;
+- `HybridRetriever` supports both the original tuple API and named adapters;
+- semantic persistence uses the canonical version-bound `ChunkLocator` contract;
+- version workflows are scoped to their own development branches.
+
+### Known limits
+
+- local vectors use deterministic feature hashing, not transformer embeddings;
+- no hosted embedding service or external vector database is bundled;
+- groundedness uses explicit benchmark support labels, not model self-grading;
+- benchmark conclusions depend on the quality of curated relevance and claim labels.
+
 ## [0.34.0] — Unreleased
 
 ### Added
