@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from paperclaw.cli import load_dotenv
 from paperclaw.eval.aggregate import MeteredChatModel, PricingTable
-from paperclaw.message_bus import SQLiteMessageBusStore
+from paperclaw.message_bus import RedisStreamsMessageBusStore, SQLiteMessageBusStore
 from paperclaw.models.adapters import OpenAICompatibleModel
 from paperclaw.multiagent.bus_runtime import TeamRunRequest
 from paperclaw.multiagent.observed_runtime import (
@@ -23,6 +23,9 @@ from paperclaw.multiagent.observed_runtime import (
 from paperclaw.multiagent.ordered_outbox import (
     SQLiteOrderedResilientChoreographyStore,
 )
+from paperclaw.multiagent.postgres_store import (
+    PostgreSQLResilientChoreographyStore,
+)
 from paperclaw.multiagent.resilient_runtime import ResilientBusDrivenTeamRuntime
 
 
@@ -30,12 +33,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="paperclaw-team-run")
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
+    parser.add_argument("--bus-backend", choices=("sqlite", "redis"), default="sqlite")
     parser.add_argument("--database", type=Path, default=Path(".paperclaw/team-bus.sqlite3"))
+    parser.add_argument("--redis-url", default=os.environ.get("PAPERCLAW_REDIS_URL"))
+    parser.add_argument("--redis-namespace", default="paperclaw")
+    parser.add_argument("--state-backend", choices=("sqlite", "postgres"), default="sqlite")
     parser.add_argument(
         "--state-database",
         type=Path,
         default=Path(".paperclaw/team-choreography.sqlite3"),
     )
+    parser.add_argument("--postgres-dsn", default=os.environ.get("PAPERCLAW_POSTGRES_DSN"))
+    parser.add_argument("--postgres-schema", default="paperclaw")
     parser.add_argument(
         "--trace-database",
         type=Path,
@@ -62,12 +71,29 @@ def main(argv: list[str] | None = None) -> int:
     plan.setdefault("request_id", f"team-{uuid4().hex[:16]}")
     request = TeamRunRequest.from_payload(plan)
 
-    database = _resolve_under_workspace(workspace, args.database)
-    state_database = _resolve_under_workspace(workspace, args.state_database)
     trace_database = _resolve_under_workspace(workspace, args.trace_database)
-    raw_bus = SQLiteMessageBusStore(database)
+    if args.bus_backend == "redis":
+        if not args.redis_url:
+            raise SystemExit("--redis-url or PAPERCLAW_REDIS_URL is required")
+        raw_bus = RedisStreamsMessageBusStore(
+            args.redis_url,
+            namespace=args.redis_namespace,
+        )
+    else:
+        database = _resolve_under_workspace(workspace, args.database)
+        raw_bus = SQLiteMessageBusStore(database)
     trace_bridge = SQLiteTeamTraceBridge(raw_bus, trace_database)
-    state = SQLiteOrderedResilientChoreographyStore(state_database)
+
+    if args.state_backend == "postgres":
+        if not args.postgres_dsn:
+            raise SystemExit("--postgres-dsn or PAPERCLAW_POSTGRES_DSN is required")
+        state = PostgreSQLResilientChoreographyStore(
+            args.postgres_dsn,
+            schema=args.postgres_schema,
+        )
+    else:
+        state_database = _resolve_under_workspace(workspace, args.state_database)
+        state = SQLiteOrderedResilientChoreographyStore(state_database)
 
     def coordinator_factory(budget, event_handler, usage):
         def model_factory(_agent_id: str):
@@ -103,6 +129,10 @@ def main(argv: list[str] | None = None) -> int:
         payload = outcome.to_dict()
         payload["run_id"] = team_run_id(request.request_id)
         payload["trace_database"] = str(trace_database)
+        payload["backends"] = {
+            "message_bus": args.bus_backend,
+            "choreography_state": args.state_backend,
+        }
         payload["resilience"] = {
             "terminal_outbox": True,
             "ordered_outbox": True,
