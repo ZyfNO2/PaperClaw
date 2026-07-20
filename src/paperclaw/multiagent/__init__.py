@@ -46,6 +46,9 @@ from paperclaw.multiagent.ordered_outbox import (
     SQLiteOrderedResilientChoreographyStore,
 )
 from paperclaw.multiagent.permissions import PermissionGuardLite
+from paperclaw.multiagent.postgres_store import (
+    PostgreSQLResilientChoreographyStore,
+)
 from paperclaw.multiagent.reliable_tool import ReliableSubagentTaskTool
 from paperclaw.multiagent.resilient_runtime import (
     FailureDisposition,
@@ -85,6 +88,7 @@ __all__ = [
     "OutboxRecord",
     "PermissionDecision",
     "PermissionGuardLite",
+    "PostgreSQLResilientChoreographyStore",
     "ReliableSubagentTaskTool",
     "ResilientAttemptState",
     "ResilientBusDrivenTeamRuntime",
