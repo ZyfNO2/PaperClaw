@@ -1,4 +1,4 @@
-"""Offline retrieval metrics for deterministic BM25 fixtures."""
+"""Offline retrieval metrics for deterministic retrieval fixtures."""
 
 from __future__ import annotations
 
@@ -38,7 +38,9 @@ class RetrievalJudgment:
         return cls(
             query_id=query_id,
             retrieved_ids=tuple(retrieved_ids),
-            relevance=tuple(sorted((str(key), int(value)) for key, value in relevance.items())),
+            relevance=tuple(
+                sorted((str(key), int(value)) for key, value in relevance.items())
+            ),
         )
 
     @property
@@ -68,6 +70,28 @@ class RetrievalMetrics:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class RetrievalEvalCase:
+    """Binary relevance contract used by the v0.35 quality evaluator."""
+
+    case_id: str
+    relevant_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.case_id.strip():
+            raise ValueError("case_id must be non-empty")
+        if len(set(self.relevant_ids)) != len(self.relevant_ids):
+            raise ValueError("relevant_ids must be unique")
+
+
+@dataclass(frozen=True)
+class RankedIdMetrics:
+    recall_at_5: float
+    recall_at_10: float
+    mrr: float
+    ndcg_at_10: float
 
 
 def recall_at_k(
@@ -108,7 +132,9 @@ def ndcg_at_k(
 
     _validate_k(k)
     actual = [relevance.get(item_id, 0) for item_id in retrieved_ids[:k]]
-    ideal = sorted((grade for grade in relevance.values() if grade > 0), reverse=True)[:k]
+    ideal = sorted(
+        (grade for grade in relevance.values() if grade > 0), reverse=True
+    )[:k]
     ideal_score = _dcg(ideal)
     if ideal_score == 0.0:
         return 1.0
@@ -147,10 +173,51 @@ def evaluate_suite(
     )
 
 
+def evaluate_ranked_ids(
+    case: RetrievalEvalCase,
+    ranked_ids: Sequence[str],
+) -> RankedIdMetrics:
+    """Evaluate the fixed cutoffs used by research-quality reports.
+
+    Cases with no relevant identifiers are retrieval-neutral. Abstention correctness
+    is evaluated separately, so these cases receive perfect neutral retrieval scores
+    instead of lowering the aggregate because no relevant item can exist.
+    """
+
+    if len(set(ranked_ids)) != len(ranked_ids):
+        raise ValueError("ranked_ids must not contain duplicates")
+    if not case.relevant_ids:
+        return RankedIdMetrics(1.0, 1.0, 1.0, 1.0)
+    relevance = {item_id: 1 for item_id in case.relevant_ids}
+    return RankedIdMetrics(
+        recall_at_5=round(recall_at_k(ranked_ids, relevance, k=5), 6),
+        recall_at_10=round(recall_at_k(ranked_ids, relevance, k=10), 6),
+        mrr=round(reciprocal_rank(ranked_ids, relevance), 6),
+        ndcg_at_10=round(ndcg_at_k(ranked_ids, relevance, k=10), 6),
+    )
+
+
 def _dcg(grades: Sequence[int]) -> float:
-    return sum((2**grade - 1) / math.log2(rank + 1) for rank, grade in enumerate(grades, start=1))
+    return sum(
+        (2**grade - 1) / math.log2(rank + 1)
+        for rank, grade in enumerate(grades, start=1)
+    )
 
 
 def _validate_k(k: int) -> None:
     if k <= 0:
         raise ValueError("k must be positive")
+
+
+__all__ = [
+    "RankedIdMetrics",
+    "RetrievalEvalCase",
+    "RetrievalJudgment",
+    "RetrievalMetrics",
+    "evaluate_judgment",
+    "evaluate_ranked_ids",
+    "evaluate_suite",
+    "ndcg_at_k",
+    "recall_at_k",
+    "reciprocal_rank",
+]
