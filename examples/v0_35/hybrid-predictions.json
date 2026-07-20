@@ -1,0 +1,36 @@
+{
+  "observations": [
+    {
+      "case_id": "hybrid-retrieval",
+      "ranked_chunk_ids": ["chunk-rrf", "chunk-vector", "chunk-bm25"],
+      "ranked_document_ids": ["doc-fusion", "doc-semantic", "doc-lexical"],
+      "cited_chunk_ids": ["chunk-rrf", "chunk-vector", "chunk-bm25"],
+      "cited_document_ids": ["doc-fusion", "doc-semantic", "doc-lexical"],
+      "claim_support": {
+        "claim-lexical": ["chunk-bm25"],
+        "claim-semantic": ["chunk-vector"],
+        "claim-fusion": ["chunk-rrf"]
+      },
+      "answer_text": "BM25 and vector retrieval are combined with weighted RRF.",
+      "abstained": false,
+      "latency_ms": 31,
+      "input_tokens": 30,
+      "output_tokens": 15,
+      "estimated_cost_usd": 0.0003
+    },
+    {
+      "case_id": "unsupported-current-claim",
+      "ranked_chunk_ids": [],
+      "ranked_document_ids": [],
+      "cited_chunk_ids": [],
+      "cited_document_ids": [],
+      "claim_support": {},
+      "answer_text": "Insufficient evidence.",
+      "abstained": true,
+      "latency_ms": 9,
+      "input_tokens": 8,
+      "output_tokens": 3,
+      "estimated_cost_usd": 0.00005
+    }
+  ]
+}
