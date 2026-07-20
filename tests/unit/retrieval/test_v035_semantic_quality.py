@@ -19,9 +19,9 @@ from paperclaw.retrieval import (
     compare_quality_reports,
     evaluate_research_quality,
 )
+from paperclaw.retrieval.contracts import sha256_text
 from paperclaw.retrieval.quality_cli import main as quality_main
 from paperclaw.retrieval.query import RankedResult
-from paperclaw.retrieval.contracts import sha256_text
 
 
 def candidate(chunk_id: str, document_id: str, text: str, rank: int) -> RetrievalCandidate:
@@ -48,7 +48,6 @@ def document(item: RetrievalCandidate) -> SemanticDocument:
 
 def request(query: str, *, top_k: int = 3) -> RetrievalRequest:
     return RetrievalRequest(
-        request_id="request-1",
         query=query,
         top_k=top_k,
         candidate_pool_size=20,
@@ -56,7 +55,7 @@ def request(query: str, *, top_k: int = 3) -> RetrievalRequest:
     )
 
 
-def test_semantic_index_is_persistent_and_version_bound(tmp_path: Path):
+def test_semantic_index_is_persistent_and_version_bound(tmp_path: Path) -> None:
     relevant = candidate(
         "chunk-neural",
         "doc-neural",
@@ -84,7 +83,7 @@ def test_semantic_index_is_persistent_and_version_bound(tmp_path: Path):
     assert reopened.query(request("neural vector")).candidates[0].chunk_id == "chunk-neural"
 
 
-def test_hybrid_rrf_and_reranker_preserve_citation_identity(tmp_path: Path):
+def test_hybrid_rrf_and_reranker_preserve_citation_identity(tmp_path: Path) -> None:
     lexical_relevant = candidate(
         "chunk-bm25",
         "doc-bm25",
@@ -108,25 +107,25 @@ def test_hybrid_rrf_and_reranker_preserve_citation_identity(tmp_path: Path):
     semantic.replace_documents(
         [document(semantic_relevant), document(lexical_relevant), document(distractor)]
     )
+    semantic_result = semantic.query(request("neural vector passage retrieval"))
+    shared_corpus = semantic_result.corpus_hash
 
     def lexical_query(retrieval_request: RetrievalRequest) -> RankedResult:
         return RankedResult(
             request_id=retrieval_request.request_id,
             manifest_id="lexical",
-            corpus_hash="shared-corpus",
+            corpus_hash=shared_corpus,
             candidates=(lexical_relevant, distractor),
             total_matches=2,
             filtered_stale=0,
             filtered_duplicates=0,
         )
 
-    semantic_result = semantic.query(request("neural vector passage retrieval"))
-
     def semantic_query(retrieval_request: RetrievalRequest) -> RankedResult:
         return RankedResult(
             request_id=retrieval_request.request_id,
             manifest_id=semantic_result.manifest_id,
-            corpus_hash="shared-corpus",
+            corpus_hash=shared_corpus,
             candidates=semantic_result.candidates,
             total_matches=semantic_result.total_matches,
             filtered_stale=0,
@@ -158,7 +157,7 @@ def test_hybrid_rrf_and_reranker_preserve_citation_identity(tmp_path: Path):
             assert item.content_hash == original[item.chunk_id].content_hash
 
 
-def test_research_quality_report_separates_retrieval_grounding_and_cost():
+def test_research_quality_report_separates_retrieval_grounding_and_cost() -> None:
     cases = (
         ResearchQualityCase(
             case_id="case-1",
@@ -198,7 +197,7 @@ def test_research_quality_report_separates_retrieval_grounding_and_cost():
             latency_ms=10,
         ),
     )
-    hybrid = (
+    improved = (
         ResearchAnswerObservation(
             case_id="case-1",
             ranked_chunk_ids=("chunk-vector", "chunk-bm25"),
@@ -227,18 +226,18 @@ def test_research_quality_report_separates_retrieval_grounding_and_cost():
     )
 
     baseline_report = evaluate_research_quality(cases, baseline)
-    hybrid_report = evaluate_research_quality(cases, hybrid)
-    comparison = compare_quality_reports(baseline_report, hybrid_report)
+    improved_report = evaluate_research_quality(cases, improved)
+    comparison = compare_quality_reports(baseline_report, improved_report)
 
-    assert hybrid_report.mean_recall_at_10 > baseline_report.mean_recall_at_10
-    assert hybrid_report.citation_precision > baseline_report.citation_precision
-    assert hybrid_report.grounded_claim_rate > baseline_report.grounded_claim_rate
-    assert hybrid_report.abstention_accuracy == 1.0
+    assert improved_report.mean_recall_at_10 > baseline_report.mean_recall_at_10
+    assert improved_report.citation_precision > baseline_report.citation_precision
+    assert improved_report.grounded_claim_rate > baseline_report.grounded_claim_rate
+    assert improved_report.abstention_accuracy == 1.0
     assert comparison.deltas["mean_recall_at_10"] > 0
     assert comparison.deltas["total_estimated_cost_usd"] > 0
 
 
-def test_quality_cli_compares_predictions(tmp_path: Path, capsys):
+def test_quality_cli_compares_predictions(tmp_path: Path, capsys) -> None:
     benchmark = tmp_path / "benchmark.json"
     baseline = tmp_path / "baseline.json"
     candidate_path = tmp_path / "candidate.json"
