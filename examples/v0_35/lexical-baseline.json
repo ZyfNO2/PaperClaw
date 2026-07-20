@@ -1,0 +1,34 @@
+{
+  "observations": [
+    {
+      "case_id": "hybrid-retrieval",
+      "ranked_chunk_ids": ["chunk-bm25", "chunk-other"],
+      "ranked_document_ids": ["doc-lexical", "doc-other"],
+      "cited_chunk_ids": ["chunk-bm25", "chunk-other"],
+      "cited_document_ids": ["doc-lexical"],
+      "claim_support": {
+        "claim-lexical": ["chunk-bm25"]
+      },
+      "answer_text": "BM25 provides lexical matching.",
+      "abstained": false,
+      "latency_ms": 18,
+      "input_tokens": 20,
+      "output_tokens": 10,
+      "estimated_cost_usd": 0.0002
+    },
+    {
+      "case_id": "unsupported-current-claim",
+      "ranked_chunk_ids": [],
+      "ranked_document_ids": [],
+      "cited_chunk_ids": [],
+      "cited_document_ids": [],
+      "claim_support": {},
+      "answer_text": "A speculative answer.",
+      "abstained": false,
+      "latency_ms": 8,
+      "input_tokens": 8,
+      "output_tokens": 8,
+      "estimated_cost_usd": 0.0001
+    }
+  ]
+}

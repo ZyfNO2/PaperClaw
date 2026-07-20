@@ -1,0 +1,105 @@
+name: v0.35 Hybrid Retrieval Quality
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.35-hybrid-retrieval-quality-eval'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - name: Run semantic, hybrid and quality tests
+        run: >-
+          python -m pytest
+          tests/unit/retrieval/test_v035_semantic_quality.py
+          tests/unit/retrieval
+          --junitxml=v035-${{ matrix.os }}.xml -vv
+      - name: Run example baseline comparison
+        run: >-
+          paperclaw-retrieval-quality
+          --benchmark examples/v0_35/research-quality-benchmark.json
+          --predictions examples/v0_35/hybrid-predictions.json
+          --baseline examples/v0_35/lexical-baseline.json
+          --format text
+      - name: Correctness lint
+        run: >-
+          python -m ruff check
+          src/paperclaw/retrieval/evaluation.py
+          src/paperclaw/retrieval/hybrid.py
+          src/paperclaw/retrieval/semantic.py
+          src/paperclaw/retrieval/rerank.py
+          src/paperclaw/retrieval/quality_eval.py
+          src/paperclaw/retrieval/quality_cli.py
+          src/paperclaw/retrieval/__init__.py
+          tests/unit/retrieval/test_v035_semantic_quality.py
+          --select E9,F63,F7,F82
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v035-focused-${{ matrix.os }}-${{ github.run_id }}
+          path: v035-${{ matrix.os }}.xml
+
+  package-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.35-hybrid-retrieval-quality-eval'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build
+      - run: python -m build
+      - name: Install wheel
+        shell: bash
+        run: |
+          wheel=$(find dist -maxdepth 1 -name '*.whl' -print -quit)
+          python -m pip install --force-reinstall "$wheel"
+      - run: python -c "from importlib.metadata import version; assert version('paperclaw') == '0.35.0'"
+      - run: paperclaw-retrieval-quality --help
+      - run: paperclaw-team-run --help
+      - run: paperclaw-observe --help
+
+  full-non-live:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.35-hybrid-retrieval-quality-eval'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - name: Full repository regression without external services
+        run: >-
+          python -m pytest
+          -m "not real_llm and not distributed"
+          --junitxml=v035-full.xml
+          --report-log=v035-full.jsonl -q
+      - name: Repository correctness lint
+        run: python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v035-full-${{ github.run_id }}
+          path: |
+            v035-full.xml
+            v035-full.jsonl

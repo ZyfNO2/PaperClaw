@@ -2,50 +2,160 @@
 
 PaperClaw 是一个面向 Coding、Research 与多 Agent 工作流的可审计 Agent Runtime。
 
-当前开发版本：**0.34.0**。v0.34 在 v0.33 的 Outbox、恢复与取消基础上，引入真实
-Redis Streams Message Bus 与 PostgreSQL Choreography Store，并通过多个独立 Python
-进程共享同一 Consumer Group 的验收。
+当前开发版本：**0.35.0**。v0.35 在真实 Redis/PostgreSQL Multi-Agent Runtime 之外，补齐了
+本地语义向量检索、weighted RRF、证据感知 reranker，以及可复现的科研质量评测。
 
-## 当前主链路
+## 当前能力主线
 
 ```text
-JSON Team Plan
-  -> paperclaw-team-run
-  -> Redis Streams or SQLite Message Bus
-  -> existing Coordinator / Worker / Reviewer
-  -> PostgreSQL or SQLite terminal state + ordered Outbox
-  -> exact-idempotent terminal publication
-  -> contiguous logical Ack
-  -> SQLite Trace projection / Aggregate Eval
+Team Plan
+  -> SQLite or Redis Streams Message Bus
+  -> Coordinator / Worker / Reviewer
+  -> SQLite or PostgreSQL terminal state + ordered Outbox
+  -> durable Trace / Aggregate Eval
+
+Project Knowledge
+  -> BM25 + persistent local semantic vectors
+  -> weighted reciprocal-rank fusion
+  -> evidence-aware citation-preserving reranker
+  -> retrieval / citation / grounding / abstention / cost evaluation
 ```
 
-`Coordinator` 仍是唯一调度权威。Redis 和 PostgreSQL 实现的是既有接口，不引入另一套
-DAG、Worker、Reviewer、预算、租约或取消协议。
+`Coordinator` 仍是唯一调度权威。Hybrid Retrieval 继续使用已有 `RetrievalCandidate`、
+`RankedResult`、版本 Hash 和 `ChunkLocator`，没有引入旁路 Citation 模型。
 
 ## 安装
-
-本地 SQLite 运行：
 
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
-只安装分布式后端依赖：
+分布式后端：
 
 ```bash
 python -m pip install -e ".[distributed]"
 ```
 
-配置 OpenAI-compatible Provider：
+## v0.35 Hybrid Retrieval
 
-```bash
-export PAPERCLAW_API_KEY="..."
-export PAPERCLAW_BASE_URL="https://api.mistral.ai/v1"
-export PAPERCLAW_MODEL="mistral-small-latest"
-export PAPERCLAW_PROVIDER="mistral"
+公开组件：
+
+```python
+from paperclaw.retrieval import (
+    EvidenceAwareReranker,
+    HybridRetriever,
+    RetrievalBackendAdapter,
+    RerankedHybridRetriever,
+    SQLiteBM25Retriever,
+    SQLiteHashingVectorRetriever,
+    WeightedRRFConfig,
+)
 ```
 
-## SQLite 单机模式
+链路：
+
+```text
+SQLiteBM25Retriever
+  + SQLiteHashingVectorRetriever
+  -> HybridRetriever(weighted RRF)
+  -> RerankedHybridRetriever(EvidenceAwareReranker)
+  -> version/hash/locator-bound candidates
+```
+
+### 本地语义向量
+
+`SQLiteHashingVectorRetriever`：
+
+- 使用 word、word bigram 与 character n-gram；
+- signed feature hashing；
+- sparse L2-normalized vector；
+- SQLite 持久化；
+- encoder fingerprint；
+- corpus fingerprint；
+- 原子 corpus replace 与 bounded upsert；
+- deterministic cosine ranking；
+- 保留 document/version/content/source/chunk-config hash 与完整 `ChunkLocator`。
+
+这是一个真实的本地向量检索后端，但**不是 transformer embedding**，也不声称等价于托管
+Embedding API 或外部向量数据库。
+
+### Weighted RRF
+
+兼容原有 tuple API：
+
+```python
+HybridRetriever(
+    (
+        ("bm25", bm25, 1.0),
+        ("semantic", semantic, 1.4),
+    )
+)
+```
+
+也支持显式命名配置：
+
+```python
+HybridRetriever(
+    (
+        RetrievalBackendAdapter("bm25", bm25),
+        RetrievalBackendAdapter("semantic", semantic),
+    ),
+    config=WeightedRRFConfig(
+        backend_weights={"bm25": 1.0, "semantic": 1.4},
+        candidate_pool_size=50,
+    ),
+)
+```
+
+融合要求所有 backend 返回同一 active corpus，并对同一 `chunk_id` 保持一致的 Citation
+Identity。冲突会 fail-closed。
+
+### Evidence-aware Reranker
+
+Reranker 使用可观察信号：
+
+- exact phrase；
+- query-token coverage；
+- display name、source URI、heading path 与 locator range overlap；
+- original rank prior；
+- bounded length penalty；
+- source diversity penalty。
+
+Reranker 只修改排序和诊断 Score，不修改文档版本、内容 Hash、Locator 或 Citation Identity。
+
+## v0.35 Research Quality Eval
+
+CLI：
+
+```bash
+paperclaw-retrieval-quality \
+  --benchmark examples/v0_35/research-quality-benchmark.json \
+  --predictions examples/v0_35/hybrid-predictions.json \
+  --baseline examples/v0_35/lexical-baseline.json
+```
+
+当前指标：
+
+- Recall@5 / Recall@10；
+- MRR；
+- nDCG@10；
+- Document Recall@10；
+- Citation Precision / Recall；
+- Grounded Claim Rate；
+- Required Claim Coverage；
+- Answer Term Coverage；
+- Abstention Accuracy；
+- latency；
+- input/output/total tokens；
+- estimated cost；
+- baseline delta。
+
+Groundedness 使用显式 `claim_support` observation 和人工维护的相关性标签，不让答案生成模型
+给自己打分。评测结论取决于 benchmark 标签质量。
+
+## Team Runtime
+
+### SQLite 模式
 
 ```bash
 paperclaw-team-run \
@@ -58,143 +168,45 @@ paperclaw-team-run \
   --trace-database .paperclaw/traces.sqlite3
 ```
 
-## Redis + PostgreSQL 多进程模式
-
-环境变量：
+### Redis + PostgreSQL 模式
 
 ```bash
 export PAPERCLAW_REDIS_URL="redis://localhost:6379/0"
 export PAPERCLAW_POSTGRES_DSN="postgresql://paperclaw:paperclaw@localhost:5432/paperclaw"
-```
 
-运行：
-
-```bash
 paperclaw-team-run \
   --workspace . \
   --plan examples/v0_31/team-plan.json \
   --bus-backend redis \
   --redis-url "$PAPERCLAW_REDIS_URL" \
-  --redis-namespace paperclaw-prod \
   --state-backend postgres \
   --postgres-dsn "$PAPERCLAW_POSTGRES_DSN" \
-  --postgres-schema paperclaw \
   --trace-database .paperclaw/traces.sqlite3
 ```
 
-当前 CLI 是“一次提交并等待终态”的入口。多个 Runtime 进程可以使用同一个
-`--consumer-id` 和相同 Redis/PostgreSQL 配置，共享 Consumer Group 与 Choreography State。
+v0.34 提供：
 
-## v0.34 Redis Streams Message Bus
+- Redis Streams Topic；
+- Lua 原子 Sequence、Capacity、Idempotency 与 append；
+- Consumer Group 与 `XAUTOCLAIM`；
+- 乱序物理 Ack、连续逻辑 Ack Cursor；
+- PostgreSQL Attempt、Terminal Snapshot 与 Ordered Outbox；
+- `FOR UPDATE SKIP LOCKED` Claim；
+- 两个独立进程共享 Consumer Group 的真实验收。
 
-公开实现：
-
-```python
-from paperclaw.message_bus import RedisStreamsMessageBusStore
-```
-
-特性：
-
-- 一个 Redis Stream 对应一个逻辑 Topic；
-- Lua 原子完成容量检查、Topic Sequence、Stream append、幂等绑定和审计事件；
-- 幂等范围与 SQLite 一致：`(topic, sender_id, idempotency_key)`；
-- 每个逻辑 `consumer_id` 对应一个 Consumer Group；
-- 每个进程使用独立 Consumer 名称；
-- `XAUTOCLAIM` 回收崩溃进程遗留的 Pending Entry；
-- direct recipient 在 Consumer Group 内进行资格检查；
-- Redis `XACK` 可以乱序发生，但 PaperClaw 只推进连续的逻辑 Ack Cursor；
-- Message Bus audit events、count 和 latest sequence 保留。
-
-### 连续 Ack
-
-假设两个进程分别完成 Sequence 2 和 Sequence 1：
-
-```text
-Ack(2) -> logical cursor remains 0
-Ack(1) -> logical cursor advances to 2
-```
-
-因此上游不会把尚未确认的 Sequence 1 错误地视为已完成。
-
-## v0.34 PostgreSQL Choreography Store
-
-公开实现：
-
-```python
-from paperclaw.multiagent import PostgreSQLResilientChoreographyStore
-```
-
-一个 PostgreSQL 事务写入：
-
-- attempt state；
-- failure category/disposition；
-- terminal snapshot；
-- ordered terminal Outbox。
-
-Outbox 使用显式 `ordinal`，不依赖哈希 ID 或时间戳排序。跨进程 Publisher 可以使用：
-
-```sql
-FOR UPDATE SKIP LOCKED
-```
-
-安全 Claim 不同 Outbox 行，并支持过期 Claim 接管。
-
-## v0.33 Resilient Choreography
-
-终态顺序：
+v0.33 提供：
 
 ```text
 Coordinator result
-  -> commit terminal state + ordered Outbox
-  -> publish with stable idempotency key
-  -> mark Outbox delivered
-  -> Ack request
+  -> terminal state + ordered Outbox in one transaction
+  -> exact-idempotent publication
+  -> mark delivered
+  -> request Ack
 ```
 
-恢复规则：
+并包含 durable cancellation、fault injection、retryable/permanent/unknown 分类和 DLQ。
 
-- terminal commit 后崩溃：不重新运行 Coordinator，只补发 Outbox；
-- publish 后、delivered 标记前崩溃：按原幂等键重放，不重复产生消息；
-- delivered 后、Ack 前崩溃：只补 Ack；
-- Outbox 未完全送达时，请求不能 Ack。
-
-失败分类：
-
-| 分类 | 默认行为 |
-|---|---|
-| `retryable` | Timeout、Connection、Interrupted、OS transport 错误，有界重试 |
-| `permanent` | 无效输入、类型、权限、缺失配置，首次即 DLQ |
-| `unknown` | 无法安全分类时按 `max_attempts` 有界重试 |
-
-## Durable Cancellation
-
-SQLite：
-
-```bash
-paperclaw-team-cancel \
-  --bus-backend sqlite \
-  --database .paperclaw/team-bus.sqlite3 \
-  --request-id interview-research-check \
-  --task-id runtime-review
-```
-
-Redis：
-
-```bash
-paperclaw-team-cancel \
-  --bus-backend redis \
-  --redis-url "$PAPERCLAW_REDIS_URL" \
-  --redis-namespace paperclaw-prod \
-  --request-id interview-research-check \
-  --task-id runtime-review
-```
-
-取消消息调用现有 `Coordinator.cancel(task_id, tasks)`，继续复用 Worker cooperative cancel 与
-subprocess-tree termination。
-
-## v0.32 Trace / Eval Closure
-
-同一次运行使用稳定身份：
+v0.32 提供稳定身份：
 
 ```text
 request_id -> team_run_id(request_id) -> durable Trace -> Aggregate Eval
@@ -209,98 +221,55 @@ paperclaw-observe \
   --pricing examples/v0_31/pricing.example.json
 ```
 
-当前 Trace projection 仍使用本地 SQLite。v0.34 将 Message Bus 和 Choreography State
-扩展到共享服务，但没有声称 Trace 已经是多机共享数据库。
-
-Aggregate Eval 当前统计：
-
-- Run success rate；
-- Tool failure rate；
-- P50 / P95 / P99 wall latency；
-- Model / Tool duration 与 calls；
-- retries；
-- input / output / total tokens；
-- estimated USD cost 与 unpriced calls；
-- failure categories。
-
-Citation Precision/Recall、Groundedness、Abstention Accuracy 和检索质量基准属于 v0.35。
-
 ## Capability Catalog
 
 ```bash
 paperclaw capabilities --format json
 paperclaw capabilities --status shipped
-paperclaw capabilities --surface service
+paperclaw capabilities --surface cli
 ```
 
-当前新增：
+v0.35 新增：
 
 ```text
-multiagent.distributed_runtime [shipped]
+retrieval.semantic_hybrid [foundation]
+evaluation.research_quality [shipped]
 ```
 
-## 真实分布式验收
-
-GitHub Actions 启动：
-
-- Redis 7；
-- PostgreSQL 16；
-- 两个 `multiprocessing.spawn` Worker 进程。
-
-验收覆盖：
-
-1. Redis exact idempotency 与 conflict；
-2. 不同 sender 可复用相同 idempotency key；
-3. 乱序 Ack 只推进连续 Cursor；
-4. 崩溃 Worker 的 Pending Entry 被另一进程 Claim；
-5. PostgreSQL terminal + ordered Outbox 原子提交；
-6. `SKIP LOCKED` Claim 不重复；
-7. 两个进程处理八个请求且每个请求只有一个 acknowledged terminal；
-8. v0.33 崩溃恢复和 v0.32 Trace/Eval 兼容；
-9. `0.34.0[distributed]` wheel 安装与 CLI smoke。
-
-本地执行：
+## 开发与验收
 
 ```bash
-export PAPERCLAW_TEST_REDIS_URL="redis://localhost:6379/15"
-export PAPERCLAW_TEST_POSTGRES_DSN="postgresql://paperclaw:paperclaw@localhost:5432/paperclaw"
-python -m pytest -q tests/integration/test_v034_distributed_backends.py -m distributed
+python -m pytest -q \
+  tests/unit/retrieval/test_v035_semantic_quality.py \
+  tests/unit/retrieval
+
+paperclaw-retrieval-quality \
+  --benchmark examples/v0_35/research-quality-benchmark.json \
+  --predictions examples/v0_35/hybrid-predictions.json \
+  --baseline examples/v0_35/lexical-baseline.json \
+  --format text
+
+python -m pytest -q -m "not real_llm and not distributed"
+python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
+python -m build
 ```
 
 ## 安全与架构边界
 
 - Secret 不写入 Manifest、Message Bus、ExecutionRequest、Trace 或 Artifact metadata；
-- delivery 是 at-least-once，不是 exactly-once；
-- PostgreSQL 和 Redis 不构成一个分布式事务；
-- Outbox replay 依赖 Message Bus exact idempotency；
-- Redis Cluster cross-slot Lua 部署未验收；
-- Trace projection 仍为 SQLite；
+- Message delivery 是 at-least-once，不是 exactly-once；
+- PostgreSQL 和 Redis 不构成同一分布式事务；
+- Trace projection 仍为 SQLite reference backend；
 - 外部 Tool 副作用仍要求 Tool-level idempotency；
-- TLS、凭证轮换、备份和托管运维属于部署责任；
-- 没有声称 Kafka、NATS 或 RabbitMQ 已实现。
-
-## 开发与验收
-
-```bash
-python -m pytest -q -m "not real_llm and not distributed"
-python -m pytest -q tests/integration/test_v034_distributed_backends.py -m distributed
-python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
-python -m build
-```
+- Redis Cluster cross-slot Lua、Kafka 和 NATS 未声明实现；
+- 本地 hashing vector 不等于 transformer embedding；
+- 质量评测不等于未经标注的通用事实正确率；
+- Project-scoped Skills / Connectors 属于 v0.36。
 
 ## 版本路线
 
 1. **v0.32**：Team Run、Trace、Eval 闭环；
-2. **v0.33**：故障注入、恢复、取消、Outbox、幂等；
-3. **v0.34**：PostgreSQL + Redis Streams 真实多进程运行；
+2. **v0.33**：恢复、取消、Outbox、幂等与故障注入；
+3. **v0.34**：PostgreSQL + Redis Streams 多进程运行；
 4. **v0.35**：Hybrid Retrieval 与科研质量评测；
 5. **v0.36**：Project-scoped Skills / Connectors。
-
-详细范围：
-
-```text
-Plan/PaperClaw_v0.32_Observability_Closure.md
-Plan/PaperClaw_v0.33_Resilience_Outbox_Cancellation.md
-Plan/PaperClaw_v0.34_PostgreSQL_Redis_Multiprocess.md
-CHANGELOG.md
-```
