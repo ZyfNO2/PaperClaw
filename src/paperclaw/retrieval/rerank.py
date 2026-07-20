@@ -7,8 +7,8 @@ import math
 import re
 from typing import Protocol, Sequence
 
-from paperclaw.retrieval.hybrid import HybridRetrievalResult, HybridRetriever
-from paperclaw.retrieval.query import RetrievalCandidate, RetrievalRequest
+from .hybrid import HybridRetrievalResult, HybridRetriever
+from .query import RetrievalCandidate, RetrievalRequest
 
 _TOKEN = re.compile(r"[^\W_]+(?:['’\-][^\W_]+)*", re.UNICODE)
 
@@ -34,18 +34,18 @@ class EvidenceRerankConfig:
 
     def __post_init__(self) -> None:
         for name, value in self.__dict__.items():
-            if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+            ):
                 raise ValueError(f"{name} must be finite")
             if value < 0:
                 raise ValueError(f"{name} must be non-negative")
 
 
 class EvidenceAwareReranker:
-    """Rerank using observable lexical evidence and source diversity.
-
-    The reranker never changes citation identity. It only changes rank and the
-    score field used for diagnostics. This makes it safe to compose after RRF.
-    """
+    """Use observable lexical evidence without changing citation identity."""
 
     def __init__(self, config: EvidenceRerankConfig | None = None) -> None:
         self.config = config or EvidenceRerankConfig()
@@ -57,29 +57,32 @@ class EvidenceAwareReranker:
         *,
         top_k: int,
     ) -> tuple[RetrievalCandidate, ...]:
-        if not 1 <= top_k <= 1_000:
+        if isinstance(top_k, bool) or not 1 <= top_k <= 1_000:
             raise ValueError("top_k must be in [1, 1000]")
         query_normalized = " ".join(query.casefold().split())
-        query_tokens = tuple(dict.fromkeys(_TOKEN.findall(query_normalized)))
-        query_set = set(query_tokens)
+        query_set = set(dict.fromkeys(_TOKEN.findall(query_normalized)))
         scored: list[tuple[float, RetrievalCandidate]] = []
         for candidate in candidates:
             text_normalized = " ".join(candidate.text.casefold().split())
             text_tokens = set(_TOKEN.findall(text_normalized))
-            coverage = (
-                len(query_set & text_tokens) / len(query_set)
-                if query_set
-                else 0.0
-            )
-            exact_phrase = 1.0 if query_normalized and query_normalized in text_normalized else 0.0
-            locator_text = f"{candidate.display_name} {candidate.locator.value}".casefold()
+            coverage = len(query_set & text_tokens) / len(query_set) if query_set else 0.0
+            exact_phrase = float(bool(query_normalized and query_normalized in text_normalized))
+            locator = candidate.locator
+            locator_text = " ".join(
+                (
+                    candidate.display_name,
+                    locator.source_uri,
+                    " ".join(locator.heading_path),
+                    f"lines {locator.start_line} {locator.end_line}",
+                    f"paragraphs {locator.start_paragraph} {locator.end_paragraph}",
+                )
+            ).casefold()
             heading_overlap = (
                 len(query_set & set(_TOKEN.findall(locator_text))) / len(query_set)
                 if query_set
                 else 0.0
             )
-            original_rank = max(1, candidate.rank)
-            rank_prior = 1.0 / math.log2(original_rank + 1.0)
+            rank_prior = 1.0 / math.log2(max(1, candidate.rank) + 1.0)
             length = max(1, len(text_tokens))
             length_penalty = max(0.0, math.log2(length / 220.0)) if length > 220 else 0.0
             score = (
@@ -114,16 +117,15 @@ class EvidenceAwareReranker:
                 for score, candidate in remaining
             ]
             adjusted.sort(
-                key=lambda item: (
-                    -item[0],
-                    -item[1],
-                    item[2].rank,
-                    item[2].chunk_id,
-                )
+                key=lambda item: (-item[0], -item[1], item[2].rank, item[2].chunk_id)
             )
             _, raw_score, candidate = adjusted[0]
-            remaining = [item for item in remaining if item[1].chunk_id != candidate.chunk_id]
-            document_counts[candidate.document_id] = document_counts.get(candidate.document_id, 0) + 1
+            remaining = [
+                item for item in remaining if item[1].chunk_id != candidate.chunk_id
+            ]
+            document_counts[candidate.document_id] = (
+                document_counts.get(candidate.document_id, 0) + 1
+            )
             selected.append(
                 replace(
                     candidate,
@@ -142,8 +144,6 @@ class RerankedHybridResult:
 
 
 class RerankedHybridRetriever:
-    """Existing weighted-RRF HybridRetriever followed by a bounded reranker."""
-
     def __init__(
         self,
         hybrid: HybridRetriever,
@@ -159,11 +159,10 @@ class RerankedHybridRetriever:
             fused.candidates,
             top_k=request.top_k,
         )
-        return RerankedHybridResult(
-            request_id=request.request_id,
-            candidates=reranked,
-            fused_result=fused,
-        )
+        return RerankedHybridResult(request.request_id, reranked, fused)
+
+    def close(self) -> None:
+        self.hybrid.close()
 
 
 __all__ = [
