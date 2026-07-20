@@ -2,27 +2,26 @@
 
 PaperClaw 是一个面向 Coding、Research 与多 Agent 工作流的可审计 Agent Runtime。
 
-当前开发版本：**0.35.0**。v0.35 在真实 Redis/PostgreSQL Multi-Agent Runtime 之外，补齐了
-本地语义向量检索、weighted RRF、证据感知 reranker，以及可复现的科研质量评测。
-
-## 当前能力主线
+当前开发版本：**0.36.0**。
 
 ```text
 Team Plan
-  -> SQLite or Redis Streams Message Bus
+  -> SQLite / Redis Streams Message Bus
   -> Coordinator / Worker / Reviewer
-  -> SQLite or PostgreSQL terminal state + ordered Outbox
+  -> SQLite / PostgreSQL terminal state + ordered Outbox
   -> durable Trace / Aggregate Eval
 
 Project Knowledge
   -> BM25 + persistent local semantic vectors
-  -> weighted reciprocal-rank fusion
-  -> evidence-aware citation-preserving reranker
+  -> weighted RRF + evidence-aware reranker
   -> retrieval / citation / grounding / abstention / cost evaluation
-```
 
-`Coordinator` 仍是唯一调度权威。Hybrid Retrieval 继续使用已有 `RetrievalCandidate`、
-`RankedResult`、版本 Hash 和 `ChunkLocator`，没有引入旁路 Citation 模型。
+Project Extensions
+  -> project-scoped descriptors
+  -> trust policy + permission ceiling
+  -> bounded Skill activation / application-registered Connector runtime
+  -> filtered Tool discovery + mutation audit
+```
 
 ## 安装
 
@@ -30,102 +29,104 @@ Project Knowledge
 python -m pip install -e ".[dev]"
 ```
 
-分布式后端：
+分布式运行：
 
 ```bash
 python -m pip install -e ".[distributed]"
 ```
 
-## v0.35 Hybrid Retrieval
+## v0.36 Project Extensions
 
-公开组件：
+扩展描述符保存在：
 
-```python
-from paperclaw.retrieval import (
-    EvidenceAwareReranker,
-    HybridRetriever,
-    RetrievalBackendAdapter,
-    RerankedHybridRetriever,
-    SQLiteBM25Retriever,
-    SQLiteHashingVectorRetriever,
-    WeightedRRFConfig,
-)
+```text
+.paperclaw/extensions.json
 ```
 
-链路：
+变更审计保存在：
+
+```text
+.paperclaw/extensions-audit.sqlite3
+```
+
+描述符包括：
+
+- `extension_id`、类型和 semantic version；
+- enabled state 与 trust source；
+- Tool、read path、write path 和 network host 权限；
+- Skill 相对路径或 `mcp:<factory_id>` Connector entrypoint；
+- 公开 JSON metadata。
+
+Registry 会同步 `project.json` 中的 `enabled_skills` 和 `enabled_connectors`。
+
+有效权限始终为：
+
+```text
+project descriptor permissions
+∩ runtime permission ceiling
+```
+
+Skill 激活要求：
+
+- 位于当前 workspace；
+- 不是 symlink；
+- 不位于 `.paperclaw`；
+- 是有大小上限的 UTF-8 普通文件；
+- trust source 被运行时策略允许。
+
+Connector 激活要求：
+
+- entrypoint 使用 `mcp:<factory_id>`；
+- factory 由宿主应用注册；
+- 项目文件不能声明 Python module 或 import path；
+- 只暴露有效 Tool 权限允许的 discovery 结果；
+- discovery schema 必须是公开、可序列化 JSON；
+- Session 按逆序关闭。
+
+CLI：
+
+```bash
+paperclaw-project-extensions --workspace . list
+paperclaw-project-extensions --workspace . validate
+paperclaw-project-extensions --workspace . audit
+
+paperclaw-project-extensions --workspace . register-skill \
+  --id skill.review \
+  --version 1.0.0 \
+  --entrypoint skills/review.md \
+  --enabled \
+  --tool file_read \
+  --read-path docs
+
+paperclaw-project-extensions --workspace . register-connector \
+  --id connector.search \
+  --version 1.0.0 \
+  --entrypoint mcp:search \
+  --trust-source verified \
+  --tool search \
+  --network-host search.example.com
+
+paperclaw-project-extensions --workspace . enable skill.review
+paperclaw-project-extensions --workspace . disable skill.review
+paperclaw-project-extensions --workspace . remove skill.review
+```
+
+## v0.35 Hybrid Retrieval
 
 ```text
 SQLiteBM25Retriever
   + SQLiteHashingVectorRetriever
   -> HybridRetriever(weighted RRF)
-  -> RerankedHybridRetriever(EvidenceAwareReranker)
-  -> version/hash/locator-bound candidates
+  -> EvidenceAwareReranker
+  -> version/hash/ChunkLocator-bound candidates
 ```
 
-### 本地语义向量
+本地 Semantic Retriever 提供 SQLite persistence、encoder/corpus fingerprint、原子 replace、
+bounded upsert、deterministic cosine ranking 和 canonical `ChunkLocator` round trip。
 
-`SQLiteHashingVectorRetriever`：
+它使用 deterministic feature hashing，不声称等价于 transformer embedding。
 
-- 使用 word、word bigram 与 character n-gram；
-- signed feature hashing；
-- sparse L2-normalized vector；
-- SQLite 持久化；
-- encoder fingerprint；
-- corpus fingerprint；
-- 原子 corpus replace 与 bounded upsert；
-- deterministic cosine ranking；
-- 保留 document/version/content/source/chunk-config hash 与完整 `ChunkLocator`。
-
-这是一个真实的本地向量检索后端，但**不是 transformer embedding**，也不声称等价于托管
-Embedding API 或外部向量数据库。
-
-### Weighted RRF
-
-兼容原有 tuple API：
-
-```python
-HybridRetriever(
-    (
-        ("bm25", bm25, 1.0),
-        ("semantic", semantic, 1.4),
-    )
-)
-```
-
-也支持显式命名配置：
-
-```python
-HybridRetriever(
-    (
-        RetrievalBackendAdapter("bm25", bm25),
-        RetrievalBackendAdapter("semantic", semantic),
-    ),
-    config=WeightedRRFConfig(
-        backend_weights={"bm25": 1.0, "semantic": 1.4},
-        candidate_pool_size=50,
-    ),
-)
-```
-
-融合要求所有 backend 返回同一 active corpus，并对同一 `chunk_id` 保持一致的 Citation
-Identity。冲突会 fail-closed。
-
-### Evidence-aware Reranker
-
-Reranker 使用可观察信号：
-
-- exact phrase；
-- query-token coverage；
-- display name、source URI、heading path 与 locator range overlap；
-- original rank prior；
-- bounded length penalty；
-- source diversity penalty。
-
-Reranker 只修改排序和诊断 Score，不修改文档版本、内容 Hash、Locator 或 Citation Identity。
-
-## v0.35 Research Quality Eval
-
-CLI：
+质量评测：
 
 ```bash
 paperclaw-retrieval-quality \
@@ -134,46 +135,12 @@ paperclaw-retrieval-quality \
   --baseline examples/v0_35/lexical-baseline.json
 ```
 
-当前指标：
+指标包括 Recall@5/10、MRR、nDCG@10、Document Recall@10、Citation Precision/Recall、
+Grounded Claim Rate、Claim Coverage、Abstention Accuracy、Latency、Token 和 Cost Delta。
 
-- Recall@5 / Recall@10；
-- MRR；
-- nDCG@10；
-- Document Recall@10；
-- Citation Precision / Recall；
-- Grounded Claim Rate；
-- Required Claim Coverage；
-- Answer Term Coverage；
-- Abstention Accuracy；
-- latency；
-- input/output/total tokens；
-- estimated cost；
-- baseline delta。
-
-Groundedness 使用显式 `claim_support` observation 和人工维护的相关性标签，不让答案生成模型
-给自己打分。评测结论取决于 benchmark 标签质量。
-
-## Team Runtime
-
-### SQLite 模式
+## v0.34 Distributed Runtime
 
 ```bash
-paperclaw-team-run \
-  --workspace . \
-  --plan examples/v0_31/team-plan.json \
-  --bus-backend sqlite \
-  --database .paperclaw/team-bus.sqlite3 \
-  --state-backend sqlite \
-  --state-database .paperclaw/team-choreography.sqlite3 \
-  --trace-database .paperclaw/traces.sqlite3
-```
-
-### Redis + PostgreSQL 模式
-
-```bash
-export PAPERCLAW_REDIS_URL="redis://localhost:6379/0"
-export PAPERCLAW_POSTGRES_DSN="postgresql://paperclaw:paperclaw@localhost:5432/paperclaw"
-
 paperclaw-team-run \
   --workspace . \
   --plan examples/v0_31/team-plan.json \
@@ -184,35 +151,26 @@ paperclaw-team-run \
   --trace-database .paperclaw/traces.sqlite3
 ```
 
-v0.34 提供：
+包括 Redis Streams Consumer Group、`XAUTOCLAIM`、连续逻辑 Ack Cursor、PostgreSQL
+Attempt/Terminal/Ordered Outbox 与 `FOR UPDATE SKIP LOCKED` Claim。
 
-- Redis Streams Topic；
-- Lua 原子 Sequence、Capacity、Idempotency 与 append；
-- Consumer Group 与 `XAUTOCLAIM`；
-- 乱序物理 Ack、连续逻辑 Ack Cursor；
-- PostgreSQL Attempt、Terminal Snapshot 与 Ordered Outbox；
-- `FOR UPDATE SKIP LOCKED` Claim；
-- 两个独立进程共享 Consumer Group 的真实验收。
-
-v0.33 提供：
+## v0.33 Resilience
 
 ```text
 Coordinator result
   -> terminal state + ordered Outbox in one transaction
-  -> exact-idempotent publication
+  -> idempotent publication
   -> mark delivered
   -> request Ack
 ```
 
-并包含 durable cancellation、fault injection、retryable/permanent/unknown 分类和 DLQ。
+包含 durable cancellation、failure injection、retry taxonomy 与 DLQ。
 
-v0.32 提供稳定身份：
+## v0.32 Observability Closure
 
 ```text
 request_id -> team_run_id(request_id) -> durable Trace -> Aggregate Eval
 ```
-
-查询：
 
 ```bash
 paperclaw-observe \
@@ -229,47 +187,34 @@ paperclaw capabilities --status shipped
 paperclaw capabilities --surface cli
 ```
 
-v0.35 新增：
+当前新增能力：
 
 ```text
+multiagent.resilient_choreography [shipped]
+multiagent.distributed_runtime [shipped]
 retrieval.semantic_hybrid [foundation]
 evaluation.research_quality [shipped]
+project.extensions [foundation]
 ```
 
-## 开发与验收
+## 验收
 
 ```bash
-python -m pytest -q \
-  tests/unit/retrieval/test_v035_semantic_quality.py \
-  tests/unit/retrieval
-
-paperclaw-retrieval-quality \
-  --benchmark examples/v0_35/research-quality-benchmark.json \
-  --predictions examples/v0_35/hybrid-predictions.json \
-  --baseline examples/v0_35/lexical-baseline.json \
-  --format text
-
+python -m pytest -q tests/unit/projects/test_v036_extensions.py tests/unit/projects
+python -m pytest -q tests/unit/retrieval/test_v035_semantic_quality.py tests/unit/retrieval
 python -m pytest -q -m "not real_llm and not distributed"
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
 python -m build
 ```
 
-## 安全与架构边界
+## 明确边界
 
-- Secret 不写入 Manifest、Message Bus、ExecutionRequest、Trace 或 Artifact metadata；
-- Message delivery 是 at-least-once，不是 exactly-once；
-- PostgreSQL 和 Redis 不构成同一分布式事务；
+- Message delivery 是 at-least-once；
+- PostgreSQL 和 Redis 不构成同一事务；
 - Trace projection 仍为 SQLite reference backend；
-- 外部 Tool 副作用仍要求 Tool-level idempotency；
-- Redis Cluster cross-slot Lua、Kafka 和 NATS 未声明实现；
+- 外部 Tool 副作用要求 Tool-level idempotency；
 - 本地 hashing vector 不等于 transformer embedding；
-- 质量评测不等于未经标注的通用事实正确率；
-- Project-scoped Skills / Connectors 属于 v0.36。
-
-## 版本路线
-
-1. **v0.32**：Team Run、Trace、Eval 闭环；
-2. **v0.33**：恢复、取消、Outbox、幂等与故障注入；
-3. **v0.34**：PostgreSQL + Redis Streams 多进程运行；
-4. **v0.35**：Hybrid Retrieval 与科研质量评测；
-5. **v0.36**：Project-scoped Skills / Connectors。
+- 质量评测依赖人工维护的相关性与 claim-support 标签；
+- Connector runtime 由宿主应用提供；
+- 不包含扩展市场或 Desktop 安装 UI；
+- 项目提供的动态 Python 加载被明确禁止。
