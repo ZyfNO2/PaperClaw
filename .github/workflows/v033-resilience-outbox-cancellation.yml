@@ -38,6 +38,7 @@ jobs:
           src/paperclaw/multiagent/cancel_cli.py
           src/paperclaw/multiagent/bus_cli.py
           tests/unit/multiagent/test_resilient_runtime.py
+          tests/real_llm/test_v033_outbox_recovery_live.py
           --select E9,F63,F7,F82
       - uses: actions/upload-artifact@v4
         if: always()
@@ -86,3 +87,32 @@ jobs:
       - run: paperclaw-team-run --help
       - run: paperclaw-team-cancel --help
       - run: paperclaw-observe --help
+
+  live-provider:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PAPERCLAW_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      PAPERCLAW_BASE_URL: https://api.mistral.ai/v1
+      PAPERCLAW_MODEL: mistral-small-latest
+      PAPERCLAW_PROVIDER: mistral
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Require live provider credential
+        shell: bash
+        run: test -n "$PAPERCLAW_API_KEY"
+      - run: python -m pip install -e ".[dev]"
+      - name: Run live terminal-commit crash recovery acceptance
+        run: >-
+          python -m pytest
+          tests/real_llm/test_v033_outbox_recovery_live.py
+          -m real_llm
+          --junitxml=v033-live.xml -vv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v033-live-${{ github.run_id }}
+          path: v033-live.xml
