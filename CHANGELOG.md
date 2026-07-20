@@ -4,7 +4,7 @@ All notable PaperClaw changes are recorded here. Versions are developed on isola
 branches and are intended to be squash-merged so one released version contributes
 one commit to `main`.
 
-## [0.36.0] — Unreleased
+## [0.36.0] — 2026-07-20
 
 ### Added
 
@@ -32,7 +32,7 @@ one commit to `main`.
 - project-provided executable modules are intentionally unsupported;
 - Connector transport behavior remains the responsibility of the registered factory.
 
-## [0.35.0] — Unreleased
+## [0.35.0] — 2026-07-20
 
 ### Added
 
@@ -61,7 +61,7 @@ one commit to `main`.
 - groundedness uses explicit benchmark support labels, not model self-grading;
 - benchmark conclusions depend on the quality of curated relevance and claim labels.
 
-## [0.34.0] — Unreleased
+## [0.34.0] — 2026-07-20
 
 ### Added
 
@@ -90,7 +90,7 @@ one commit to `main`.
 - external Tool side effects still require Tool-level idempotency;
 - no Kafka or NATS adapter is included.
 
-## [0.33.0] — Unreleased
+## [0.33.0] — 2026-07-20
 
 ### Added
 
@@ -111,7 +111,7 @@ one commit to `main`.
 - terminal metrics, terminal result and DLQ publication use the Outbox path;
 - v0.33 capability maturity is represented by `multiagent.resilient_choreography`.
 
-## [0.32.0] — Unreleased
+## [0.32.0] — 2026-07-20
 
 ### Added
 
