@@ -31,12 +31,23 @@ jobs:
           tests/unit/multiagent/test_bus_runtime.py
           tests/unit/eval/test_aggregate.py
           --junitxml=v032-${{ matrix.os }}.xml -vv
+      - name: Verify capability truth source
+        run: >-
+          python -c "from paperclaw.capabilities import default_capability_catalog;
+          catalog=default_capability_catalog();
+          ids={item.capability_id for item in catalog.capabilities};
+          assert 'multiagent.bus_choreography' in ids;
+          assert 'evaluation.aggregate_dashboard' in ids;
+          assert 'evaluation.team_trace_closure' in ids;
+          print(len(ids))"
       - name: Correctness lint
         run: >-
           python -m ruff check
           src/paperclaw/multiagent/observed_runtime.py
           src/paperclaw/multiagent/bus_cli.py
           src/paperclaw/eval/cli.py
+          src/paperclaw/capabilities/catalog.py
+          src/paperclaw/capabilities/current.py
           tests/unit/multiagent/test_observed_runtime.py
           tests/real_llm/test_v032_trace_eval_live.py
           --select E9,F63,F7,F82
@@ -62,7 +73,6 @@ jobs:
       - run: paperclaw-observe --help
 
   live-provider:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -75,6 +85,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: test -n "$PAPERCLAW_API_KEY"
+      - name: Require live provider credential
+        shell: bash
+        run: test -n "$PAPERCLAW_API_KEY"
       - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest tests/real_llm/test_v032_trace_eval_live.py -m real_llm -vv
+      - name: Run live Team Run to Trace/Eval acceptance
+        run: >-
+          python -m pytest
+          tests/real_llm/test_v032_trace_eval_live.py
+          -m real_llm
+          --junitxml=v032-live.xml
+          -vv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v032-live-${{ github.run_id }}
+          path: v032-live.xml
