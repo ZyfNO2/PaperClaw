@@ -1,4 +1,4 @@
-"""CLI for one durable bus-driven and trace-observable MultiAgent run."""
+"""CLI for one resilient, trace-observable MultiAgent run."""
 
 from __future__ import annotations
 
@@ -13,17 +13,17 @@ from paperclaw.cli import load_dotenv
 from paperclaw.eval.aggregate import MeteredChatModel, PricingTable
 from paperclaw.message_bus import SQLiteMessageBusStore
 from paperclaw.models.adapters import OpenAICompatibleModel
-from paperclaw.multiagent.bus_runtime import (
-    BusDrivenTeamRuntime,
-    SQLiteChoreographyStateStore,
-    TeamRunRequest,
-)
+from paperclaw.multiagent.bus_runtime import TeamRunRequest
 from paperclaw.multiagent.observed_runtime import (
     ObservedCoordinator,
     SQLiteTeamTraceBridge,
     TraceUsageCollector,
     team_run_id,
 )
+from paperclaw.multiagent.ordered_outbox import (
+    SQLiteOrderedResilientChoreographyStore,
+)
+from paperclaw.multiagent.resilient_runtime import ResilientBusDrivenTeamRuntime
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     trace_database = _resolve_under_workspace(workspace, args.trace_database)
     raw_bus = SQLiteMessageBusStore(database)
     trace_bridge = SQLiteTeamTraceBridge(raw_bus, trace_database)
-    state = SQLiteChoreographyStateStore(state_database)
+    state = SQLiteOrderedResilientChoreographyStore(state_database)
 
     def coordinator_factory(budget, event_handler, usage):
         def model_factory(_agent_id: str):
@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
             event_handler=event_handler,
         )
 
-    runtime = BusDrivenTeamRuntime(
+    runtime = ResilientBusDrivenTeamRuntime(
         trace_bridge,
         state,
         coordinator_factory,
@@ -103,6 +103,11 @@ def main(argv: list[str] | None = None) -> int:
         payload = outcome.to_dict()
         payload["run_id"] = team_run_id(request.request_id)
         payload["trace_database"] = str(trace_database)
+        payload["resilience"] = {
+            "terminal_outbox": True,
+            "ordered_outbox": True,
+            "cancellation_topic": "multiagent.team.cancellations.v1",
+        }
         encoded = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     finally:
         trace_bridge.close()
