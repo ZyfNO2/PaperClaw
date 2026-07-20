@@ -1,0 +1,115 @@
+name: v0.31 E2E Eval MessageBus
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/paperclaw/eval/**"
+      - "src/paperclaw/multiagent/bus_runtime.py"
+      - "src/paperclaw/multiagent/bus_cli.py"
+      - "src/paperclaw/multiagent/__init__.py"
+      - "tests/unit/eval/**"
+      - "tests/unit/multiagent/test_bus_runtime.py"
+      - "tests/real_llm/test_v031_team_bus_live.py"
+      - "examples/v0_31/**"
+      - "pyproject.toml"
+      - ".github/workflows/v031-e2e-eval-messagebus.yml"
+      - "Plan/PaperClaw_v0.31_E2E_Eval_MessageBus.md"
+      - "artifacts/v0_31/HANDOFF.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Prepare evidence directory
+        run: python -c "from pathlib import Path; Path('tmp').mkdir(exist_ok=True)"
+      - name: Run v0.31 focused tests
+        run: python -m pytest tests/unit/eval/test_aggregate.py tests/unit/multiagent/test_bus_runtime.py --junitxml=tmp/v031-focused-${{ matrix.os }}.xml --report-log=tmp/v031-focused-${{ matrix.os }}.jsonl -vv
+      - name: Run Message Bus compatibility
+        run: python -m pytest tests/unit/message_bus --junitxml=tmp/v031-message-bus-${{ matrix.os }}.xml -q
+      - name: Run platform-neutral Coordinator compatibility
+        if: runner.os != 'Windows'
+        run: python -m pytest tests/unit/test_multiagent_coordinator.py -k "single_agent_path_for_simple_task or two_independent_read_tasks" --junitxml=tmp/v031-coordinator-ubuntu.xml -q
+      - name: Run full Coordinator compatibility
+        if: runner.os == 'Windows'
+        run: python -m pytest tests/unit/test_multiagent_coordinator.py --junitxml=tmp/v031-coordinator-windows.xml -q
+      - name: Correctness lint
+        run: python -m ruff check src/paperclaw/eval src/paperclaw/multiagent/bus_runtime.py src/paperclaw/multiagent/bus_cli.py tests/unit/eval/test_aggregate.py tests/unit/multiagent/test_bus_runtime.py --select E9,F63,F7,F82
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v031-focused-${{ matrix.os }}-${{ github.run_id }}
+          path: tmp/
+          retention-days: 30
+          if-no-files-found: warn
+
+  full-non-live:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Prepare evidence directory
+        run: python -c "from pathlib import Path; Path('tmp').mkdir(exist_ok=True)"
+      - name: Full non-live regression
+        run: python -m pytest -m "not real_llm" --junitxml=tmp/v031-full.xml --report-log=tmp/v031-full.jsonl -q
+      - name: Repository correctness lint
+        run: python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
+      - name: Upload full regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v031-full-${{ github.run_id }}
+          path: tmp/
+          retention-days: 30
+          if-no-files-found: warn
+
+  live-provider:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PAPERCLAW_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      PAPERCLAW_BASE_URL: https://api.mistral.ai/v1
+      PAPERCLAW_MODEL: mistral-small-latest
+      PAPERCLAW_PROVIDER: mistral
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Require provider credential
+        shell: bash
+        run: test -n "$PAPERCLAW_API_KEY"
+      - name: Install project
+        run: python -m pip install -e ".[dev]"
+      - name: Run live team acceptance
+        run: python -m pytest -q tests/real_llm/test_v031_team_bus_live.py -m real_llm

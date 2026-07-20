@@ -1,0 +1,49 @@
+name: v0.31 Live Team E2E
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/paperclaw/eval/**"
+      - "src/paperclaw/multiagent/bus_runtime.py"
+      - "src/paperclaw/multiagent/bus_cli.py"
+      - "tests/real_llm/test_v031_team_bus_live.py"
+      - ".github/workflows/v031-live-team-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-team-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PAPERCLAW_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      PAPERCLAW_BASE_URL: https://api.mistral.ai/v1
+      PAPERCLAW_MODEL: mistral-small-latest
+      PAPERCLAW_PROVIDER: mistral
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Require live Provider credential
+        shell: bash
+        run: test -n "$PAPERCLAW_API_KEY"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Run live bus-driven MultiAgent acceptance
+        run: python -m pytest tests/real_llm/test_v031_team_bus_live.py -m real_llm --junitxml=v031-live-team.xml -vv
+      - name: Upload live evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v031-live-team-${{ github.run_id }}
+          path: v031-live-team.xml
+          retention-days: 30
+          if-no-files-found: warn
