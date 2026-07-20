@@ -1,0 +1,105 @@
+name: v0.37 Extension Execution Closure
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-snapshot:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.37-extension-execution-closure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package source snapshot
+        shell: bash
+        run: tar --exclude=.git -czf paperclaw-v037-source.tgz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paperclaw-v037-source-${{ github.run_id }}
+          path: paperclaw-v037-source.tgz
+          if-no-files-found: error
+
+  focused:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.37-extension-execution-closure'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - name: Run v0.37 focused tests
+        run: >-
+          python -m pytest
+          tests/unit/projects/test_v037_extension_execution.py
+          tests/unit/projects
+          --junitxml=v037-${{ matrix.os }}.xml -vv
+      - name: Correctness lint
+        run: >-
+          python -m ruff check
+          src/paperclaw/projects
+          tests/unit/projects
+          --select E9,F63,F7,F82 --ignore F821
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v037-focused-${{ matrix.os }}-${{ github.run_id }}
+          path: v037-${{ matrix.os }}.xml
+
+  package-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.37-extension-execution-closure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build
+      - run: python -m build
+      - name: Install wheel
+        shell: bash
+        run: |
+          wheel=$(find dist -maxdepth 1 -name '*.whl' -print -quit)
+          python -m pip install --force-reinstall "$wheel"
+      - run: python -c "from importlib.metadata import version; assert version('paperclaw') == '0.37.0'"
+      - run: paperclaw-project-extensions --help
+
+  full-non-live:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.37-extension-execution-closure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - name: Full repository regression without external services
+        run: >-
+          python -m pytest
+          -m "not real_llm and not distributed"
+          --junitxml=v037-full.xml
+          --report-log=v037-full.jsonl -q
+      - name: Repository correctness lint
+        run: python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v037-full-${{ github.run_id }}
+          path: |
+            v037-full.xml
+            v037-full.jsonl
