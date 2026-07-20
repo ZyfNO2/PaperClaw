@@ -1,4 +1,4 @@
-"""Current-stack capability catalog transformations through v0.35."""
+"""Current-stack capability catalog transformations through v0.36."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .catalog import (
 
 
 def default_capability_catalog() -> CapabilityCatalog:
-    """Return the audited capability catalog for the v0.35 development line."""
+    """Return the audited capability catalog for the v0.36 development line."""
 
     replacements: dict[str, CapabilityDescriptor] = {}
     for item in _baseline_catalog().capabilities:
@@ -20,7 +20,7 @@ def default_capability_catalog() -> CapabilityCatalog:
             item = replace(
                 item,
                 limitations=(
-                    "Skills and Connector mutation/auth management remain deferred.",
+                    "Project extension registry management is CLI/library only; install and authorization UI remain deferred.",
                 ),
             )
         elif item.capability_id == "retrieval.local_bm25":
@@ -41,13 +41,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "No hosted vector database or embedding service is bundled.",
                 ),
             )
-        elif item.capability_id == "product.capability_catalog":
-            item = replace(
-                item,
-                maturity="foundation",
-                surfaces=("library", "cli", "desktop"),
-            )
-        elif item.capability_id == "project.workspace":
+        elif item.capability_id in {"product.capability_catalog", "project.workspace"}:
             item = replace(
                 item,
                 maturity="foundation",
@@ -138,7 +132,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                 "project.knowledge_runtime",
             ),
             limitations=(
-                "No Skill installation, Connector authentication or Artifact editing.",
+                "No extension installation, Connector authorization or Artifact editing UI.",
             ),
         ),
         CapabilityDescriptor(
@@ -229,10 +223,7 @@ def default_capability_catalog() -> CapabilityCatalog:
             summary=(
                 "Persistent local semantic vectors, weighted RRF and evidence-aware citation-preserving reranking."
             ),
-            dependencies=(
-                "retrieval.hybrid_rrf",
-                "retrieval.local_bm25",
-            ),
+            dependencies=("retrieval.hybrid_rrf", "retrieval.local_bm25"),
             limitations=(
                 "Semantic vectors use deterministic feature hashing rather than transformer embeddings.",
                 "No external vector database or hosted embedding service is included.",
@@ -253,6 +244,21 @@ def default_capability_catalog() -> CapabilityCatalog:
             limitations=(
                 "Quality depends on curated relevance and explicit claim-support labels.",
                 "Groundedness is not inferred by the answer-generating model.",
+            ),
+        ),
+        CapabilityDescriptor(
+            capability_id="project.extensions",
+            introduced_version="v0.36",
+            maturity="foundation",
+            surfaces=("library", "cli"),
+            summary=(
+                "Project-scoped Skill and Connector descriptors with permission ceilings, controlled activation and audit."
+            ),
+            dependencies=("project.workspace", "tools.mcp_foundation"),
+            limitations=(
+                "Connector runtimes must be registered by the host application.",
+                "No extension marketplace, installation UI or hosted authorization service is included.",
+                "Project-provided executable modules are intentionally unsupported.",
             ),
         ),
     )
