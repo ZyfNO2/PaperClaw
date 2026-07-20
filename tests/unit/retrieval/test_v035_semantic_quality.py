@@ -79,13 +79,11 @@ def test_semantic_index_is_persistent_and_version_bound(tmp_path: Path) -> None:
     database = tmp_path / "semantic.sqlite3"
     retriever = SQLiteHashingVectorRetriever(database)
     corpus_hash = retriever.replace_documents([document(relevant), document(distractor)])
-
     result = retriever.query(request("neural passage vector retrieval", top_k=2))
     assert result.corpus_hash == corpus_hash
     assert result.candidates[0].chunk_id == "chunk-neural"
     assert result.candidates[0].locator == relevant.locator
     assert result.candidates[0].content_hash == relevant.content_hash
-
     reopened = SQLiteHashingVectorRetriever(database)
     assert reopened.manifest()["corpus_hash"] == corpus_hash
     assert reopened.query(request("neural vector")).candidates[0].chunk_id == "chunk-neural"
@@ -108,7 +106,7 @@ def test_hybrid_rrf_and_reranker_preserve_citation_identity(tmp_path: Path) -> N
         "chunk-other",
         "doc-other",
         "A database transaction uses write ahead logging.",
-        3,
+        2,
     )
     semantic = SQLiteHashingVectorRetriever(tmp_path / "semantic.sqlite3")
     semantic.replace_documents(
@@ -152,7 +150,6 @@ def test_hybrid_rrf_and_reranker_preserve_citation_identity(tmp_path: Path) -> N
     reranked = RerankedHybridRetriever(hybrid, EvidenceAwareReranker()).query(
         request("neural vector passage retrieval", top_k=3)
     )
-
     ids = [item.chunk_id for item in reranked.candidates]
     assert "chunk-bm25" in ids
     assert "chunk-vector" in ids
@@ -231,11 +228,9 @@ def test_research_quality_report_separates_retrieval_grounding_and_cost() -> Non
             estimated_cost_usd=0.0,
         ),
     )
-
     baseline_report = evaluate_research_quality(cases, baseline)
     improved_report = evaluate_research_quality(cases, improved)
     comparison = compare_quality_reports(baseline_report, improved_report)
-
     assert improved_report.mean_recall_at_10 > baseline_report.mean_recall_at_10
     assert improved_report.citation_precision > baseline_report.citation_precision
     assert improved_report.grounded_claim_rate > baseline_report.grounded_claim_rate
@@ -250,48 +245,22 @@ def test_quality_cli_compares_predictions(tmp_path: Path, capsys) -> None:
     candidate_path = tmp_path / "candidate.json"
     benchmark.write_text(
         json.dumps(
-            {
-                "cases": [
-                    {
-                        "case_id": "c1",
-                        "query": "retrieval",
-                        "relevant_chunk_ids": ["a"],
-                        "should_abstain": False,
-                    }
-                ]
-            }
+            {"cases": [{"case_id": "c1", "query": "retrieval", "relevant_chunk_ids": ["a"], "should_abstain": False}]}
         ),
         encoding="utf-8",
     )
     baseline.write_text(
         json.dumps(
-            {
-                "observations": [
-                    {
-                        "case_id": "c1",
-                        "ranked_chunk_ids": ["x"],
-                        "ranked_document_ids": [],
-                    }
-                ]
-            }
+            {"observations": [{"case_id": "c1", "ranked_chunk_ids": ["x"], "ranked_document_ids": []}]}
         ),
         encoding="utf-8",
     )
     candidate_path.write_text(
         json.dumps(
-            {
-                "observations": [
-                    {
-                        "case_id": "c1",
-                        "ranked_chunk_ids": ["a"],
-                        "ranked_document_ids": [],
-                    }
-                ]
-            }
+            {"observations": [{"case_id": "c1", "ranked_chunk_ids": ["a"], "ranked_document_ids": []}]}
         ),
         encoding="utf-8",
     )
-
     assert quality_main(
         [
             "--benchmark",
