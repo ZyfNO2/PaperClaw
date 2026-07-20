@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
@@ -64,6 +64,21 @@ class ActivatedConnector:
 
 
 @dataclass(frozen=True)
+class ActiveConnectorBinding:
+    """Private runtime binding retained after a successful activation.
+
+    The public activation snapshot intentionally excludes the runtime object,
+    descriptor auth reference and other host-only state.  v0.37 execution
+    adapters consume this binding while preserving the v0.36 public API.
+    """
+
+    descriptor: ProjectExtensionDescriptor
+    permissions: ExtensionPermissions
+    tools: tuple[Mapping[str, Any], ...]
+    runtime: ConnectorRuntime = field(repr=False, compare=False)
+
+
+@dataclass(frozen=True)
 class ProjectExtensionActivation:
     skills: tuple[ActivatedSkill, ...]
     connectors: tuple[ActivatedConnector, ...]
@@ -95,8 +110,22 @@ class ProjectExtensionActivator:
         self.connector_factories = dict(connector_factories or {})
         self.max_skill_bytes = max_skill_bytes
         self._sessions: list[ConnectorRuntime] = []
+        self._connector_bindings: list[ActiveConnectorBinding] = []
+        self._activation: ProjectExtensionActivation | None = None
+
+    @property
+    def connector_bindings(self) -> tuple[ActiveConnectorBinding, ...]:
+        """Return host-only Connector bindings for the active lifecycle."""
+
+        return tuple(self._connector_bindings)
+
+    @property
+    def current_activation(self) -> ProjectExtensionActivation | None:
+        return self._activation
 
     def activate(self) -> ProjectExtensionActivation:
+        if self._sessions or self._activation is not None:
+            raise RuntimeError("project extensions are already active")
         skills: list[ActivatedSkill] = []
         connectors: list[ActivatedConnector] = []
         try:
@@ -113,9 +142,13 @@ class ProjectExtensionActivator:
         except BaseException:
             self.close()
             raise
-        return ProjectExtensionActivation(tuple(skills), tuple(connectors))
+        activation = ProjectExtensionActivation(tuple(skills), tuple(connectors))
+        self._activation = activation
+        return activation
 
     def close(self) -> None:
+        self._activation = None
+        self._connector_bindings.clear()
         while self._sessions:
             runtime = self._sessions.pop()
             try:
@@ -171,6 +204,14 @@ class ProjectExtensionActivator:
         runtime = factory(descriptor, permissions)
         self._sessions.append(runtime)
         tools = _public_tools(runtime.discover_tools(), permissions)
+        self._connector_bindings.append(
+            ActiveConnectorBinding(
+                descriptor=descriptor,
+                permissions=permissions,
+                tools=tools,
+                runtime=runtime,
+            )
+        )
         return ActivatedConnector(
             extension_id=descriptor.extension_id,
             version=descriptor.version,
@@ -248,6 +289,7 @@ def _public_json(value: Any) -> Any:
 
 
 __all__ = [
+    "ActiveConnectorBinding",
     "ActivatedConnector",
     "ActivatedSkill",
     "ConnectorFactory",
