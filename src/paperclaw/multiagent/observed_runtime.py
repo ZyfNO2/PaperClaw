@@ -198,6 +198,13 @@ class SQLiteTeamTraceBridge:
             trace_type = "run.completed" if succeeded else "run.failed"
         elif source_type == "team.run.metrics":
             trace_type = "run.metrics"
+            body = {
+                "schema_version": _TRACE_SCHEMA_VERSION,
+                "request_id": request_id,
+                "source_event_type": source_type,
+                "message_id": message_id,
+                "metrics": body,
+            }
         else:
             trace_type = source_type
 
@@ -328,8 +335,12 @@ class ObservedWorker(Worker):
         task_id: str,
         counters: Any,
     ) -> None:
-        super()._on_runtime_event(event, payload, task_id, counters)
+        if event == "model_call":
+            super()._on_runtime_event(event, payload, task_id, counters)
+            return
         if event == "tool_call":
+            # Scoped tool wrappers already increment the authoritative execution
+            # counter. Calling the base hook here would count each Tool twice.
             emit_team_event(
                 self._team_state,
                 "tool.started",
