@@ -83,7 +83,11 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install build
       - run: python -m build
-      - run: python -m pip install --force-reinstall "dist/*.whl[distributed]"
+      - name: Install wheel with distributed extras
+        shell: bash
+        run: |
+          wheel=$(find dist -maxdepth 1 -name '*.whl' -print -quit)
+          python -m pip install --force-reinstall "${wheel}[distributed]"
       - run: python -c "from importlib.metadata import version; assert version('paperclaw') == '0.34.0'"
       - run: paperclaw-team-run --help
       - run: paperclaw-team-cancel --help
