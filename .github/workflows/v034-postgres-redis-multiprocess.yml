@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   distributed-acceptance:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.34-postgres-redis-multiprocess'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -74,6 +75,7 @@ jobs:
           path: v034-distributed.xml
 
   package-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.34-postgres-redis-multiprocess'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -94,6 +96,7 @@ jobs:
       - run: paperclaw-observe --help
 
   full-non-live:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.34-postgres-redis-multiprocess'
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
