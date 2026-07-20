@@ -20,10 +20,10 @@ from paperclaw.multiagent.observed_runtime import (
     TraceUsageCollector,
     team_run_id,
 )
-from paperclaw.multiagent.resilient_runtime import (
-    ResilientBusDrivenTeamRuntime,
-    SQLiteResilientChoreographyStore,
+from paperclaw.multiagent.ordered_outbox import (
+    SQLiteOrderedResilientChoreographyStore,
 )
+from paperclaw.multiagent.resilient_runtime import ResilientBusDrivenTeamRuntime
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     trace_database = _resolve_under_workspace(workspace, args.trace_database)
     raw_bus = SQLiteMessageBusStore(database)
     trace_bridge = SQLiteTeamTraceBridge(raw_bus, trace_database)
-    state = SQLiteResilientChoreographyStore(state_database)
+    state = SQLiteOrderedResilientChoreographyStore(state_database)
 
     def coordinator_factory(budget, event_handler, usage):
         def model_factory(_agent_id: str):
@@ -105,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         payload["trace_database"] = str(trace_database)
         payload["resilience"] = {
             "terminal_outbox": True,
+            "ordered_outbox": True,
             "cancellation_topic": "multiagent.team.cancellations.v1",
         }
         encoded = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
