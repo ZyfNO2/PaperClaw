@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   focused:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.33-resilience-outbox-cancellation'
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +49,7 @@ jobs:
           path: v033-${{ matrix.os }}.xml
 
   full-non-live:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.33-resilience-outbox-cancellation'
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
@@ -74,6 +76,7 @@ jobs:
             v033-full.jsonl
 
   package-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.33-resilience-outbox-cancellation'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -90,6 +93,7 @@ jobs:
       - run: paperclaw-observe --help
 
   live-provider:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.33-resilience-outbox-cancellation'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
