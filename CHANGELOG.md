@@ -4,6 +4,35 @@ All notable PaperClaw changes are recorded here. Versions are developed on isola
 branches and are intended to be squash-merged so one released version contributes
 one commit to `main`.
 
+## [0.34.0] — Unreleased
+
+### Added
+
+- real Redis Streams `MessageBusStore` backend;
+- Lua-atomic sequence allocation, capacity check, exact idempotency and Stream append;
+- Consumer Group delivery, Pending Entry recovery through `XAUTOCLAIM`, and direct-recipient filtering;
+- contiguous logical Ack cursor across out-of-order process completion;
+- PostgreSQL attempt, terminal snapshot and ordered-Outbox store;
+- `FOR UPDATE SKIP LOCKED` Outbox claim and stale claim takeover;
+- Team Run and Team Cancel CLI selectors for SQLite/Redis and SQLite/PostgreSQL;
+- `distributed` package extra with Redis and psycopg;
+- real Redis 7 + PostgreSQL 16 integration acceptance;
+- two-process shared-consumer acceptance without duplicate terminal results.
+
+### Changed
+
+- package version updated to `0.34.0`;
+- distributed backends implement the same runtime protocols used by SQLite;
+- Capability Catalog adds `multiagent.distributed_runtime [shipped]`.
+
+### Known limits
+
+- Redis Cluster cross-slot Lua deployment is not claimed;
+- PostgreSQL and Redis do not form one distributed transaction;
+- Trace projection remains the local SQLite reference store;
+- external Tool side effects still require Tool-level idempotency;
+- no Kafka or NATS adapter is included.
+
 ## [0.33.0] — Unreleased
 
 ### Added
@@ -24,13 +53,6 @@ one commit to `main`.
 - `paperclaw-team-run` now uses `ResilientBusDrivenTeamRuntime`;
 - terminal metrics, terminal result and DLQ publication use the Outbox path;
 - v0.33 capability maturity is represented by `multiagent.resilient_choreography`.
-
-### Known limits
-
-- Outbox atomicity is local to the choreography SQLite database, not an external broker;
-- live progress events remain direct best-effort publications;
-- external Tool side effects still require Tool-level idempotency;
-- PostgreSQL and Redis Streams are deferred to v0.34.
 
 ## [0.32.0] — Unreleased
 
