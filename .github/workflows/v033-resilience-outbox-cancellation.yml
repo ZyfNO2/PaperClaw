@@ -1,0 +1,123 @@
+name: v0.33 Resilience Outbox Cancellation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.33-resilience-outbox-cancellation'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - name: Run resilience and compatibility tests
+        run: >-
+          python -m pytest
+          tests/unit/multiagent/test_resilient_runtime.py
+          tests/unit/multiagent/test_observed_runtime.py
+          tests/unit/multiagent/test_bus_runtime.py
+          tests/unit/eval/test_aggregate.py
+          --junitxml=v033-${{ matrix.os }}.xml -vv
+      - name: Correctness lint
+        run: >-
+          python -m ruff check
+          src/paperclaw/multiagent/resilient_runtime.py
+          src/paperclaw/multiagent/ordered_outbox.py
+          src/paperclaw/multiagent/cancel_cli.py
+          src/paperclaw/multiagent/bus_cli.py
+          tests/unit/multiagent/test_resilient_runtime.py
+          tests/real_llm/test_v033_outbox_recovery_live.py
+          --select E9,F63,F7,F82
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v033-focused-${{ matrix.os }}-${{ github.run_id }}
+          path: v033-${{ matrix.os }}.xml
+
+  full-non-live:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.33-resilience-outbox-cancellation'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - name: Full non-live regression
+        run: >-
+          python -m pytest -m "not real_llm"
+          --junitxml=v033-full.xml
+          --report-log=v033-full.jsonl -q
+      - name: Repository correctness lint
+        run: python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v033-full-${{ github.run_id }}
+          path: |
+            v033-full.xml
+            v033-full.jsonl
+
+  package-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.33-resilience-outbox-cancellation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build
+      - run: python -m build
+      - run: python -m pip install --force-reinstall dist/*.whl
+      - run: python -c "from importlib.metadata import version; assert version('paperclaw') == '0.33.0'"
+      - run: paperclaw-team-run --help
+      - run: paperclaw-team-cancel --help
+      - run: paperclaw-observe --help
+
+  live-provider:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.33-resilience-outbox-cancellation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PAPERCLAW_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      PAPERCLAW_BASE_URL: https://api.mistral.ai/v1
+      PAPERCLAW_MODEL: mistral-small-latest
+      PAPERCLAW_PROVIDER: mistral
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Require live provider credential
+        shell: bash
+        run: test -n "$PAPERCLAW_API_KEY"
+      - run: python -m pip install -e ".[dev]"
+      - name: Run live terminal-commit crash recovery acceptance
+        run: >-
+          python -m pytest
+          tests/real_llm/test_v033_outbox_recovery_live.py
+          -m real_llm
+          --junitxml=v033-live.xml -vv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v033-live-${{ github.run_id }}
+          path: v033-live.xml

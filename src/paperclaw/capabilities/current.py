@@ -1,4 +1,4 @@
-"""Current-stack capability catalog transformations through v0.32."""
+"""Current-stack capability catalog transformations through v0.33."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .catalog import (
 
 
 def default_capability_catalog() -> CapabilityCatalog:
-    """Return the audited capability catalog for the v0.32 development line.
+    """Return the audited capability catalog for the v0.33 development line.
 
     The baseline may already contain descriptors that older stacked transforms
     appended. Replace by capability id and append only genuinely missing rows.
@@ -58,6 +58,25 @@ def default_capability_catalog() -> CapabilityCatalog:
                 ),
                 limitations=(
                     "Local file/blob store only; sharing and blob garbage collection are deferred.",
+                ),
+            )
+        elif item.capability_id == "multiagent.bus_choreography":
+            item = replace(
+                item,
+                maturity="foundation",
+                surfaces=("library", "cli"),
+                limitations=(
+                    "Delivery is at-least-once, not exactly-once.",
+                    "The built-in broker remains SQLite-backed.",
+                ),
+            )
+        elif item.capability_id == "evaluation.team_trace_closure":
+            item = replace(
+                item,
+                maturity="shipped",
+                surfaces=("library", "cli"),
+                limitations=(
+                    "Trace and choreography use local SQLite reference stores.",
                 ),
             )
         replacements[item.capability_id] = item
@@ -121,7 +140,7 @@ def default_capability_catalog() -> CapabilityCatalog:
             dependencies=("multiagent.coordinator", "multiagent.message_bus"),
             limitations=(
                 "Delivery is at-least-once, not exactly-once.",
-                "Terminal state and event publication are not one atomic Outbox transaction.",
+                "The built-in broker remains SQLite-backed.",
             ),
         ),
         CapabilityDescriptor(
@@ -152,7 +171,26 @@ def default_capability_catalog() -> CapabilityCatalog:
                 "trace.durable",
             ),
             limitations=(
-                "Failure injection, cancellation and Outbox hardening are v0.33 scope.",
+                "Trace and choreography use local SQLite reference stores.",
+            ),
+        ),
+        CapabilityDescriptor(
+            capability_id="multiagent.resilient_choreography",
+            introduced_version="v0.33",
+            maturity="shipped",
+            surfaces=("library", "cli"),
+            summary=(
+                "Terminal Outbox recovery, durable cancellation, failure injection and retry taxonomy."
+            ),
+            dependencies=(
+                "evaluation.team_trace_closure",
+                "multiagent.bus_choreography",
+                "tasks.fenced_queue",
+            ),
+            limitations=(
+                "Outbox atomicity is local to the choreography SQLite database.",
+                "External Tool side effects still require Tool-level idempotency.",
+                "PostgreSQL and Redis Streams are v0.34 scope.",
             ),
         ),
     )

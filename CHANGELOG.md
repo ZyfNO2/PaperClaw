@@ -4,6 +4,34 @@ All notable PaperClaw changes are recorded here. Versions are developed on isola
 branches and are intended to be squash-merged so one released version contributes
 one commit to `main`.
 
+## [0.33.0] — Unreleased
+
+### Added
+
+- terminal state, terminal snapshot and terminal-event Outbox in one SQLite transaction;
+- restart recovery that flushes pending Outbox rows before acknowledging requests;
+- exact-idempotent recovery for publish-before-delivered-mark crashes;
+- deterministic crash checkpoints for attempt, Coordinator, terminal, publish and Ack windows;
+- durable `multiagent.team.cancellations.v1` requests;
+- `paperclaw-team-cancel` CLI;
+- retryable, permanent and unknown failure disposition;
+- immediate DLQ for permanent failures and bounded retry for retryable/unknown failures;
+- live Mistral terminal-commit crash recovery acceptance.
+
+### Changed
+
+- package version updated to `0.33.0`;
+- `paperclaw-team-run` now uses `ResilientBusDrivenTeamRuntime`;
+- terminal metrics, terminal result and DLQ publication use the Outbox path;
+- v0.33 capability maturity is represented by `multiagent.resilient_choreography`.
+
+### Known limits
+
+- Outbox atomicity is local to the choreography SQLite database, not an external broker;
+- live progress events remain direct best-effort publications;
+- external Tool side effects still require Tool-level idempotency;
+- PostgreSQL and Redis Streams are deferred to v0.34.
+
 ## [0.32.0] — Unreleased
 
 ### Added
@@ -14,21 +42,14 @@ one commit to `main`.
 - bounded Tool lifecycle projection without copying arguments or output;
 - `paperclaw-team-run --trace-database`;
 - `paperclaw-observe --request-id`;
-- Linux/Windows closure tests, package build smoke and opt-in live-provider acceptance.
+- Linux/Windows closure tests, package build smoke and live-provider acceptance.
 
 ### Changed
 
 - package version updated from `0.0.1` to `0.32.0`;
-- Team Run output now includes the durable trace `run_id` and database path;
+- Team Run output includes the durable trace `run_id` and database path;
 - the Team Run CLI composes the existing Coordinator with observed Workers;
-- README and capability maturity records are aligned with v0.31/v0.32 reality.
-
-### Known limits
-
-- projection and choreography state are not yet one atomic Outbox transaction;
-- delivery is at-least-once with idempotent event boundaries;
-- SQLite remains a same-filesystem reference backend;
-- cancellation and systematic failure injection are deferred to v0.33.
+- README and capability maturity records align with v0.31/v0.32 reality.
 
 ## [0.31.0] — 2026-07-20
 
