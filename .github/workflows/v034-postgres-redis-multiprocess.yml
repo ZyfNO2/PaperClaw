@@ -1,0 +1,124 @@
+name: v0.34 PostgreSQL Redis Multiprocess
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  distributed-acceptance:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.34-postgres-redis-multiprocess'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: paperclaw
+          POSTGRES_PASSWORD: paperclaw
+          POSTGRES_DB: paperclaw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U paperclaw -d paperclaw"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      PAPERCLAW_TEST_REDIS_URL: redis://localhost:6379/15
+      PAPERCLAW_TEST_POSTGRES_DSN: postgresql://paperclaw:paperclaw@localhost:5432/paperclaw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - name: Run real distributed acceptance
+        run: >-
+          python -m pytest
+          tests/integration/test_v034_distributed_backends.py
+          -m distributed
+          --junitxml=v034-distributed.xml -vv
+      - name: Run v0.33 compatibility
+        run: >-
+          python -m pytest
+          tests/unit/multiagent/test_resilient_runtime.py
+          tests/unit/multiagent/test_observed_runtime.py
+          tests/unit/multiagent/test_bus_runtime.py -q
+      - name: Correctness lint
+        run: >-
+          python -m ruff check
+          src/paperclaw/message_bus/redis_streams.py
+          src/paperclaw/message_bus/redis_backend.py
+          src/paperclaw/multiagent/postgres_store.py
+          src/paperclaw/multiagent/bus_cli.py
+          src/paperclaw/multiagent/cancel_cli.py
+          tests/integration/test_v034_distributed_backends.py
+          --select E9,F63,F7,F82
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v034-distributed-${{ github.run_id }}
+          path: v034-distributed.xml
+
+  package-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.34-postgres-redis-multiprocess'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build
+      - run: python -m build
+      - name: Install wheel with distributed extras
+        shell: bash
+        run: |
+          wheel=$(find dist -maxdepth 1 -name '*.whl' -print -quit)
+          python -m pip install --force-reinstall "${wheel}[distributed]"
+      - run: python -c "from importlib.metadata import version; assert version('paperclaw') == '0.34.0'"
+      - run: paperclaw-team-run --help
+      - run: paperclaw-team-cancel --help
+      - run: paperclaw-observe --help
+
+  full-non-live:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/v0.34-postgres-redis-multiprocess'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - name: Full non-live regression without external-service tests
+        run: >-
+          python -m pytest
+          -m "not real_llm and not distributed"
+          --junitxml=v034-full.xml
+          --report-log=v034-full.jsonl -q
+      - name: Repository correctness lint
+        run: python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v034-full-${{ github.run_id }}
+          path: |
+            v034-full.xml
+            v034-full.jsonl

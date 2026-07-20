@@ -1,4 +1,4 @@
-"""Durable Agent Message Bus foundation."""
+"""Durable Agent Message Bus backends."""
 
 from .contracts import (
     ConsumerCursor,
@@ -11,6 +11,7 @@ from .contracts import (
     MessageEnvelope,
     PublishResult,
 )
+from .redis_backend import RedisStreamsMessageBusStore
 from .service import AgentMessageBus
 from .store import MessageBusStore, SQLiteMessageBusStore
 
@@ -26,5 +27,6 @@ __all__ = [
     "MessageDraft",
     "MessageEnvelope",
     "PublishResult",
+    "RedisStreamsMessageBusStore",
     "SQLiteMessageBusStore",
 ]
