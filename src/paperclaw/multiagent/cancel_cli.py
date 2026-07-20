@@ -5,11 +5,16 @@ from __future__ import annotations
 import argparse
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import sys
 from uuid import uuid4
 
-from paperclaw.message_bus import MessageDraft, SQLiteMessageBusStore
+from paperclaw.message_bus import (
+    MessageDraft,
+    RedisStreamsMessageBusStore,
+    SQLiteMessageBusStore,
+)
 from paperclaw.multiagent.resilient_runtime import (
     TEAM_CANCEL_TOPIC,
     TeamCancellationRequest,
@@ -19,7 +24,10 @@ from paperclaw.multiagent.resilient_runtime import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="paperclaw-team-cancel")
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
+    parser.add_argument("--bus-backend", choices=("sqlite", "redis"), default="sqlite")
     parser.add_argument("--database", type=Path, default=Path(".paperclaw/team-bus.sqlite3"))
+    parser.add_argument("--redis-url", default=os.environ.get("PAPERCLAW_REDIS_URL"))
+    parser.add_argument("--redis-namespace", default="paperclaw")
     parser.add_argument("--consumer-id", default="multiagent-runtime")
     parser.add_argument("--request-id", required=True)
     parser.add_argument("--task-id", action="append", default=[])
@@ -31,7 +39,16 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     workspace = args.workspace.expanduser().resolve(strict=True)
-    database = _resolve_under_workspace(workspace, args.database)
+    if args.bus_backend == "redis":
+        if not args.redis_url:
+            raise SystemExit("--redis-url or PAPERCLAW_REDIS_URL is required")
+        bus = RedisStreamsMessageBusStore(
+            args.redis_url,
+            namespace=args.redis_namespace,
+        )
+    else:
+        database = _resolve_under_workspace(workspace, args.database)
+        bus = SQLiteMessageBusStore(database)
     cancellation = TeamCancellationRequest(
         cancellation_id=args.cancellation_id or f"cancel-{uuid4().hex[:16]}",
         request_id=args.request_id,
@@ -39,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         reason=args.reason,
     )
     recipient_id = _cancellation_recipient(args.consumer_id, cancellation.request_id)
-    message = SQLiteMessageBusStore(database).publish(
+    message = bus.publish(
         MessageDraft(
             topic=TEAM_CANCEL_TOPIC,
             sender_id="team-cancel-cli",
@@ -57,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
                 "task_ids": list(cancellation.task_ids),
                 "message_id": message.message_id,
                 "recipient_id": recipient_id,
+                "message_bus": args.bus_backend,
             },
             ensure_ascii=False,
             indent=2,
