@@ -4,6 +4,34 @@ All notable PaperClaw changes are recorded here. Versions are developed on isola
 branches and are intended to be squash-merged so one released version contributes
 one commit to `main`.
 
+## [0.36.0] — Unreleased
+
+### Added
+
+- project-scoped Skill and Connector descriptors in `.paperclaw/extensions.json`;
+- semantic versions, trust source, enabled state and bounded permissions;
+- atomic registry writes and SQLite mutation audit;
+- synchronization with `ProjectManifest.enabled_skills` and `enabled_connectors`;
+- effective Tool/path/host permissions through intersection with a runtime ceiling;
+- bounded UTF-8 workspace-local Skill activation;
+- Connector activation through application-registered `mcp:<factory_id>` factories;
+- filtered public Connector Tool discovery;
+- `paperclaw-project-extensions` management CLI;
+- Linux/Windows security tests, package smoke and full non-live regression gate.
+
+### Changed
+
+- package version updated to `0.36.0`;
+- version workflows run only on their matching development branch;
+- project extension management is represented by `project.extensions [foundation]`.
+
+### Known limits
+
+- Connector runtime factories are supplied by the host application;
+- Desktop install/management UI and hosted authorization flows are not included;
+- project-provided executable modules are intentionally unsupported;
+- Connector transport behavior remains the responsibility of the registered factory.
+
 ## [0.35.0] — Unreleased
 
 ### Added

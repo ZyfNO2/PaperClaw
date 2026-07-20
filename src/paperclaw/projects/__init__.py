@@ -1,5 +1,21 @@
-"""PaperClaw project workspace manifest and knowledge lifecycle."""
+"""PaperClaw project workspace, knowledge and extension lifecycle."""
 
+from .extension_runtime import (
+    ActivatedConnector,
+    ActivatedSkill,
+    ConnectorFactory,
+    ConnectorRuntime,
+    ProjectExtensionActivation,
+    ProjectExtensionActivator,
+)
+from .extensions import (
+    ExtensionKind,
+    ExtensionPermissions,
+    ExtensionRegistrySnapshot,
+    ProjectExtensionDescriptor,
+    ProjectExtensionRegistry,
+    TrustSource,
+)
 from .indexing import (
     ProjectIndexReport,
     ProjectIndexStatus,
@@ -25,6 +41,17 @@ from .runtime import (
 )
 
 __all__ = [
+    "ActivatedConnector",
+    "ActivatedSkill",
+    "ConnectorFactory",
+    "ConnectorRuntime",
+    "ExtensionKind",
+    "ExtensionPermissions",
+    "ExtensionRegistrySnapshot",
+    "ProjectExtensionActivation",
+    "ProjectExtensionActivator",
+    "ProjectExtensionDescriptor",
+    "ProjectExtensionRegistry",
     "ProjectIndexPolicy",
     "ProjectIndexReport",
     "ProjectIndexStatus",
@@ -38,6 +65,7 @@ __all__ = [
     "ProjectManifestStore",
     "ProjectValidationIssue",
     "ProjectValidationReport",
+    "TrustSource",
     "build_project_index",
     "discover_project_manifest",
     "inspect_project_index",
