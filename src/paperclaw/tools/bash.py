@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -12,13 +13,25 @@ from .base import ToolContext, ToolResult, ToolValidationError, require_string, 
 
 class BashTool:
     name = "bash"
-    description = "Run one non-interactive PowerShell command in the workspace with timeout and output limits."
+    description = "Run one non-interactive shell command in the workspace with timeout and output limits."
     _denied = re.compile(
         r"(?i)(pip|uv|poetry|npm|pnpm|yarn)\s+(install|add)|"
         r"remove-item\s+.*-recurse|format-volume|clear-disk|shutdown|restart-computer|"
         r"start-process|\b(rm|del|rmdir)\b.*(/s|-r|-rf)|[&|]\s*$"
     )
-    _env_allowlist = {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "COMSPEC", "PYTHONUTF8"}
+    _env_allowlist = {
+        "PATH",
+        "PATHEXT",
+        "SYSTEMROOT",
+        "WINDIR",
+        "HOME",
+        "USERPROFILE",
+        "TEMP",
+        "TMP",
+        "COMSPEC",
+        "SHELL",
+        "PYTHONUTF8",
+    }
 
     def validate(self, arguments: dict[str, Any]) -> None:
         command = require_string(arguments, "command")
@@ -33,19 +46,29 @@ class BashTool:
     def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         started = time.perf_counter()
         started_at = datetime.now(timezone.utc)
-        env = {key: value for key, value in os.environ.items() if key.upper() in self._env_allowlist}
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() in self._env_allowlist
+        }
         env["PYTHONUTF8"] = "1"
         process = subprocess.Popen(
-                ["powershell", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", arguments["command"]],
-                cwd=context.workspace,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                stdin=subprocess.DEVNULL,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            self._shell_command(arguments["command"]),
+            cwd=context.workspace,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdin=subprocess.DEVNULL,
+            creationflags=(
+                getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                if os.name == "nt"
+                else 0
+            ),
+            start_new_session=os.name != "nt",
         )
         timeout_seconds = arguments.get("timeout_seconds", 30)
         deadline = time.monotonic() + timeout_seconds
@@ -75,7 +98,9 @@ class BashTool:
                 process.kill()
                 stdout, stderr = process.communicate(timeout=2)
             duration = int((time.perf_counter() - started) * 1000)
-            output, truncated_flag = truncate((stdout or "") + (stderr or ""), context.output_limit)
+            output, truncated_flag = truncate(
+                (stdout or "") + (stderr or ""), context.output_limit
+            )
             return ToolResult(
                 False,
                 output or "command timed out",
@@ -113,22 +138,47 @@ class BashTool:
         )
 
     @staticmethod
+    def _shell_command(command: str) -> list[str]:
+        if os.name == "nt":
+            return [
+                "powershell",
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                command,
+            ]
+        return ["/bin/sh", "-c", command]
+
+    @staticmethod
     def _terminate_process_tree(process: subprocess.Popen) -> bool:
-        """Kill a process tree with taskkill, falling back to process.kill()."""
+        """Terminate the command process tree and report whether cleanup was incomplete."""
+        if process.poll() is not None:
+            return False
+        if os.name == "nt":
+            try:
+                killed = subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    capture_output=True,
+                    timeout=5,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                if killed.returncode in (0, 128):
+                    return False
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            if process.poll() is None:
+                process.kill()
+            return True
+
         try:
-            killed = subprocess.run(
-                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                capture_output=True,
-                timeout=5,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            if killed.returncode in (0, 128):
-                return False
-        except (OSError, subprocess.TimeoutExpired):
-            pass
-        if process.poll() is None:
-            process.kill()
-        return True
+            os.killpg(process.pid, signal.SIGKILL)
+            return False
+        except (OSError, ProcessLookupError):
+            if process.poll() is None:
+                process.kill()
+                return True
+            return False
 
 
 def _classify_command(command: str) -> str:
