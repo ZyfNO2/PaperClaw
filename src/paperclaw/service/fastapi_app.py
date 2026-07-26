@@ -5,6 +5,7 @@ Import this module only when the optional ``service`` dependencies are installed
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
 from paperclaw.harness import RunLimits
@@ -18,7 +19,11 @@ from paperclaw.tasks.contracts import (
 from .contracts import ServiceError, ServiceRunRequest
 
 
-def create_app(service: Any) -> Any:
+def create_app(
+    service: Any,
+    *,
+    paper_workspace_roots: list[str | Path] | tuple[str | Path, ...] = (),
+) -> Any:
     try:
         from fastapi import FastAPI, Header, HTTPException, Request
         from fastapi.responses import StreamingResponse
@@ -60,11 +65,144 @@ def create_app(service: Any) -> Any:
             max_length=20,
         )
 
+    class PaperImportBody(BaseModel):
+        source_path: str = Field(min_length=1, max_length=4_096)
+        paper_id: str | None = Field(default=None, max_length=200)
+
+    class PaperMetadataBody(BaseModel):
+        expected_revision: int = Field(ge=1)
+        title: str | None = Field(default=None, max_length=1_000)
+        authors: list[str] | None = Field(default=None, max_length=200)
+        year: int | None = Field(default=None, ge=1, le=9999)
+        doi: str | None = Field(default=None, max_length=500)
+        arxiv_id: str | None = Field(default=None, max_length=500)
+        language: str | None = Field(default=None, max_length=100)
+
     app = FastAPI(title="PaperClaw Service API", version="0.19.0")
     app.state.paperclaw_service = service
     task_service = getattr(service, "task_service", None)
     if task_service is not None:
         app.state.paperclaw_task_service = task_service
+    app.state.paper_workspace_roots = tuple(
+        Path(root).resolve(strict=True) for root in paper_workspace_roots
+    )
+
+    def paper_service(project_id: str, source_path: str | None = None):
+        from paperclaw.papers import PaperService
+        from paperclaw.projects import ProjectManifestStore
+
+        candidates: list[Path] = []
+        if source_path is not None:
+            try:
+                source = Path(source_path).resolve(strict=True)
+            except (OSError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "paper_source_invalid", "message": "Paper source is unavailable."},
+                ) from exc
+            for root in app.state.paper_workspace_roots:
+                try:
+                    source.relative_to(root)
+                except ValueError:
+                    continue
+                candidates.extend([source.parent, *source.parents])
+        else:
+            candidates.extend(app.state.paper_workspace_roots)
+            for root in app.state.paper_workspace_roots:
+                candidates.extend(
+                    path.parent.parent
+                    for path in root.glob("**/.paperclaw/project.json")
+                )
+        seen: set[Path] = set()
+        for workspace in candidates:
+            if workspace in seen:
+                continue
+            seen.add(workspace)
+            try:
+                manifest = ProjectManifestStore(workspace).load()
+            except (FileNotFoundError, ValueError):
+                continue
+            if manifest.project_id == project_id:
+                return PaperService.for_workspace(workspace, project_id=project_id)
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "paper_workspace_denied", "message": "Paper workspace is not allowed."},
+        )
+
+    def paper_error(exc: Exception) -> HTTPException:
+        from paperclaw.papers import (
+            PaperCapacityError,
+            PaperConflictError,
+            PaperNotFoundError,
+        )
+        if isinstance(exc, PaperNotFoundError):
+            return HTTPException(404, detail={"code": "paper_not_found", "message": "Paper resource was not found."})
+        if isinstance(exc, PaperConflictError):
+            detail = {"code": "paper_conflict", "message": str(exc)[:500]}
+            if exc.current_revision is not None:
+                detail["current_revision"] = exc.current_revision
+            return HTTPException(409, detail=detail)
+        if isinstance(exc, PaperCapacityError):
+            return HTTPException(413, detail={"code": "paper_too_large", "message": str(exc)[:500]})
+        if isinstance(exc, (ValueError, TypeError)):
+            return HTTPException(422, detail={"code": "paper_validation_error", "message": str(exc)[:500]})
+        return HTTPException(500, detail={"code": "paper_runtime_error", "message": "Paper operation failed."})
+
+    @app.post("/v1/projects/{project_id}/papers/import", status_code=201)
+    def import_paper(project_id: str, body: PaperImportBody):
+        from paperclaw.papers import PaperImportRequest
+        resolved = paper_service(project_id, body.source_path)
+        try:
+            return resolved.import_paper(
+                PaperImportRequest(project_id, body.source_path, paper_id=body.paper_id)
+            ).to_public_dict()
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.get("/v1/projects/{project_id}/papers")
+    def list_papers(project_id: str, cursor: str | None = None, limit: int = 50):
+        resolved = paper_service(project_id)
+        try:
+            return {"papers": [item.to_public_dict() for item in resolved.list_papers(project_id, cursor, limit)]}
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.get("/v1/projects/{project_id}/papers/{paper_id}")
+    def get_paper(project_id: str, paper_id: str):
+        resolved = paper_service(project_id)
+        try:
+            return resolved.get_paper(project_id, paper_id).to_public_dict()
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.get("/v1/projects/{project_id}/papers/{paper_id}/versions")
+    def list_paper_versions(project_id: str, paper_id: str):
+        resolved = paper_service(project_id)
+        try:
+            return {"versions": [item.to_public_dict() for item in resolved.list_versions(project_id, paper_id)]}
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.patch("/v1/projects/{project_id}/papers/{paper_id}/metadata")
+    def confirm_paper_metadata(project_id: str, paper_id: str, body: PaperMetadataBody):
+        from paperclaw.papers import MetadataPatch
+        resolved = paper_service(project_id)
+        try:
+            return resolved.confirm_metadata(
+                project_id,
+                paper_id,
+                MetadataPatch(
+                    title=body.title,
+                    authors=tuple(body.authors) if body.authors is not None else None,
+                    year=body.year,
+                    doi=body.doi,
+                    arxiv_id=body.arxiv_id,
+                    language=body.language,
+                ),
+                body.expected_revision,
+            ).to_public_dict()
+        except Exception as exc:
+            raise paper_error(exc) from exc
 
     def public_error(exc: Exception) -> HTTPException:
         if isinstance(exc, ServiceError):

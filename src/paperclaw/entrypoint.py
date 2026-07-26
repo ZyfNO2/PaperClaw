@@ -11,6 +11,10 @@ def main(argv: list[str] | None = None) -> int:
         from paperclaw.product_cli import main as product_main
 
         return product_main(resolved)
+    if resolved and resolved[0] == "papers":
+        from paperclaw.papers.cli import main as papers_main
+
+        return papers_main(resolved[1:])
     if resolved and resolved[0] == "gui":
         from paperclaw.desktop.bootstrap import main as desktop_main
 
