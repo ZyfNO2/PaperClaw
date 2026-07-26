@@ -2,7 +2,7 @@
 
 PaperClaw 是一个面向 Coding、Research 与多 Agent 工作流的可审计 Agent Runtime。
 
-当前开发版本：**0.36.0**。
+当前开发版本：**0.37.0**。
 
 ```text
 Team Plan
@@ -20,7 +20,8 @@ Project Extensions
   -> project-scoped descriptors
   -> trust policy + permission ceiling
   -> bounded Skill activation / application-registered Connector runtime
-  -> filtered Tool discovery + mutation audit
+  -> filtered Tool discovery + call-time policy recheck
+  -> bounded/redacted Tool execution + mutation/invocation audit
 ```
 
 ## 安装
@@ -34,6 +35,91 @@ python -m pip install -e ".[dev]"
 ```bash
 python -m pip install -e ".[distributed]"
 ```
+
+## v0.37 Extension Execution Closure
+
+v0.37 将 v0.36 的注册与激活能力接入现有 `ToolRegistry`，但 Connector 的
+transport、认证存储和 runtime factory 仍由宿主应用控制。
+
+执行闭环：
+
+```text
+extensions.json
+  -> ProjectExtensionActivator
+  -> filtered discovery
+  -> frozen JSON Schema
+  -> stable project_<extension>_<tool>_<digest> Tool name
+  -> invocation-time descriptor/trust/permission recheck
+  -> host runtime call_tool(...)
+  -> bounded + redacted ToolResult
+  -> content-free SQLite invocation audit
+```
+
+宿主 runtime 实现：
+
+```python
+from paperclaw.projects import ConnectorCallResult
+
+class SearchRuntime:
+    def discover_tools(self):
+        return [{
+            "name": "search",
+            "description": "Search project evidence",
+            "input_schema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        }]
+
+    def call_tool(self, name, arguments, context):
+        # context.auth_value is host-resolved and excluded from public projections.
+        return ConnectorCallResult(True, {"matches": []})
+
+    def close(self):
+        pass
+```
+
+注册到现有 Tool Registry：
+
+```python
+from paperclaw.projects import (
+    ExtensionPermissions,
+    MappingProjectSecretResolver,
+    ProjectExtensionActivator,
+    ProjectExtensionExecutor,
+    ProjectExtensionRegistry,
+)
+from paperclaw.tools.registry import ToolRegistry
+
+project_registry = ProjectExtensionRegistry(".")
+activator = ProjectExtensionActivator(
+    project_registry,
+    permission_ceiling=ExtensionPermissions(
+        tools=("search",),
+        network_hosts=("search.example.com",),
+    ),
+    connector_factories={"search": lambda descriptor, permissions: SearchRuntime()},
+)
+executor = ProjectExtensionExecutor(
+    activator,
+    secret_resolver=MappingProjectSecretResolver({
+        "secret://project/search": "host-owned-value",
+    }),
+)
+tools = ToolRegistry()
+registration = executor.register_tools(tools)
+```
+
+每次调用都会重新读取 registry。扩展被删除、禁用、修改，或权限 ceiling 收紧后，
+调用会在远程执行前失败。调用审计只记录状态、时延、字节数和 schema hash，
+不记录参数、结果、`secret://` reference 或解析后的 secret。
+
+`paperclaw-project-extensions audit` 同时返回：
+
+- `events`：register/replace/enable/disable/remove；
+- `invocations`：success/error/timeout/cancelled/denied。
 
 ## v0.36 Project Extensions
 
@@ -194,13 +280,13 @@ multiagent.resilient_choreography [shipped]
 multiagent.distributed_runtime [shipped]
 retrieval.semantic_hybrid [foundation]
 evaluation.research_quality [shipped]
-project.extensions [foundation]
+project.extensions [shipped]
 ```
 
 ## 验收
 
 ```bash
-python -m pytest -q tests/unit/projects/test_v036_extensions.py tests/unit/projects
+python -m pytest -q tests/unit/projects/test_v037_extension_execution.py tests/unit/projects
 python -m pytest -q tests/unit/retrieval/test_v035_semantic_quality.py tests/unit/retrieval
 python -m pytest -q -m "not real_llm and not distributed"
 python -m ruff check src/paperclaw tests --select E9,F63,F7,F82 --ignore F821
@@ -215,6 +301,7 @@ python -m build
 - 外部 Tool 副作用要求 Tool-level idempotency；
 - 本地 hashing vector 不等于 transformer embedding；
 - 质量评测依赖人工维护的相关性与 claim-support 标签；
-- Connector runtime 由宿主应用提供；
-- 不包含扩展市场或 Desktop 安装 UI；
-- 项目提供的动态 Python 加载被明确禁止。
+- Connector runtime 与 `secret://` resolver 由宿主应用提供；
+- timeout/cancellation 会关闭 runtime，但无法强制终止任意宿主线程；
+- 不包含 hosted OAuth、扩展市场或 Desktop 安装 UI；
+- 项目提供的动态 Python/import-path 加载被明确禁止。

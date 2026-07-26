@@ -1,4 +1,4 @@
-"""Current capability catalog through v0.36."""
+"""Current capability catalog through v0.37."""
 
 from dataclasses import replace
 
@@ -40,6 +40,31 @@ def default_capability_catalog() -> CapabilityCatalog:
     rows["evaluation.team_trace_closure"] = replace(
         rows["evaluation.team_trace_closure"],
         limitations=("The built-in Trace projection remains SQLite-backed.",),
+    )
+    rows["project.extensions"] = replace(
+        rows.get(
+            "project.extensions",
+            CapabilityDescriptor(
+                "project.extensions",
+                "v0.36",
+                "foundation",
+                ("library", "cli"),
+                "Project-scoped Skill and Connector registry with bounded activation.",
+                ("mcp.tool_gateway", "project.workspace"),
+                (),
+            ),
+        ),
+        maturity="shipped",
+        surfaces=("library", "cli"),
+        summary=(
+            "Project-scoped extension registry, bounded activation and "
+            "host-controlled Connector Tool execution."
+        ),
+        limitations=(
+            "Connector runtimes and secret resolution remain host supplied.",
+            "Desktop installation and hosted credential setup are not included.",
+            "Project-owned executable modules remain prohibited.",
+        ),
     )
 
     additions = (
@@ -89,18 +114,6 @@ def default_capability_catalog() -> CapabilityCatalog:
             "Retrieval, citation, grounding, abstention and cost evaluation.",
             ("retrieval.semantic_hybrid", "evaluation.aggregate_dashboard"),
             ("Results depend on curated relevance and claim labels.",),
-        ),
-        CapabilityDescriptor(
-            "project.extensions",
-            "v0.36",
-            "foundation",
-            ("library", "cli"),
-            "Project-scoped Skill and Connector registry with bounded activation.",
-            ("mcp.tool_gateway", "project.workspace"),
-            (
-                "Connector runtimes must be registered by the application.",
-                "Desktop management remains deferred.",
-            ),
         ),
     )
     for item in additions:

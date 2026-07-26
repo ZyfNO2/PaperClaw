@@ -1,6 +1,19 @@
 """PaperClaw project workspace, knowledge and extension lifecycle."""
 
+from .extension_execution import (
+    ConnectorCallResult,
+    ConnectorInvocationContext,
+    ConnectorInvocationError,
+    ExecutableConnectorRuntime,
+    MappingProjectSecretResolver,
+    ProjectConnectorTool,
+    ProjectExtensionExecutor,
+    ProjectExtensionRegistration,
+    ProjectSecretResolver,
+    project_extension_tool_name,
+)
 from .extension_runtime import (
+    ActiveConnectorBinding,
     ActivatedConnector,
     ActivatedSkill,
     ConnectorFactory,
@@ -41,10 +54,20 @@ from .runtime import (
 )
 
 __all__ = [
+    "ActiveConnectorBinding",
     "ActivatedConnector",
     "ActivatedSkill",
+    "ConnectorCallResult",
     "ConnectorFactory",
+    "ConnectorInvocationContext",
+    "ConnectorInvocationError",
     "ConnectorRuntime",
+    "ExecutableConnectorRuntime",
+    "MappingProjectSecretResolver",
+    "ProjectConnectorTool",
+    "ProjectExtensionExecutor",
+    "ProjectExtensionRegistration",
+    "ProjectSecretResolver",
     "ExtensionKind",
     "ExtensionPermissions",
     "ExtensionRegistrySnapshot",
@@ -70,4 +93,5 @@ __all__ = [
     "discover_project_manifest",
     "inspect_project_index",
     "project_index_database",
+    "project_extension_tool_name",
 ]

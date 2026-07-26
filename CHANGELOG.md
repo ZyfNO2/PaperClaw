@@ -4,6 +4,35 @@ All notable PaperClaw changes are recorded here. Versions are developed on isola
 branches and are intended to be squash-merged so one released version contributes
 one commit to `main`.
 
+## [0.37.0] — Unreleased
+
+### Added
+
+- host-controlled project Connector Tool invocation through the existing Tool contract;
+- stable NodeRegistry-safe Tool names bound to exact extension and remote Tool identities;
+- discovery-time JSON Schema freezing and invocation-time argument validation;
+- invocation-time descriptor, enabled-state, trust and effective-permission rechecks;
+- host-side `secret://` resolution without storing resolved values in project files or audit rows;
+- bounded Connector arguments, public results and metadata with exact-secret redaction;
+- timeout, cooperative cancellation and deterministic extension error taxonomy;
+- content-free SQLite invocation audit with duration, byte counts and schema hashes;
+- atomic ToolRegistry registration and fail-closed runtime/schema compatibility checks;
+- Linux/Windows focused tests, package smoke and full non-live regression gate.
+
+### Changed
+
+- package version updated to `0.37.0`;
+- `project.extensions` advances from `foundation` to `shipped`;
+- `paperclaw-project-extensions audit` includes mutation and invocation evidence.
+
+### Known limits
+
+- Connector runtimes and secret resolution are supplied by the host application;
+- timeout and cancellation close the affected runtime but cannot forcibly terminate arbitrary host code;
+- hosted OAuth/browser authorization and remote transport provisioning are not included;
+- extension marketplace and Desktop installation UI remain out of scope;
+- project-owned executable modules and import-path loading remain prohibited.
+
 ## [0.36.0] — 2026-07-20
 
 ### Added

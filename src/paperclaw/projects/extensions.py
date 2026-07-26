@@ -22,6 +22,7 @@ _VERSION = re.compile(
 )
 _HOST = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
 _REFERENCE = re.compile(r"^secret://[A-Za-z0-9][A-Za-z0-9_.:/-]{0,299}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _CONTROL = Path(".paperclaw")
 _REGISTRY = _CONTROL / "extensions.json"
 _AUDIT = _CONTROL / "extensions-audit.sqlite3"
@@ -360,6 +361,105 @@ class ProjectExtensionRegistry:
             for row in rows
         )
 
+    def record_invocation(
+        self,
+        *,
+        invocation_id: str,
+        extension_id: str,
+        tool_name: str,
+        status: str,
+        error_code: str | None,
+        duration_ms: int,
+        argument_bytes: int,
+        result_bytes: int,
+        schema_hash: str,
+    ) -> None:
+        """Persist a content-free Connector invocation audit record."""
+
+        if _ID.fullmatch(invocation_id) is None:
+            raise ValueError("invalid invocation_id")
+        if _ID.fullmatch(extension_id) is None:
+            raise ValueError("invalid extension_id")
+        if _ID.fullmatch(tool_name) is None:
+            raise ValueError("invalid tool_name")
+        if status not in {"success", "error", "timeout", "cancelled", "denied"}:
+            raise ValueError("invalid invocation status")
+        if error_code is not None and _ID.fullmatch(error_code) is None:
+            raise ValueError("invalid invocation error_code")
+        for name, value in (
+            ("duration_ms", duration_ms),
+            ("argument_bytes", argument_bytes),
+            ("result_bytes", result_bytes),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if _SHA256.fullmatch(schema_hash) is None:
+            raise ValueError("schema_hash must be a lowercase SHA-256 digest")
+        self._assert_control_files_safe()
+        with sqlite3.connect(self.audit_path) as connection:
+            connection.execute(
+                "INSERT INTO extension_invocation_audit("
+                "invocation_id, extension_id, tool_name, status, error_code, "
+                "duration_ms, argument_bytes, result_bytes, schema_hash, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    invocation_id,
+                    extension_id,
+                    tool_name,
+                    status,
+                    error_code,
+                    duration_ms,
+                    argument_bytes,
+                    result_bytes,
+                    schema_hash,
+                    time.time(),
+                ),
+            )
+
+    def invocation_events(
+        self,
+        *,
+        limit: int = 200,
+        extension_id: str | None = None,
+    ) -> tuple[dict[str, Any], ...]:
+        """Return bounded, content-free Connector invocation evidence."""
+
+        if not 1 <= limit <= 5_000:
+            raise ValueError("limit must be in [1, 5000]")
+        if extension_id is not None and _ID.fullmatch(extension_id) is None:
+            raise ValueError("invalid extension_id")
+        self._assert_control_files_safe()
+        query = (
+            "SELECT event_id, invocation_id, extension_id, tool_name, status, "
+            "error_code, duration_ms, argument_bytes, result_bytes, schema_hash, "
+            "created_at FROM extension_invocation_audit"
+        )
+        parameters: tuple[object, ...]
+        if extension_id is None:
+            query += " ORDER BY event_id DESC LIMIT ?"
+            parameters = (limit,)
+        else:
+            query += " WHERE extension_id = ? ORDER BY event_id DESC LIMIT ?"
+            parameters = (extension_id, limit)
+        with sqlite3.connect(self.audit_path) as connection:
+            rows = connection.execute(query, parameters).fetchall()
+        return tuple(
+            {
+                "event_id": int(row[0]),
+                "invocation_id": str(row[1]),
+                "extension_id": str(row[2]),
+                "tool_name": str(row[3]),
+                "status": str(row[4]),
+                "error_code": None if row[5] is None else str(row[5]),
+                "duration_ms": int(row[6]),
+                "argument_bytes": int(row[7]),
+                "result_bytes": int(row[8]),
+                "schema_hash": str(row[9]),
+                "created_at": float(row[10]),
+            }
+            for row in rows
+        )
+
     def _save(self, rows: Sequence[ProjectExtensionDescriptor]) -> None:
         payload = ExtensionRegistrySnapshot(
             1, tuple(sorted(rows, key=lambda item: item.extension_id))
@@ -444,6 +544,19 @@ class ProjectExtensionRegistry:
                 "event_id INTEGER PRIMARY KEY AUTOINCREMENT,"
                 "action TEXT NOT NULL, extension_id TEXT NOT NULL,"
                 "kind TEXT NOT NULL, created_at REAL NOT NULL)"
+            )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS extension_invocation_audit("
+                "event_id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "invocation_id TEXT NOT NULL UNIQUE,"
+                "extension_id TEXT NOT NULL, tool_name TEXT NOT NULL,"
+                "status TEXT NOT NULL, error_code TEXT, duration_ms INTEGER NOT NULL,"
+                "argument_bytes INTEGER NOT NULL, result_bytes INTEGER NOT NULL,"
+                "schema_hash TEXT NOT NULL, created_at REAL NOT NULL)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS extension_invocation_lookup "
+                "ON extension_invocation_audit(extension_id, event_id DESC)"
             )
 
     def _audit(self, action: str, extension_id: str, kind: str) -> None:
