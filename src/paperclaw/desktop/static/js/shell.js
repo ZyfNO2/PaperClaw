@@ -14,6 +14,7 @@
     console: { sectionId: "page-console", titleKey: "console.title", fallback: "CONSOLE" },
     missions: { sectionId: "page-missions", titleKey: "page.missions", fallback: "MISSIONS" },
     project: { sectionId: "page-project", titleKey: "page.project", fallback: "PROJECT" },
+    papers: { sectionId: "page-papers", titleKey: "page.papers", fallback: "PAPERS" },
     capabilities: { sectionId: "page-capabilities", titleKey: "page.capabilities", fallback: "CAPABILITIES" },
     artifacts: { sectionId: "page-artifacts", titleKey: "page.artifacts", fallback: "ARTIFACTS" },
     runs: { sectionId: "page-runs", titleKey: "page.runs", fallback: "RUNS" },

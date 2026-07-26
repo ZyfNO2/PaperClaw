@@ -43,6 +43,7 @@ _BROWSER_ASSETS = {
     "/js/mock-data.js": ("js/mock-data.js", "text/javascript; charset=utf-8"),
     "/js/shell.js": ("js/shell.js", "text/javascript; charset=utf-8"),
     "/js/pages.js": ("js/pages.js", "text/javascript; charset=utf-8"),
+    "/papers.js": ("papers.js", "text/javascript; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
 }
 _BROWSER_API_ARITY: dict[str, tuple[int, int]] = {
@@ -52,6 +53,7 @@ _BROWSER_API_ARITY: dict[str, tuple[int, int]] = {
     "cancel_run": (0, 0),
     "poll_events": (1, 2),
     "select_workspace": (0, 0),
+    "select_paper_source": (0, 0),
     "set_theme": (1, 1),
 }
 _BROWSER_MAX_REQUEST_BYTES = 1_000_000
@@ -221,6 +223,37 @@ class DesktopAPI:
                 "Selected workspace is not a directory.",
             ).to_public_dict()
         return {"ok": True, "workspace": str(workspace)}
+
+    def select_paper_source(self) -> dict[str, object]:
+        if self._window is None:
+            return DesktopPublicError(
+                "runtime_error", "Desktop window is not ready."
+            ).to_public_dict()
+        try:
+            import webview
+
+            selected = self._window.create_file_dialog(
+                webview.FileDialog.OPEN,
+                allow_multiple=False,
+                file_types=("Academic papers (*.pdf;*.md;*.txt)",),
+            )
+        except Exception:
+            return DesktopPublicError(
+                "runtime_error", "Paper picker could not be opened."
+            ).to_public_dict()
+        if not selected:
+            return {"ok": True, "source_path": None}
+        try:
+            source = Path(selected[0]).resolve(strict=True)
+        except (IndexError, OSError, TypeError, ValueError):
+            return DesktopPublicError(
+                "paper_source_invalid", "Selected paper could not be opened."
+            ).to_public_dict()
+        if not source.is_file() or source.suffix.lower() not in {".pdf", ".md", ".txt"}:
+            return DesktopPublicError(
+                "paper_source_invalid", "Select a PDF, Markdown or TXT file."
+            ).to_public_dict()
+        return {"ok": True, "source_path": str(source)}
 
     def open_in_browser(self, theme: str = "dark") -> dict[str, object]:
         """Open a token-protected loopback mirror in the system browser."""

@@ -24,6 +24,11 @@ def install_product_extension(app_module: Any) -> None:
             "list_artifacts": (1, 2),
             "get_artifact": (2, 2),
             "export_artifact": (2, 5),
+            "import_paper": (2, 3),
+            "list_papers": (1, 2),
+            "get_paper": (2, 2),
+            "list_paper_versions": (2, 2),
+            "confirm_paper_metadata": (4, 4),
         }
     )
     app_module._BROWSER_ASSETS.update(
@@ -97,6 +102,21 @@ def install_product_extension(app_module: Any) -> None:
             overwrite,
         )
 
+    def import_paper(self, workspace, source_path, paper_id=None):
+        return invoke(self, "import_paper", workspace, source_path, paper_id)
+
+    def list_papers(self, workspace, limit=50):
+        return invoke(self, "list_papers", workspace, limit)
+
+    def get_paper(self, workspace, paper_id):
+        return invoke(self, "get_paper", workspace, paper_id)
+
+    def list_paper_versions(self, workspace, paper_id):
+        return invoke(self, "list_paper_versions", workspace, paper_id)
+
+    def confirm_paper_metadata(self, workspace, paper_id, patch, expected_revision):
+        return invoke(self, "confirm_paper_metadata", workspace, paper_id, patch, expected_revision)
+
     api_type.__init__ = product_init
     api_type.get_product_overview = get_product_overview
     api_type.get_capabilities = get_capabilities
@@ -105,6 +125,11 @@ def install_product_extension(app_module: Any) -> None:
     api_type.list_artifacts = list_artifacts
     api_type.get_artifact = get_artifact
     api_type.export_artifact = export_artifact
+    api_type.import_paper = import_paper
+    api_type.list_papers = list_papers
+    api_type.get_paper = get_paper
+    api_type.list_paper_versions = list_paper_versions
+    api_type.confirm_paper_metadata = confirm_paper_metadata
     setattr(app_module, _MARKER, True)
 
 
