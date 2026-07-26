@@ -2,7 +2,7 @@
 
 PaperClaw 是一个面向 Coding、Research 与多 Agent 工作流的可审计 Agent Runtime。
 
-当前开发版本：**0.37.0**。
+当前开发版本：**0.38.0**。
 
 ```text
 Team Plan
@@ -22,7 +22,29 @@ Project Extensions
   -> bounded Skill activation / application-registered Connector runtime
   -> filtered Tool discovery + call-time policy recheck
   -> bounded/redacted Tool execution + mutation/invocation audit
+
+Academic Papers
+  -> PDF / Markdown / TXT safe import
+  -> content-addressed managed originals
+  -> immutable versions + candidate / confirmed metadata
+  -> Python / REST / CLI / Desktop
 ```
+
+## v0.38 Paper Import & Versioning
+
+```bash
+paperclaw papers --workspace . import path/to/paper.pdf
+paperclaw papers --workspace . list
+paperclaw papers --workspace . show PAPER_ID
+paperclaw papers --workspace . versions PAPER_ID
+```
+
+导入原件保存在项目 `.paperclaw` 管理区，源文件移动后仍可回放。相同内容幂等去重；
+新版本必须通过 `--paper-id` 显式追加。自动提取的题录始终是 candidate，只有用户确认后
+才成为 confirmed；本版不声明外部来源 verified。
+
+Service API 提供 `/v1/projects/{project_id}/papers` 系列端点，服务端只接受配置允许根目录
+中的本地文件。Desktop Papers 页面提供文件选择、列表、详情、版本历史和标题确认。
 
 ## 安装
 
@@ -281,6 +303,7 @@ multiagent.distributed_runtime [shipped]
 retrieval.semantic_hybrid [foundation]
 evaluation.research_quality [shipped]
 project.extensions [shipped]
+academic.paper_versioning [shipped]
 ```
 
 ## 验收

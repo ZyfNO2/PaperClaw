@@ -233,7 +233,7 @@ class DesktopAPI:
             import webview
 
             selected = self._window.create_file_dialog(
-                webview.FileDialog.OPEN,
+                _open_dialog_type(webview),
                 allow_multiple=False,
                 file_types=("Academic papers (*.pdf;*.md;*.txt)",),
             )
@@ -648,6 +648,18 @@ def _folder_dialog_type(webview_module: Any) -> Any:
     dialog_type = modern if modern is not None else legacy
     if dialog_type is None:
         raise RuntimeError("pywebview folder dialog API is unavailable")
+    return dialog_type
+
+
+def _open_dialog_type(webview_module: Any) -> Any:
+    """Support pywebview 5 constants and the pywebview 6 enum."""
+
+    file_dialog = getattr(webview_module, "FileDialog", None)
+    modern = getattr(file_dialog, "OPEN", None) if file_dialog is not None else None
+    legacy = getattr(webview_module, "OPEN_DIALOG", None)
+    dialog_type = modern if modern is not None else legacy
+    if dialog_type is None:
+        raise RuntimeError("pywebview open dialog API is unavailable")
     return dialog_type
 
 

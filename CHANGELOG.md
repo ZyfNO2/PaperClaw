@@ -4,6 +4,24 @@ All notable PaperClaw changes are recorded here. Versions are developed on isola
 branches and are intended to be squash-merged so one released version contributes
 one commit to `main`.
 
+## [0.38.0] — Unreleased
+
+### Added
+
+- project-scoped PDF, Markdown and UTF-8 TXT import;
+- content-addressed managed originals with integrity-checked replay;
+- immutable explicit versions, per-project hash deduplication and SQLite migration state;
+- candidate metadata extraction and optimistic user confirmation;
+- shared Python, REST, CLI and Desktop paper library interfaces;
+- allowed-root REST resolution and sanitized public projections.
+
+### Known limits
+
+- structured page, figure, table, equation and citation parsing is deferred;
+- no network metadata enrichment or verified bibliographic state;
+- imports are synchronous and single-file;
+- Desktop validation is automated at the bridge level; native GUI click-through remains manual.
+
 ## [0.37.0] — Unreleased
 
 ### Added

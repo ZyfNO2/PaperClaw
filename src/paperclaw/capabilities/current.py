@@ -1,4 +1,4 @@
-"""Current capability catalog through v0.37."""
+"""Current capability catalog through v0.38."""
 
 from dataclasses import replace
 
@@ -114,6 +114,18 @@ def default_capability_catalog() -> CapabilityCatalog:
             "Retrieval, citation, grounding, abstention and cost evaluation.",
             ("retrieval.semantic_hybrid", "evaluation.aggregate_dashboard"),
             ("Results depend on curated relevance and claim labels.",),
+        ),
+        CapabilityDescriptor(
+            "academic.paper_versioning",
+            "v0.38",
+            "shipped",
+            ("library", "cli", "service", "desktop"),
+            "Managed PDF, Markdown and TXT import with immutable versions and confirmed metadata.",
+            ("project.workspace",),
+            (
+                "Structured page and object parsing is not included.",
+                "Metadata is local candidate data until explicitly confirmed.",
+            ),
         ),
     )
     for item in additions:
