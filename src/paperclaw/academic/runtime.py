@@ -29,6 +29,7 @@ from .contracts import (
     RetrievalResult,
     RetrievalTrace,
 )
+from .fusion import ChannelWeight, DEFAULT_WEIGHTS, weighted_rrf
 from .parser import PaperParser
 from .visual import VisualEncoder, late_interaction_score
 from .text import DenseEncoder
@@ -232,6 +233,10 @@ class AcademicRuntime:
                             json.dumps(dense_vector, separators=(",", ":")),
                         ),
                     )
+                    db.execute(
+                        "INSERT INTO academic_fts(generation_id,object_id,text) VALUES(?,?,?)",
+                        (generation_id, item.object_id, item.text),
+                    )
                 if self.visual_encoder and visual_objects:
                     paths = [
                         self.assets / item.asset_hash[:2] / f"{item.asset_hash}.png"
@@ -294,105 +299,126 @@ class AcademicRuntime:
                     "academic index model fingerprint is incompatible with runtime; "
                     "rebuild the index with the active encoders"
                 )
+            generation_id = active[0]
             rows = db.execute(
                 "SELECT object_id,text,locator_json,vector_json FROM academic_index WHERE generation_id=?",
-                (active[0],),
+                (generation_id,),
             ).fetchall()
             visual_rows = db.execute(
                 "SELECT object_id,locator_json,vector_json FROM academic_visual_index WHERE generation_id=?",
-                (active[0],),
+                (generation_id,),
             ).fetchall()
-        query_tokens = set(_tokens(query.text))
+
+        locator_map: dict[str, AcademicLocator] = {}
+        text_map: dict[str, str] = {}
+        vector_map: dict[str, list[float]] = {}
+        for row in rows:
+            locator_map[row[0]] = _locator(json.loads(row[2]))
+            text_map[row[0]] = row[1]
+            vector_map[row[0]] = json.loads(row[3])
+
+        def _passes_filters(locator: AcademicLocator) -> bool:
+            if query.paper_ids and locator.paper_id not in query.paper_ids:
+                return False
+            if query.object_types and locator.object_type not in query.object_types:
+                return False
+            return True
+
         query_identifiers = {
             value.casefold() for value in _IDENTIFIERS.findall(query.text)
         }
-        query_vector = (
-            self.dense_encoder.encode_query(query.text)
-            if self.dense_encoder
-            else _vector(query.text)
-        )
-        candidates = []
-        for row in rows:
-            locator = _locator(json.loads(row[2]))
-            if query.paper_ids and locator.paper_id not in query.paper_ids:
+        degraded: list[str] = []
+        channel_rankings: dict[str, list[tuple[str, float]]] = {}
+
+        if "exact" in channels and query_identifiers:
+            exact_scores: list[tuple[str, float]] = []
+            for oid, text in text_map.items():
+                if not _passes_filters(locator_map[oid]):
+                    continue
+                text_ids = {v.casefold() for v in _IDENTIFIERS.findall(text)}
+                if query_identifiers <= text_ids:
+                    exact_scores.append((oid, 1.0))
+            if exact_scores:
+                channel_rankings["exact"] = exact_scores
+
+        if "lexical" in channels:
+            lexical_scores = self._bm25_rank(
+                generation_id, query.text, locator_map, _passes_filters
+            )
+            if lexical_scores:
+                channel_rankings["lexical"] = lexical_scores
+
+        if "dense" in channels:
+            if self.dense_encoder:
+                try:
+                    query_vector = self.dense_encoder.encode_query(query.text)
+                    dense_scores: list[tuple[str, float]] = []
+                    for oid, vec in vector_map.items():
+                        if not _passes_filters(locator_map[oid]):
+                            continue
+                        score = _cosine(query_vector, vec)
+                        if score > 0.1:
+                            dense_scores.append((oid, score))
+                    dense_scores.sort(key=lambda x: -x[1])
+                    if dense_scores:
+                        channel_rankings["dense"] = dense_scores
+                except Exception:
+                    degraded.append("dense")
+            else:
+                degraded.append("dense")
+
+        if "visual" in channels:
+            if self.visual_encoder and visual_rows:
+                try:
+                    query_embedding = self.visual_encoder.encode_query(query.text)
+                    visual_scores: list[tuple[str, float]] = []
+                    for row in visual_rows:
+                        locator = _locator(json.loads(row[1]))
+                        if not _passes_filters(locator):
+                            continue
+                        score = late_interaction_score(
+                            query_embedding, json.loads(row[2])
+                        )
+                        if score > 0:
+                            visual_scores.append((row[0], score))
+                    visual_scores.sort(key=lambda x: -x[1])
+                    if visual_scores:
+                        channel_rankings["visual"] = visual_scores
+                except Exception:
+                    degraded.append("visual")
+            else:
+                degraded.append("visual")
+
+        fused = weighted_rrf(channel_rankings, DEFAULT_WEIGHTS)
+        candidates: list[RetrievalCandidate] = []
+        for item in fused[: budget.max_candidates]:
+            locator = locator_map.get(item.object_id)
+            if locator is None:
+                for row in visual_rows:
+                    if row[0] == item.object_id:
+                        locator = _locator(json.loads(row[1]))
+                        break
+            if locator is None:
                 continue
-            if query.object_types and locator.object_type not in query.object_types:
-                continue
-            text_tokens = set(_tokens(row[1]))
-            text_identifiers = {
-                value.casefold() for value in _IDENTIFIERS.findall(row[1])
-            }
-            exact = (
-                1.0
-                if "exact" in channels
-                and query_identifiers
-                and query_identifiers <= text_identifiers
-                else 0.0
-            )
-            lexical = (
-                len(query_tokens & text_tokens) / max(1, len(query_tokens))
-                if "lexical" in channels
-                else 0.0
-            )
-            dense = (
-                _cosine(query_vector, json.loads(row[3]))
-                if "dense" in channels
-                else 0.0
-            )
-            visual = 0.0
-            fused = max(exact, 0.65 * lexical + 0.35 * dense)
             candidates.append(
                 RetrievalCandidate(
                     locator,
-                    row[1],
-                    {
-                        "exact": exact,
-                        "lexical": lexical,
-                        "dense": dense,
-                        "visual": visual,
-                    },
-                    fused,
-                    (
-                        "exact identifier match" if exact else "no exact identifier match",
-                        "bm25-compatible lexical",
-                        "deterministic dense fallback",
-                        "visual unavailable",
+                    text_map.get(item.object_id, ""),
+                    item.channel_scores,
+                    item.fused_score,
+                    tuple(
+                        f"{ch}: rank {item.channel_ranks.get(ch, '-')}"
+                        for ch in sorted(item.channel_scores.keys())
                     ),
                 )
             )
-        if "visual" in channels and self.visual_encoder and visual_rows:
-            query_embedding = self.visual_encoder.encode_query(query.text)
-            for row in visual_rows:
-                locator = _locator(json.loads(row[1]))
-                if query.paper_ids and locator.paper_id not in query.paper_ids:
-                    continue
-                if query.object_types and locator.object_type not in query.object_types:
-                    continue
-                visual = late_interaction_score(query_embedding, json.loads(row[2]))
-                candidates.append(
-                    RetrievalCandidate(
-                        locator,
-                        "",
-                        {
-                            "exact": 0.0,
-                            "lexical": 0.0,
-                            "dense": 0.0,
-                            "visual": visual,
-                        },
-                        visual,
-                        ("ColQwen2 late-interaction visual score",),
-                    )
-                )
-        candidates.sort(key=lambda item: (-item.fused_score, item.locator.object_id))
-        selected = tuple(
-            item for item in candidates[: budget.max_candidates] if item.fused_score > 0
-        )
-        top = selected[0].fused_score if selected else 0
+        selected = tuple(candidates)
+        top = selected[0].fused_score if selected else 0.0
         sufficiency = (
             "sufficient"
-            if top >= 0.65
+            if top >= 0.02
             else "partial"
-            if top >= 0.25
+            if top >= 0.008
             else "insufficient"
         )
         reasons = (
@@ -400,12 +426,13 @@ class AcademicRuntime:
             if selected
             else ("no grounded object matched",)
         )
-        degraded = (
-            ("visual",) if "visual" in channels and self.visual_encoder is None else ()
-        )
-        if channels == ("visual",) and degraded:
+        if channels == ("visual",) and "visual" in degraded:
             sufficiency = "insufficient"
             reasons = ("visual channel unavailable",)
+        per_channel_top = {
+            ch: ranked[0][1] if ranked else 0.0
+            for ch, ranked in channel_rankings.items()
+        }
         trace = RetrievalTrace(
             f"trace-{uuid4().hex}",
             hashlib.sha256(
@@ -419,14 +446,76 @@ class AcademicRuntime:
                     sort_keys=True,
                 ).encode()
             ).hexdigest(),
-            active[0],
+            generation_id,
             tuple(channels),
-            {"generation": self._active_model_fingerprint()},
+            {
+                "generation": self._runtime_model_fingerprint(),
+                "per_channel_top": json.dumps(per_channel_top, sort_keys=True),
+            },
             {"corrective": 0, "conflict": 0},
-            degraded,
+            tuple(degraded),
             "budget_or_candidates_exhausted",
         )
         return RetrievalResult(query.text, selected, sufficiency, reasons, trace)
+
+    def _bm25_rank(
+        self,
+        generation_id: str,
+        query_text: str,
+        locator_map: dict[str, AcademicLocator],
+        passes_filters,
+    ) -> list[tuple[str, float]]:
+        tokens = _tokens(query_text)
+        if not tokens:
+            return []
+        match_expr = " OR ".join(f'"{t}"*' for t in dict.fromkeys(tokens))
+        try:
+            with self._connect() as db:
+                fts_rows = db.execute(
+                    "SELECT object_id, bm25(academic_fts) AS rank"
+                    " FROM academic_fts"
+                    " WHERE academic_fts MATCH ? AND generation_id=?"
+                    " ORDER BY rank LIMIT 200",
+                    (match_expr, generation_id),
+                ).fetchall()
+        except Exception:
+            return self._token_overlap_rank(query_text, locator_map, passes_filters)
+        results: list[tuple[str, float]] = []
+        for row in fts_rows:
+            oid = row[0]
+            locator = locator_map.get(oid)
+            if locator is None or not passes_filters(locator):
+                continue
+            results.append((oid, -float(row[1])))
+        if not results:
+            return self._token_overlap_rank(query_text, locator_map, passes_filters)
+        return results
+
+    def _token_overlap_rank(
+        self,
+        query_text: str,
+        locator_map: dict[str, AcademicLocator],
+        passes_filters,
+    ) -> list[tuple[str, float]]:
+        query_tokens = set(_tokens(query_text))
+        if not query_tokens:
+            return []
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT object_id,text FROM academic_index WHERE generation_id=("
+                "SELECT generation_id FROM index_generations WHERE active=1)"
+            ).fetchall()
+        scored: list[tuple[str, float]] = []
+        for row in rows:
+            locator = locator_map.get(row[0])
+            if locator is None or not passes_filters(locator):
+                continue
+            text_tokens = set(_tokens(row[1]))
+            overlap = len(query_tokens & text_tokens) / len(query_tokens)
+            if overlap > 0:
+                scored.append((row[0], overlap))
+        scored.sort(key=lambda x: -x[1])
+        return scored
 
     def expand(
         self, candidate: RetrievalCandidate, *, neighbors: int = 1
@@ -578,6 +667,7 @@ class AcademicRuntime:
             CREATE TABLE IF NOT EXISTS index_generations(generation_id TEXT PRIMARY KEY,corpus_hash TEXT,model_fingerprint TEXT,state TEXT,object_count INTEGER,active INTEGER);
             CREATE TABLE IF NOT EXISTS academic_index(generation_id TEXT,object_id TEXT,text TEXT,locator_json TEXT,vector_json TEXT,PRIMARY KEY(generation_id,object_id));
             CREATE TABLE IF NOT EXISTS academic_visual_index(generation_id TEXT,object_id TEXT,locator_json TEXT,vector_json TEXT,PRIMARY KEY(generation_id,object_id));
+            CREATE VIRTUAL TABLE IF NOT EXISTS academic_fts USING fts5(generation_id UNINDEXED,object_id UNINDEXED,text,tokenize='unicode61');
             """)
             db.commit()
 
