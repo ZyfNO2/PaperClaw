@@ -2,7 +2,8 @@ from paperclaw.desktop.product_service import DesktopProductService
 from paperclaw.desktop.contracts import DesktopPublicError
 from paperclaw.projects import ProjectManifestStore
 import pytest
-import fitz
+
+fitz = pytest.importorskip("fitz")
 
 
 def test_desktop_paper_flow_reuses_domain_service(tmp_path) -> None:

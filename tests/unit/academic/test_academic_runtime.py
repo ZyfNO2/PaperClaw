@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import fitz
 import pytest
+
+fitz = pytest.importorskip("fitz")
 
 from paperclaw.academic import (
     AcademicQuery,
