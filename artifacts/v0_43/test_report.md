@@ -4,8 +4,9 @@ Date: 2026-07-27
 
 ## Automated
 
-- focused Academic/Service/Desktop/Capability: `20 passed`
-- full offline regression: `1030 passed, 27 skipped, 8 deselected`
+- focused Academic/Service/Desktop/Capability before review: `20 passed`
+- post-review Academic/Service/Desktop regression: `18 passed`
+- final full offline regression: `1032 passed, 27 skipped, 8 deselected`
 - targeted Ruff: passed
 - package build: `paperclaw-0.43.0.tar.gz` and wheel succeeded
 

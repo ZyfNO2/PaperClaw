@@ -7,6 +7,7 @@ from typing import Literal
 
 ACADEMIC_SCHEMA_VERSION = 1
 
+
 @dataclass(frozen=True)
 class BoundingBox:
     x0: float
@@ -44,8 +45,18 @@ class AcademicLocator:
 class AcademicObject:
     object_id: str
     object_type: Literal[
-        "document", "page", "section", "paragraph", "figure", "caption",
-        "table", "table_cell", "equation", "algorithm", "reference", "citation"
+        "document",
+        "page",
+        "section",
+        "paragraph",
+        "figure",
+        "caption",
+        "table",
+        "table_cell",
+        "equation",
+        "algorithm",
+        "reference",
+        "citation",
     ]
     reading_order: int
     locator: AcademicLocator
@@ -99,7 +110,9 @@ class RetrievalBudget:
 
     def __post_init__(self) -> None:
         if not 1 <= self.max_candidates <= 100 or self.max_chars < 1:
-            raise ValueError("retrieval candidate and character budgets must be bounded")
+            raise ValueError(
+                "retrieval candidate and character budgets must be bounded"
+            )
         if self.max_primary_rounds != 1:
             raise ValueError("primary retrieval rounds must equal 1")
         if not 0 <= self.max_corrective_rounds <= 1:
@@ -125,16 +138,20 @@ class RetrievalRequest:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "text": self.text, "channels": list(self.channels),
-            "paper_ids": list(self.paper_ids), "object_types": list(self.object_types),
+            "text": self.text,
+            "channels": list(self.channels),
+            "paper_ids": list(self.paper_ids),
+            "object_types": list(self.object_types),
             "budget": asdict(self.budget),
         }
 
     @classmethod
     def from_dict(cls, value):
         return cls(
-            value["text"], tuple(value.get("channels", ("lexical", "dense", "visual"))),
-            tuple(value.get("paper_ids", ())), tuple(value.get("object_types", ())),
+            value["text"],
+            tuple(value.get("channels", ("lexical", "dense", "visual"))),
+            tuple(value.get("paper_ids", ())),
+            tuple(value.get("object_types", ())),
             RetrievalBudget(**value.get("budget", {})),
         )
 
@@ -162,9 +179,12 @@ class RetrievalCandidate:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "locator": self.locator.to_dict(), "text": self.text,
-            "channel_scores": dict(self.channel_scores), "fused_score": self.fused_score,
-            "explanation": list(self.explanation), "provenance": self.provenance,
+            "locator": self.locator.to_dict(),
+            "text": self.text,
+            "channel_scores": dict(self.channel_scores),
+            "fused_score": self.fused_score,
+            "explanation": list(self.explanation),
+            "provenance": self.provenance,
         }
 
 
@@ -208,10 +228,13 @@ class EvidenceBundle:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "schema_version": self.schema_version, "bundle_id": self.bundle_id,
-            "project_id": self.project_id, "query": self.query,
+            "schema_version": self.schema_version,
+            "bundle_id": self.bundle_id,
+            "project_id": self.project_id,
+            "query": self.query,
             "candidates": [item.to_dict() for item in self.candidates],
-            "sufficiency": self.sufficiency, "reasons": list(self.reasons),
+            "sufficiency": self.sufficiency,
+            "reasons": list(self.reasons),
             "trace": self.trace.to_dict(),
         }
 
@@ -219,21 +242,34 @@ class EvidenceBundle:
     def from_dict(cls, value):
         candidates = tuple(
             RetrievalCandidate(
-                _locator_from_dict(item["locator"]), item["text"],
-                dict(item["channel_scores"]), item["fused_score"],
-                tuple(item["explanation"]), item.get("provenance", "extracted"),
+                _locator_from_dict(item["locator"]),
+                item["text"],
+                dict(item["channel_scores"]),
+                item["fused_score"],
+                tuple(item["explanation"]),
+                item.get("provenance", "extracted"),
             )
             for item in value["candidates"]
         )
         raw = value["trace"]
         trace = RetrievalTrace(
-            raw["trace_id"], raw["request_fingerprint"], raw["index_generation_id"],
-            tuple(raw["channels"]), dict(raw["model_fingerprints"]),
-            dict(raw["rounds_used"]), tuple(raw["degraded_channels"]), raw["stop_reason"],
+            raw["trace_id"],
+            raw["request_fingerprint"],
+            raw["index_generation_id"],
+            tuple(raw["channels"]),
+            dict(raw["model_fingerprints"]),
+            dict(raw["rounds_used"]),
+            tuple(raw["degraded_channels"]),
+            raw["stop_reason"],
         )
         return cls(
-            value["bundle_id"], value["project_id"], value["query"], candidates,
-            value["sufficiency"], tuple(value["reasons"]), trace,
+            value["bundle_id"],
+            value["project_id"],
+            value["query"],
+            candidates,
+            value["sufficiency"],
+            tuple(value["reasons"]),
+            trace,
             value.get("schema_version", ACADEMIC_SCHEMA_VERSION),
         )
 
@@ -244,6 +280,7 @@ class RetrievalResult:
     candidates: tuple[RetrievalCandidate, ...]
     sufficiency: Literal["sufficient", "partial", "insufficient"]
     reasons: tuple[str, ...]
+    trace: RetrievalTrace | None = None
 
     @property
     def should_abstain(self) -> bool:
@@ -254,8 +291,16 @@ def _locator_from_dict(value) -> AcademicLocator:
     bbox = BoundingBox(**value["bounding_box"]) if value.get("bounding_box") else None
     line_range = tuple(value["line_range"]) if value.get("line_range") else None
     return AcademicLocator(
-        value["paper_id"], value["version_id"], value["object_id"],
-        value["page_number"], value["object_type"], value["source_hash"],
-        tuple(value.get("section_path", ())), bbox, value.get("paragraph_index"),
-        line_range, value.get("table_row"), value.get("table_column"),
+        value["paper_id"],
+        value["version_id"],
+        value["object_id"],
+        value["page_number"],
+        value["object_type"],
+        value["source_hash"],
+        tuple(value.get("section_path", ())),
+        bbox,
+        value.get("paragraph_index"),
+        line_range,
+        value.get("table_row"),
+        value.get("table_column"),
     )

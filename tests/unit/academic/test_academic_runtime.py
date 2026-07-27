@@ -8,6 +8,7 @@ from paperclaw.academic import (
     AcademicQuery,
     AcademicRuntime,
     RetrievalBudget,
+    RetrievalRequest,
 )
 from paperclaw.papers import PaperImportRequest, PaperService
 from paperclaw.projects import ProjectManifestStore
@@ -21,6 +22,10 @@ class _FakeVisualEncoder:
 
     def encode_query(self, query):
         return [[1.0, 0.0]]
+
+
+class _SecondFakeVisualEncoder(_FakeVisualEncoder):
+    fingerprint = "second-fake-colqwen-revision"
 
 
 def _runtime(tmp_path: Path, *, visual_encoder=None) -> tuple[AcademicRuntime, str]:
@@ -113,3 +118,30 @@ def test_visual_generation_and_retrieval_use_replaceable_encoder(
     )
     assert visual.locator.paper_id == paper_id
     assert visual.locator.object_type in {"page", "figure"}
+
+
+def test_existing_generation_is_reactivated_after_model_switch(tmp_path: Path) -> None:
+    runtime_a, paper_id = _runtime(tmp_path, visual_encoder=_FakeVisualEncoder())
+    runtime_a.parse_paper(paper_id)
+    generation_a = runtime_a.build_index()
+    runtime_b = AcademicRuntime.for_workspace(
+        tmp_path, runtime_a.project_id, visual_encoder=_SecondFakeVisualEncoder()
+    )
+    assert runtime_b.build_index().generation_id != generation_a.generation_id
+
+    runtime_a.build_index()
+    result = runtime_a.retrieve(RetrievalRequest("diagram", ("visual",)))
+    assert result.trace is not None
+    assert result.trace.index_generation_id == generation_a.generation_id
+
+
+def test_visual_only_request_abstains_when_channel_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    runtime, paper_id = _runtime(tmp_path)
+    runtime.parse_paper(paper_id)
+    runtime.build_index()
+    result = runtime.retrieve(RetrievalRequest("diagram", ("visual",)))
+    assert result.should_abstain
+    assert result.trace is not None
+    assert result.trace.degraded_channels == ("visual",)

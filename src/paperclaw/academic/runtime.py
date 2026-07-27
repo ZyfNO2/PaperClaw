@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+from uuid import uuid4
 
 from paperclaw.artifacts import ArtifactSourceLinks, FileArtifactStore
 from paperclaw.papers import PaperService
@@ -24,7 +25,9 @@ from .contracts import (
     ParseResult,
     RetrievalBudget,
     RetrievalCandidate,
+    RetrievalRequest,
     RetrievalResult,
+    RetrievalTrace,
 )
 from .visual import VisualEncoder, late_interaction_score
 from .text import DenseEncoder
@@ -135,7 +138,7 @@ class AcademicRuntime:
             for item in parsed_objects
             if item.text
             and item.object_type
-            in {"section", "paragraph", "caption", "table", "equation"}
+            in {"section", "paragraph", "caption", "table", "table_cell", "equation"}
         ]
         visual_objects = [
             item
@@ -156,7 +159,16 @@ class AcademicRuntime:
             else [_vector(item.text or "") for item in objects]
         )
         corpus_hash = hashlib.sha256(
-            "".join(f"{item.object_id}:{item.text}" for item in objects).encode()
+            "".join(
+                [
+                    f"text:{item.object_type}:{item.object_id}:{item.locator.source_hash}:{item.text}"
+                    for item in objects
+                ]
+                + [
+                    f"visual:{item.object_type}:{item.object_id}:{item.locator.source_hash}:{item.asset_hash}"
+                    for item in visual_objects
+                ]
+            ).encode()
         ).hexdigest()
         generation_id = hashlib.sha256(
             f"{corpus_hash}:{model_fingerprint}".encode()
@@ -213,6 +225,13 @@ class AcademicRuntime:
                     (generation_id,),
                 )
                 db.commit()
+            else:
+                db.execute("UPDATE index_generations SET active=0")
+                db.execute(
+                    "UPDATE index_generations SET active=1 WHERE generation_id=? AND state='ready'",
+                    (generation_id,),
+                )
+                db.commit()
         return IndexGeneration(
             generation_id,
             corpus_hash,
@@ -222,10 +241,20 @@ class AcademicRuntime:
         )
 
     def retrieve(
-        self, query: AcademicQuery, *, budget: RetrievalBudget = RetrievalBudget()
+        self,
+        query: AcademicQuery | RetrievalRequest,
+        *,
+        budget: RetrievalBudget = RetrievalBudget(),
     ) -> RetrievalResult:
         if not query.text.strip():
             raise ValueError("query must not be empty")
+        channels = (
+            query.channels
+            if isinstance(query, RetrievalRequest)
+            else ("lexical", "dense", "visual")
+        )
+        if isinstance(query, RetrievalRequest):
+            budget = query.budget
         with self._connect() as db:
             active = db.execute(
                 "SELECT generation_id FROM index_generations WHERE active=1"
@@ -254,8 +283,16 @@ class AcademicRuntime:
             if query.object_types and locator.object_type not in query.object_types:
                 continue
             text_tokens = set(_tokens(row[1]))
-            lexical = len(query_tokens & text_tokens) / max(1, len(query_tokens))
-            dense = _cosine(query_vector, json.loads(row[3]))
+            lexical = (
+                len(query_tokens & text_tokens) / max(1, len(query_tokens))
+                if "lexical" in channels
+                else 0.0
+            )
+            dense = (
+                _cosine(query_vector, json.loads(row[3]))
+                if "dense" in channels
+                else 0.0
+            )
             visual = 0.0
             fused = 0.65 * lexical + 0.35 * dense
             candidates.append(
@@ -271,7 +308,7 @@ class AcademicRuntime:
                     ),
                 )
             )
-        if self.visual_encoder and visual_rows:
+        if "visual" in channels and self.visual_encoder and visual_rows:
             query_embedding = self.visual_encoder.encode_query(query.text)
             for row in visual_rows:
                 locator = _locator(json.loads(row[1]))
@@ -283,7 +320,7 @@ class AcademicRuntime:
                 candidates.append(
                     RetrievalCandidate(
                         locator,
-                        None,
+                        "",
                         {"lexical": 0.0, "dense": 0.0, "visual": visual},
                         visual,
                         ("ColQwen2 late-interaction visual score",),
@@ -306,7 +343,33 @@ class AcademicRuntime:
             if selected
             else ("no grounded object matched",)
         )
-        return RetrievalResult(query.text, selected, sufficiency, reasons)
+        degraded = (
+            ("visual",) if "visual" in channels and self.visual_encoder is None else ()
+        )
+        if channels == ("visual",) and degraded:
+            sufficiency = "insufficient"
+            reasons = ("visual channel unavailable",)
+        trace = RetrievalTrace(
+            f"trace-{uuid4().hex}",
+            hashlib.sha256(
+                json.dumps(
+                    {
+                        "text": query.text,
+                        "channels": channels,
+                        "paper_ids": query.paper_ids,
+                        "object_types": query.object_types,
+                    },
+                    sort_keys=True,
+                ).encode()
+            ).hexdigest(),
+            active[0],
+            tuple(channels),
+            {"generation": self._active_model_fingerprint()},
+            {"corrective": 0, "conflict": 0},
+            degraded,
+            "budget_or_candidates_exhausted",
+        )
+        return RetrievalResult(query.text, selected, sufficiency, reasons, trace)
 
     def expand(
         self, candidate: RetrievalCandidate, *, neighbors: int = 1
@@ -348,14 +411,8 @@ class AcademicRuntime:
             "query": result.query,
             "sufficiency": result.sufficiency,
             "reasons": list(result.reasons),
-            "candidates": [
-                {
-                    "locator": item.locator.to_dict(),
-                    "text": item.text,
-                    "score": item.fused_score,
-                }
-                for item in result.candidates
-            ],
+            "candidates": [item.to_dict() for item in result.candidates],
+            "trace": result.trace.to_dict() if result.trace else None,
         }
         store = FileArtifactStore(
             self.root / "product_artifacts", confinement_root=self.workspace
@@ -377,6 +434,13 @@ class AcademicRuntime:
             "revision_number": revision.revision_number,
             "sufficiency": result.sufficiency,
         }
+
+    def _active_model_fingerprint(self) -> str:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT model_fingerprint FROM index_generations WHERE active=1"
+            ).fetchone()
+        return str(row[0]) if row else "unavailable"
 
     def save_research_artifact(
         self, artifact_type: str, title: str, payload: dict[str, object]
@@ -448,6 +512,7 @@ class AcademicRuntime:
         headings: list[str] = []
         for page_index, page in enumerate(document):
             page_number = page_index + 1
+            paragraph_index = 0
             pix = page.get_pixmap(dpi=120, alpha=False)
             asset = pix.tobytes("png")
             asset_hash = hashlib.sha256(asset).hexdigest()
@@ -496,6 +561,8 @@ class AcademicRuntime:
                     object_type = "equation"
                 if is_heading:
                     headings = [text.replace("\n", " ").strip()]
+                if object_type == "paragraph":
+                    paragraph_index += 1
                 order += 1
                 object_id = f"{version_id}:{page_number}:{block_index}:{object_type}"
                 locator = AcademicLocator(
@@ -507,6 +574,7 @@ class AcademicRuntime:
                     source_hash,
                     tuple(headings),
                     bbox,
+                    paragraph_index if object_type == "paragraph" else None,
                 )
                 objects.append(
                     AcademicObject(object_id, object_type, order, locator, text=text)
@@ -563,6 +631,43 @@ class AcademicRuntime:
                 objects.append(
                     AcademicObject(object_id, "table", order, locator, text=table_text)
                 )
+                rows = table.extract()
+                cells = list(table.cells)
+                cell_index = 0
+                for row_index, row in enumerate(rows):
+                    for column_index, value in enumerate(row):
+                        if cell_index >= len(cells):
+                            break
+                        cell_bbox = cells[cell_index]
+                        cell_index += 1
+                        if cell_bbox is None:
+                            continue
+                        order += 1
+                        cell_id = (
+                            f"{version_id}:{page_number}:table:{table_index}:"
+                            f"cell:{row_index}:{column_index}"
+                        )
+                        cell_locator = AcademicLocator(
+                            paper_id,
+                            version_id,
+                            cell_id,
+                            page_number,
+                            "table_cell",
+                            source_hash,
+                            tuple(headings),
+                            BoundingBox(*map(float, cell_bbox)),
+                            table_row=row_index,
+                            table_column=column_index,
+                        )
+                        objects.append(
+                            AcademicObject(
+                                cell_id,
+                                "table_cell",
+                                order,
+                                cell_locator,
+                                text=str(value or ""),
+                            )
+                        )
         document.close()
         return ParseResult(
             f"parse-{fingerprint}",
@@ -626,6 +731,7 @@ class AcademicRuntime:
 
 def _locator(value):
     bbox = BoundingBox(**value["bounding_box"]) if value.get("bounding_box") else None
+    line_range = tuple(value["line_range"]) if value.get("line_range") else None
     return AcademicLocator(
         value["paper_id"],
         value["version_id"],
@@ -635,6 +741,10 @@ def _locator(value):
         value["source_hash"],
         tuple(value.get("section_path", ())),
         bbox,
+        value.get("paragraph_index"),
+        line_range,
+        value.get("table_row"),
+        value.get("table_column"),
     )
 
 
