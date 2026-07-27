@@ -38,6 +38,9 @@ academic-visual = [
     "colpali-engine==0.3.10",
     "Pillow>=10,<13",
 ]
+docling = [
+    "docling>=2.0,<3",
+]
 tui = [
     "textual>=1.0,<8",
 ]
@@ -85,6 +88,7 @@ markers = [
     "real_llm: tests that call a live LLM provider (slow, costly, non-deterministic)",
     "process_acceptance: tests that launch real service/provider processes and HTTP sockets",
     "distributed: tests that require Redis and PostgreSQL services",
+    "corpus_acceptance: tests that require local data/paper_corpus (not run in CI)",
 ]
 
 [tool.ruff]

@@ -82,7 +82,7 @@ def test_metadata_confirmation_uses_optimistic_concurrency(tmp_path: Path) -> No
         )
 
 
-@pytest.mark.parametrize("name", ["paper.exe", "paper.tex"])
+@pytest.mark.parametrize("name", ["paper.exe", "paper.docx"])
 def test_import_rejects_unsupported_formats(tmp_path: Path, name: str) -> None:
     workspace, service = _project(tmp_path)
     source = workspace / name
