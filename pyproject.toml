@@ -24,6 +24,12 @@ paperclaw-retrieval-quality = "paperclaw.retrieval.quality_cli:main"
 paperclaw-project-extensions = "paperclaw.projects.extension_cli:main"
 
 [project.optional-dependencies]
+academic = [
+    "PyMuPDF>=1.24,<2",
+    "sentence-transformers>=3,<6",
+    "transformers>=4.50,<6",
+    "torch>=2.4,<3",
+]
 tui = [
     "textual>=1.0,<8",
 ]
