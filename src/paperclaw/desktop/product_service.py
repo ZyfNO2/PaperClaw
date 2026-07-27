@@ -13,6 +13,7 @@ from paperclaw.artifacts import (
 )
 from paperclaw.capabilities import default_capability_catalog
 from paperclaw.papers import MetadataPatch, PaperImportRequest, PaperService
+from paperclaw.academic import AcademicQuery, AcademicRuntime
 from paperclaw.projects import (
     ProjectKnowledgeRuntime,
     ProjectManifestStore,
@@ -33,6 +34,56 @@ class DesktopProductService:
     All persistent operations are rooted in the caller-selected workspace.
     Provider credentials are never accepted or returned by this service.
     """
+
+    def parse_academic_paper(self, workspace: str, paper_id: str) -> dict[str, object]:
+        runtime, _ = self._academic_runtime(workspace)
+        try:
+            result = runtime.parse_paper(paper_id)
+        except (KeyError, OSError, RuntimeError, ValueError) as exc:
+            raise DesktopPublicError("academic_parse_failed", self._bounded(str(exc), 500)) from exc
+        return self._public({
+            "ok": True, "parse": {
+                "manifest_id": result.manifest_id, "status": result.status,
+                "page_count": result.page_count, "object_count": len(result.objects),
+                "object_types": sorted({item.object_type for item in result.objects}),
+                "warnings": list(result.warnings),
+            },
+        })
+
+    def build_academic_index(self, workspace: str) -> dict[str, object]:
+        runtime, _ = self._academic_runtime(workspace)
+        try:
+            generation = runtime.build_index()
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise DesktopPublicError("academic_index_failed", self._bounded(str(exc), 500)) from exc
+        return self._public({"ok": True, "index": {
+            "generation_id": generation.generation_id, "state": generation.state,
+            "object_count": generation.object_count,
+            "model_fingerprint": generation.model_fingerprint,
+        }})
+
+    def retrieve_academic(self, workspace: str, query: str) -> dict[str, object]:
+        runtime, _ = self._academic_runtime(workspace)
+        try:
+            result = runtime.retrieve(AcademicQuery(query))
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise DesktopPublicError("academic_retrieval_failed", self._bounded(str(exc), 500)) from exc
+        return self._public({
+            "ok": True, "result": {
+                "query": result.query, "sufficiency": result.sufficiency,
+                "should_abstain": result.should_abstain,
+                "candidates": [
+                    {"locator": item.locator.to_dict(), "text": item.text,
+                     "score": item.fused_score, "explanation": list(item.explanation)}
+                    for item in result.candidates
+                ],
+            },
+        })
+
+    def _academic_runtime(self, workspace: str) -> tuple[AcademicRuntime, str]:
+        root = self._workspace(workspace)
+        manifest = ProjectManifestStore(root).load()
+        return AcademicRuntime.for_workspace(root, manifest.project_id), manifest.project_id
 
     def import_paper(self, workspace: str, source_path: str, paper_id: str | None = None) -> dict[str, object]:
         service, project_id = self._paper_service(workspace)
