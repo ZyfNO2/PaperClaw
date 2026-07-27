@@ -38,6 +38,9 @@ academic-visual = [
     "colpali-engine==0.3.10",
     "Pillow>=10,<13",
 ]
+docling = [
+    "docling>=2.0,<3",
+]
 tui = [
     "textual>=1.0,<8",
 ]
