@@ -76,3 +76,16 @@ def test_rest_rejects_source_outside_allowed_roots(tmp_path) -> None:
     )
     assert response.status_code == 400
     assert str(outside) not in response.text
+
+
+def test_rest_does_not_resolve_project_above_allowed_root(tmp_path) -> None:
+    ProjectManifestStore(tmp_path).initialize("Parent")
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    source = allowed / "paper.txt"
+    source.write_text("body", encoding="utf-8")
+    client = TestClient(create_app(EmptyService(), paper_workspace_roots=[allowed]))
+    response = client.post(
+        "/v1/projects/parent/papers/import", json={"source_path": str(source)}
+    )
+    assert response.status_code == 400

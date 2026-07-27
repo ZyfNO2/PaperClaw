@@ -12,3 +12,7 @@ Commits:
 - `47483ca` — Desktop paper library.
 
 No source code was copied from reference repositories.
+
+Post-review hardening changed blob publication to atomic no-replace hard links,
+made concurrent same-hash imports idempotent, required strict PDF structure parsing,
+and confined REST workspace discovery to the configured allowed root.

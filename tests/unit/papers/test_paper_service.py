@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -101,3 +102,46 @@ def test_import_rejects_invalid_text_and_damaged_pdf(tmp_path: Path) -> None:
     invalid_pdf.write_bytes(b"not a pdf")
     with pytest.raises(ValueError, match="PDF"):
         service.import_paper(PaperImportRequest("demo", invalid_pdf))
+
+    truncated_pdf = workspace / "truncated.pdf"
+    truncated_pdf.write_bytes(b"%PDF-1.7\ntruncated")
+    with pytest.raises(ValueError, match="PDF"):
+        service.import_paper(PaperImportRequest("demo", truncated_pdf))
+
+
+def test_concurrent_same_hash_import_is_idempotent_and_replayable(tmp_path: Path) -> None:
+    workspace, first_service = _project(tmp_path)
+    second_service = PaperService.for_workspace(workspace, project_id="demo")
+    source = workspace / "concurrent.txt"
+    source.write_text("shared bytes", encoding="utf-8")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = tuple(
+            pool.map(
+                lambda service: service.import_paper(PaperImportRequest("demo", source)),
+                (first_service, second_service),
+            )
+        )
+
+    assert sorted(result.created for result in results) == [False, True]
+    assert results[0].version.version_id == results[1].version.version_id
+    assert len(first_service.list_papers("demo")) == 1
+    assert first_service.read_version(
+        "demo", results[0].paper.paper_id, results[0].version.version_id
+    ) == b"shared bytes"
+
+
+def test_existing_corrupt_blob_fails_before_database_insert(tmp_path: Path) -> None:
+    workspace, service = _project(tmp_path)
+    source = workspace / "paper.txt"
+    source.write_text("expected", encoding="utf-8")
+    import hashlib
+
+    digest = hashlib.sha256(b"expected").hexdigest()
+    blob = workspace / ".paperclaw" / "papers" / "blobs" / digest[:2] / digest
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(b"corrupt")
+
+    with pytest.raises(RuntimeError, match="integrity"):
+        service.import_paper(PaperImportRequest("demo", source))
+    assert service.list_papers("demo") == ()

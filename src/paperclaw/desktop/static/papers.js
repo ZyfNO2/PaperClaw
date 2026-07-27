@@ -80,16 +80,34 @@
       meta.append(node("p", "", `${key}: ${shown || "—"} [${value.status}]`));
     }
     const form = node("form", "card");
-    const input = node("input", "");
-    input.value = paper.metadata.title.value || "";
-    input.maxLength = 1000;
-    const confirm = node("button", "btn primary", "CONFIRM TITLE");
+    const fields = {};
+    for (const name of ["title", "authors", "year", "doi", "arxiv_id", "language"]) {
+      const label = node("label", "provider-field");
+      label.append(node("span", "", name.toUpperCase()));
+      const input = node("input", "");
+      const value = paper.metadata[name].value;
+      input.value = Array.isArray(value) ? value.join("; ") : value || "";
+      input.maxLength = name === "title" ? 1000 : 500;
+      if (name === "year") input.inputMode = "numeric";
+      fields[name] = input;
+      label.append(input);
+      form.append(label);
+    }
+    const confirm = node("button", "btn primary", "CONFIRM METADATA");
     confirm.type = "submit";
-    form.append(input, confirm);
+    form.append(confirm);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const patch = {
+        title: fields.title.value,
+        authors: fields.authors.value.split(/[;,]/).map((part) => part.trim()).filter(Boolean),
+        doi: fields.doi.value,
+        arxiv_id: fields.arxiv_id.value,
+        language: fields.language.value
+      };
+      if (fields.year.value.trim()) patch.year = Number(fields.year.value);
       const response = await api().confirm_paper_metadata(
-        workspace(), paper.paper_id, { title: input.value }, paper.metadata_revision
+        workspace(), paper.paper_id, patch, paper.metadata_revision
       );
       if (response.ok) await showPaper(paper.paper_id);
     });

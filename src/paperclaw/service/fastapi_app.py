@@ -105,7 +105,12 @@ def create_app(
                     source.relative_to(root)
                 except ValueError:
                     continue
-                candidates.extend([source.parent, *source.parents])
+                candidate = source.parent
+                while True:
+                    candidates.append(candidate)
+                    if candidate == root:
+                        break
+                    candidate = candidate.parent
         else:
             candidates.extend(app.state.paper_workspace_roots)
             for root in app.state.paper_workspace_roots:

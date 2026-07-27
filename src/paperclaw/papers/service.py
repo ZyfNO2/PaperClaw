@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
+from io import BytesIO
 import os
 from pathlib import Path
 import re
@@ -19,7 +20,7 @@ from .contracts import (
     PaperRecord,
     PaperVersion,
 )
-from .repository import SQLitePaperRepository
+from .repository import PaperConflictError, SQLitePaperRepository
 
 
 class PaperCapacityError(ValueError):
@@ -75,7 +76,7 @@ class PaperService:
         version_id = f"version-{uuid4().hex}"
         locator = f"sha256/{digest[:2]}/{digest}"
         target = self._blob_root / digest[:2] / digest
-        created_blob = self._write_blob(target, content)
+        self._write_blob(target, content)
         record = PaperRecord(
             paper_id, request.project_id, version_id, number,
             prior.metadata if prior else metadata,
@@ -88,9 +89,10 @@ class PaperService:
         )
         try:
             self.repository.insert(record, version, existing=existing)
-        except Exception:
-            if created_blob and not self.repository.get_by_hash(request.project_id, digest):
-                target.unlink(missing_ok=True)
+        except PaperConflictError:
+            concurrent = self.repository.get_by_hash(request.project_id, digest)
+            if concurrent is not None:
+                return PaperImportResult(concurrent[0], concurrent[1], False)
             raise
         return PaperImportResult(self.get_paper(request.project_id, paper_id), version, True, warnings)
 
@@ -141,8 +143,17 @@ class PaperService:
                 digest.update(chunk)
                 chunks.append(chunk)
         content = b"".join(chunks)
-        if suffix == ".pdf" and not content.startswith(b"%PDF-"):
-            raise ValueError("paper is not a valid PDF file")
+        if suffix == ".pdf":
+            if not content.startswith(b"%PDF-"):
+                raise ValueError("paper is not a valid PDF file")
+            try:
+                from pypdf import PdfReader
+
+                reader = PdfReader(BytesIO(content), strict=True)
+                _ = reader.metadata
+                _ = len(reader.pages)
+            except Exception as exc:
+                raise ValueError("paper is not a valid PDF file") from exc
         if suffix in {".md", ".txt"}:
             try:
                 content.decode("utf-8")
@@ -152,6 +163,11 @@ class PaperService:
 
     def _write_blob(self, target: Path, content: bytes) -> bool:
         if target.exists():
+            if target.is_symlink() or not target.is_file():
+                raise RuntimeError("managed paper blob path is unsafe")
+            existing = target.read_bytes()
+            if len(existing) != len(content) or hashlib.sha256(existing).digest() != hashlib.sha256(content).digest():
+                raise RuntimeError("managed paper blob failed pre-import integrity validation")
             return False
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_name(f".{target.name}.{uuid4().hex}.tmp")
@@ -161,7 +177,7 @@ class PaperService:
                 handle.flush()
                 os.fsync(handle.fileno())
             try:
-                temporary.replace(target)
+                os.link(temporary, target)
             except FileExistsError:
                 temporary.unlink(missing_ok=True)
                 return False
