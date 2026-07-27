@@ -1,0 +1,98 @@
+{
+  "frozen_set_id": "academic-rag-h0-v1",
+  "schema_version": "academic-frozen-set.v1",
+  "frozen_at_utc": "2026-07-28T18:00:00Z",
+  "manifest_sha256": "2f156d739934b89b62a129a065bd10bd2415b18f66768acf2e3bcf24ccc5a55b",
+  "category_counts": {
+    "crack_detection": 3,
+    "reconstruction_3d_stereo": 3,
+    "segmentation": 3,
+    "concrete_material": 3
+  },
+  "papers": [
+    {
+      "blind_id": "P01",
+      "entry_id": "paper-0029",
+      "file_sha256": "99555cd496064adbe488cab3a575c756173b195c496471536219ec32d6703e33",
+      "category": "crack_detection",
+      "selection_reason": "2021 deep learning crack/spalling detection; contains figures, quantitative tables and multi-class results"
+    },
+    {
+      "blind_id": "P02",
+      "entry_id": "paper-0046",
+      "file_sha256": "b631f50025a954c5f4eaf3edf129ea40e883de8a6da12adf8643a18002526c29",
+      "category": "crack_detection",
+      "selection_reason": "2024 three-step CV pipeline; contains algorithm figures, parameter tables and comparison experiments"
+    },
+    {
+      "blind_id": "P03",
+      "entry_id": "paper-0047",
+      "file_sha256": "1f8f88d276a89a66a03c0c863c1f3758dcd4b085274d7e9438bad1ecc735e062",
+      "category": "crack_detection",
+      "selection_reason": "2025 UAV bridge defect detection; recent, contains detection examples, metric tables and architecture diagrams"
+    },
+    {
+      "blind_id": "P04",
+      "entry_id": "paper-0037",
+      "file_sha256": "2d38590475a5140f7cc359a253239478dad19adfc36c855e1a9c2e6a202c8fad",
+      "category": "reconstruction_3d_stereo",
+      "selection_reason": "2026 Fast-FoundationStereo; project baseline; dense equations, benchmark tables and disparity figures"
+    },
+    {
+      "blind_id": "P05",
+      "entry_id": "paper-0045",
+      "file_sha256": "c374687564a668c4d6a43068bb4776d4d65a9d0a52651e0ba490915960a6ef8b",
+      "category": "reconstruction_3d_stereo",
+      "selection_reason": "Binocular stereo tunnel face reconstruction; contains geometric equations, 3D visualizations and measurement tables"
+    },
+    {
+      "blind_id": "P06",
+      "entry_id": "paper-0049",
+      "file_sha256": "00aa2c33b86c7392310b472439c89314ddf0b0de02ed8b71166463c08776cd5f",
+      "category": "reconstruction_3d_stereo",
+      "selection_reason": "2024 combined 3D reconstruction + crack detection; bridges both domains; figures, tables and pipeline diagrams"
+    },
+    {
+      "blind_id": "P07",
+      "entry_id": "paper-0098",
+      "file_sha256": "be57de88b40f54053e5259ecc4813a53b26f4501fbf0dbc1aca57068fc46d9dc",
+      "category": "segmentation",
+      "selection_reason": "2025 SAM2-based crack segmentation; contains mask figures, IoU tables and architecture diagrams"
+    },
+    {
+      "blind_id": "P08",
+      "entry_id": "paper-0099",
+      "file_sha256": "d29fe0564ffa5b8d699bd4840ebcd1ba306b561a8ba147d8156555dbfa965728",
+      "category": "segmentation",
+      "selection_reason": "2023 dedicated crack segmentation architecture; contains loss equations, ablation tables and visual comparisons"
+    },
+    {
+      "blind_id": "P09",
+      "entry_id": "paper-0101",
+      "file_sha256": "db4c7e3879405eafb421357fb66de8f992801909003cc5f2f9a959fd7a6080d7",
+      "category": "segmentation",
+      "selection_reason": "2022 semi-supervised crack segmentation; large paper with extensive tables, figures and mathematical formulation"
+    },
+    {
+      "blind_id": "P10",
+      "entry_id": "paper-0018",
+      "file_sha256": "dbd68a521d4fb2d0f8ad216d1971de0d1d3251758be6d29583ca3aa8ab0baa96",
+      "category": "concrete_material",
+      "selection_reason": "2024 transfer learning for concrete dam cracks; domain-specific material; contains training curves, metric tables and sample figures"
+    },
+    {
+      "blind_id": "P11",
+      "entry_id": "paper-0033",
+      "file_sha256": "52ea8481ad538968bac5786926ce8eaaf73a60d45aeb57cdda2dd877efd89fc5",
+      "category": "concrete_material",
+      "selection_reason": "MDPI Buildings journal paper; well-structured with sections, references, figures and quantitative results"
+    },
+    {
+      "blind_id": "P12",
+      "entry_id": "paper-0079",
+      "file_sha256": "50fee030a2498916e02cad4ed92c58501b942060851dd7506a2307fd60ad08d1",
+      "category": "concrete_material",
+      "selection_reason": "2023 dam spillway multi-defect inspection; large paper (19MB); contains high-res figures, inspection tables and methodology diagrams"
+    }
+  ]
+}
