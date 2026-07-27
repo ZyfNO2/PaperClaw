@@ -145,14 +145,7 @@ class AcademicRuntime:
             for item in parsed_objects
             if item.asset_hash and item.object_type in {"page", "figure", "table"}
         ]
-        dense_fingerprint = (
-            self.dense_encoder.fingerprint if self.dense_encoder else "hashing-dense"
-        )
-        model_fingerprint = (
-            f"bm25+{dense_fingerprint}+{self.visual_encoder.fingerprint}"
-            if self.visual_encoder
-            else f"bm25+{dense_fingerprint}+visual:unavailable"
-        )
+        model_fingerprint = self._runtime_model_fingerprint()
         dense_vectors = (
             self.dense_encoder.encode_documents([item.text or "" for item in objects])
             if self.dense_encoder
@@ -257,10 +250,15 @@ class AcademicRuntime:
             budget = query.budget
         with self._connect() as db:
             active = db.execute(
-                "SELECT generation_id FROM index_generations WHERE active=1"
+                "SELECT generation_id,model_fingerprint FROM index_generations WHERE active=1"
             ).fetchone()
             if not active:
                 raise RuntimeError("academic index is not ready")
+            if active[1] != self._runtime_model_fingerprint():
+                raise RuntimeError(
+                    "academic index model fingerprint is incompatible with runtime; "
+                    "rebuild the index with the active encoders"
+                )
             rows = db.execute(
                 "SELECT object_id,text,locator_json,vector_json FROM academic_index WHERE generation_id=?",
                 (active[0],),
@@ -441,6 +439,17 @@ class AcademicRuntime:
                 "SELECT model_fingerprint FROM index_generations WHERE active=1"
             ).fetchone()
         return str(row[0]) if row else "unavailable"
+
+    def _runtime_model_fingerprint(self) -> str:
+        dense = (
+            self.dense_encoder.fingerprint if self.dense_encoder else "hashing-dense"
+        )
+        visual = (
+            self.visual_encoder.fingerprint
+            if self.visual_encoder
+            else "visual:unavailable"
+        )
+        return f"bm25+{dense}+{visual}"
 
     def save_research_artifact(
         self, artifact_type: str, title: str, payload: dict[str, object]

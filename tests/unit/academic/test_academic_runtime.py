@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import fitz
+import pytest
 
 from paperclaw.academic import (
     AcademicQuery,
@@ -145,3 +146,14 @@ def test_visual_only_request_abstains_when_channel_is_unavailable(
     assert result.should_abstain
     assert result.trace is not None
     assert result.trace.degraded_channels == ("visual",)
+
+
+def test_retrieval_rejects_encoder_fingerprint_mismatch(tmp_path: Path) -> None:
+    runtime_a, paper_id = _runtime(tmp_path, visual_encoder=_FakeVisualEncoder())
+    runtime_a.parse_paper(paper_id)
+    runtime_a.build_index()
+    runtime_b = AcademicRuntime.for_workspace(
+        tmp_path, runtime_a.project_id, visual_encoder=_SecondFakeVisualEncoder()
+    )
+    with pytest.raises(RuntimeError, match="model fingerprint is incompatible"):
+        runtime_b.retrieve(RetrievalRequest("diagram", ("visual",)))
