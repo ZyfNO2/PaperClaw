@@ -11,4 +11,6 @@ Date: 2026-07-27
 - Pre-install run: all five reported `pdf_metadata_dependency_unavailable`.
 - Post-dependency run with `pypdf 6.14.2`: 5/5 imported, 0 parser warnings;
   four titles fell back to filename and one used embedded PDF metadata.
+- Post-review strict-parser run after `b25c72e`: 5/5 imported, 0 warnings,
+  and repeat import returned `created=false`.
 - Managed smoke workspace: ignored `.tmp` directory; not part of release artifacts.

@@ -1,5 +1,7 @@
 from paperclaw.desktop.product_service import DesktopProductService
+from paperclaw.desktop.contracts import DesktopPublicError
 from paperclaw.projects import ProjectManifestStore
+import pytest
 
 
 def test_desktop_paper_flow_reuses_domain_service(tmp_path) -> None:
@@ -17,3 +19,6 @@ def test_desktop_paper_flow_reuses_domain_service(tmp_path) -> None:
         str(tmp_path), paper_id, {"title": "已确认标题"}, 1
     )
     assert confirmed["paper"]["metadata"]["title"]["status"] == "confirmed"
+
+    with pytest.raises(DesktopPublicError, match="year"):
+        service.confirm_paper_metadata(str(tmp_path), paper_id, {"year": 3.5}, 2)

@@ -59,6 +59,25 @@ class MetadataPatch:
     arxiv_id: str | None = None
     language: str | None = None
 
+    def __post_init__(self) -> None:
+        if self.year is not None and (
+            isinstance(self.year, bool)
+            or not isinstance(self.year, int)
+            or not 1 <= self.year <= 9999
+        ):
+            raise ValueError("metadata year must be an integer in [1, 9999]")
+        if self.authors is not None and (
+            not isinstance(self.authors, tuple)
+            or any(not isinstance(item, str) or not item.strip() for item in self.authors)
+        ):
+            raise ValueError("metadata authors must be non-empty strings")
+        for name in ("title", "doi", "arxiv_id", "language"):
+            value = getattr(self, name)
+            if value is not None and (
+                not isinstance(value, str) or not value.strip() or len(value) > 1_000
+            ):
+                raise ValueError(f"metadata {name} must be bounded non-empty text")
+
 
 @dataclass(frozen=True)
 class PaperRecord:
@@ -136,4 +155,3 @@ class PaperImportResult:
 
 
 _METADATA_FIELDS = ("title", "authors", "year", "doi", "arxiv_id", "language")
-

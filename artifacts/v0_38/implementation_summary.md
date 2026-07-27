@@ -10,6 +10,8 @@ Commits:
 - `5557bd2` — domain, repository, managed store and tests;
 - `d323ad7` — REST and CLI adapters;
 - `47483ca` — Desktop paper library.
+- `14d27b9` — version docs and offline acceptance evidence;
+- `b25c72e` — independent-review security and concurrency fixes.
 
 No source code was copied from reference repositories.
 

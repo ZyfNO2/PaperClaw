@@ -105,7 +105,11 @@
         arxiv_id: fields.arxiv_id.value,
         language: fields.language.value
       };
-      if (fields.year.value.trim()) patch.year = Number(fields.year.value);
+      if (fields.year.value.trim()) {
+        const year = Number(fields.year.value);
+        if (!Number.isInteger(year) || year < 1 || year > 9999) return;
+        patch.year = year;
+      }
       const response = await api().confirm_paper_metadata(
         workspace(), paper.paper_id, patch, paper.metadata_revision
       );
