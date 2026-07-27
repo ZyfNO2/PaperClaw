@@ -3,7 +3,7 @@
 > 最后更新：2026-07-28  
 > 适用仓库：`ZyfNO2/PaperAgent`、`ZyfNO2/PaperClaw`  
 > 状态：`offline_validated / P0 GO blocked`  
-> 文档修订：`2026-07-28-h0-corpus-freeze`
+> 文档修订：`2026-07-28-h1-parser-complete`
 
 ## 0. 远端基线
 
@@ -141,16 +141,29 @@ H0 corpus 证据（PaperClaw canonical）：
 
 ### H1：canonical parser 与 locator 完整化
 
-- [ ] 增加正式 `DoclingAdapter`，不改变公共 Academic contract；
-- [ ] 增加 Markdown、Text、LaTeX ingestion；
-- [ ] 扫描件 OCR/VLM/heuristic 结果使用 `inferred` provenance；
-- [ ] 加密、损坏、扫描件、渲染失败统一返回结构化 `partial/failed`；
-- [ ] 冻结 12 篇上的 Table Cell 行列身份、Equation、Caption、Algorithm、
+- [x] 增加正式 `DoclingAdapter`，不改变公共 Academic contract；
+- [x] 增加 Markdown、Text、LaTeX ingestion；
+- [x] 扫描件 OCR/VLM/heuristic 结果使用 `inferred` provenance；
+- [x] 加密、损坏、扫描件、渲染失败统一返回结构化 `partial/failed`；
+- [x] 冻结 12 篇上的 Table Cell 行列身份、Equation、Caption、Algorithm、
   Reference/Citation locator contract tests 全绿；
-- [ ] 重复 ingest/parse/index 和 paper version 更新执行幂等与旧 locator replay 验收。
+- [x] 重复 ingest/parse/index 和 paper version 更新执行幂等与旧 locator replay 验收。
 
 完成条件：冻结 12 篇全部产生 manifest；所有可标注对象具有 page 和有效 bbox；
 旧版本 locator resolve fail-closed。
+
+H1 证据（PaperClaw `codex/academic-rag-h1-parser`）：
+
+- PR：[#75](https://github.com/ZyfNO2/PaperClaw/pull/75)（Draft，base 为 `codex/academic-rag-p0`）
+- HEAD：`1f7976f`
+- 新增 `PaperParser` Protocol + format-keyed parser registry
+- PyMuPDFParser（默认）、MarkdownParser、TextParser、LatexParser、DoclingParser（stub）
+- 结构化失败：encrypted → failed、corrupt → failed、scanned → partial + warning
+- `resolve()` fail-closed：superseded version locator → KeyError
+- 本地 frozen 12 验收：7/7 PASSED（128s）
+- 本地 full unit suite：941 passed, 13 skipped
+- DoclingAdapter 为 optional `[docling]` extra，环境变量 `PAPERCLAW_ACADEMIC_PARSER=docling` 启用
+- 扫描件页面标记 `provenance="inferred"`（page 级 warning，不阻塞 parse）
 
 ### H2：正式多通道 Retrieval
 
