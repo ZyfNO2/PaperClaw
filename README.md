@@ -2,7 +2,7 @@
 
 PaperClaw 是一个面向 Coding、Research 与多 Agent 工作流的可审计 Agent Runtime。
 
-当前开发版本：**0.38.0**。
+当前开发版本：**0.43.0**。
 
 ```text
 Team Plan
@@ -27,8 +27,31 @@ Academic Papers
   -> PDF / Markdown / TXT safe import
   -> content-addressed managed originals
   -> immutable versions + candidate / confirmed metadata
-  -> Python / REST / CLI / Desktop
+  -> page / section / paragraph / figure / table / equation objects
+  -> text + ColQwen2 visual retrieval
+  -> replayable Evidence Bundle / Memory / Desktop
 ```
+
+## v0.39-v0.43 Academic RAG P0
+
+```bash
+paperclaw academic --workspace . parse PAPER_ID
+paperclaw academic --workspace . index
+paperclaw academic --workspace . search "question about the papers"
+```
+
+Academic Runtime 将解析产物、页面图、索引 generation 与 PaperVersion 的 source hash
+绑定。文本和视觉通道保留独立分数；Evidence locator 可回放到原始页或对象。
+视觉 baseline 固定为 `vidore/colqwen2-base` revision
+`9fe8a713422a7cb4ef79ca77a09b381ee2243101`，更换模型会创建新的 index
+generation，不复用不兼容向量。
+
+安装 `paperclaw[academic-visual]` 并设置
+`PAPERCLAW_ACADEMIC_VISUAL=1` 后，CLI、REST 与 Desktop 共用同一个视觉
+encoder；未启用时视觉通道明确标记 unavailable。
+设置 `PAPERCLAW_ACADEMIC_DENSE=1` 可启用固定 revision 的
+`sentence-transformers/all-MiniLM-L6-v2`；否则使用 deterministic hashing
+dense fallback。
 
 ## v0.38 Paper Import & Versioning
 

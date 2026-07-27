@@ -4,6 +4,23 @@ All notable PaperClaw changes are recorded here. Versions are developed on isola
 branches and are intended to be squash-merged so one released version contributes
 one commit to `main`.
 
+## [0.43.0] — Unreleased
+
+### Added
+
+- version-bound PDF page, section, paragraph and academic-object parsing;
+- content-addressed page/object assets with hash-checked locators;
+- atomic local text and ColQwen2 visual index generations;
+- unified retrieval, expansion, resolution, sufficiency and abstention contracts;
+- replayable Evidence Bundle, research Artifact and scoped Memory integration;
+- shared Python, REST, CLI and Desktop Academic RAG workflow.
+
+### Validation status
+
+- automated contract, runtime, service and Desktop bridge validation is complete;
+- `vidore/colqwen2-base` snapshot bytes and revision are verified locally;
+- native Desktop click-through and frozen-corpus acceptance remain final manual gates.
+
 ## [0.38.0] — Unreleased
 
 ### Added

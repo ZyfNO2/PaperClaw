@@ -3,11 +3,11 @@
 
 project:
   name: multimodal-academic-rag
-  version: 0.1.0
-  phase: p0-a
+  version: 0.43.0
+  phase: p0-e
 
 data_root: data/paper_corpus
-runtime_root: .papercorpus
+runtime_root: .paperclaw/academic
 
 directories:
   corpus: data/paper_corpus
@@ -43,7 +43,7 @@ text_retriever:
   reranker_enabled: true
 
 ingestion:
-  supported_formats: [pdf, md, txt, tex]
+  supported_formats: [pdf, md, txt]
   hash_algorithm: sha256
   page_dpi: 200
   extract_figures: true
