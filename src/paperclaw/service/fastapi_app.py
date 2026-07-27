@@ -78,6 +78,12 @@ def create_app(
         arxiv_id: str | None = Field(default=None, max_length=500)
         language: str | None = Field(default=None, max_length=100)
 
+    class AcademicQueryBody(BaseModel):
+        query: str = Field(min_length=1, max_length=10_000)
+        paper_ids: list[str] = Field(default_factory=list, max_length=100)
+        object_types: list[str] = Field(default_factory=list, max_length=20)
+        max_candidates: int = Field(default=10, ge=1, le=100)
+
     app = FastAPI(title="PaperClaw Service API", version="0.19.0")
     app.state.paperclaw_service = service
     task_service = getattr(service, "task_service", None)
@@ -206,6 +212,67 @@ def create_app(
                 ),
                 body.expected_revision,
             ).to_public_dict()
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.post("/v1/projects/{project_id}/papers/{paper_id}/parse")
+    def parse_academic_paper(project_id: str, paper_id: str):
+        from paperclaw.academic import AcademicRuntime
+        resolved = paper_service(project_id)
+        try:
+            result = AcademicRuntime.for_workspace(
+                resolved.workspace, project_id
+            ).parse_paper(paper_id)
+            return {
+                "manifest_id": result.manifest_id, "status": result.status,
+                "paper_id": result.paper_id, "version_id": result.version_id,
+                "page_count": result.page_count, "object_count": len(result.objects),
+                "object_types": sorted({item.object_type for item in result.objects}),
+                "warnings": list(result.warnings),
+            }
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.post("/v1/projects/{project_id}/academic/index")
+    def build_academic_index(project_id: str):
+        from paperclaw.academic import AcademicRuntime
+        resolved = paper_service(project_id)
+        try:
+            generation = AcademicRuntime.for_workspace(
+                resolved.workspace, project_id
+            ).build_index()
+            return {
+                "generation_id": generation.generation_id,
+                "state": generation.state, "object_count": generation.object_count,
+                "model_fingerprint": generation.model_fingerprint,
+            }
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.post("/v1/projects/{project_id}/academic/retrieve")
+    def retrieve_academic_evidence(project_id: str, body: AcademicQueryBody):
+        from paperclaw.academic import AcademicQuery, AcademicRuntime, RetrievalBudget
+        resolved = paper_service(project_id)
+        try:
+            runtime = AcademicRuntime.for_workspace(resolved.workspace, project_id)
+            result = runtime.retrieve(
+                AcademicQuery(body.query, tuple(body.paper_ids), tuple(body.object_types)),
+                budget=RetrievalBudget(max_candidates=body.max_candidates),
+            )
+            return {
+                "query": result.query, "sufficiency": result.sufficiency,
+                "should_abstain": result.should_abstain,
+                "reasons": list(result.reasons),
+                "candidates": [
+                    {
+                        "locator": item.locator.to_dict(), "text": item.text,
+                        "scores": {"lexical": item.lexical_score, "dense": item.dense_score,
+                                   "visual": item.visual_score, "fused": item.fused_score},
+                        "explanation": list(item.explanation),
+                    }
+                    for item in result.candidates
+                ],
+            }
         except Exception as exc:
             raise paper_error(exc) from exc
 
