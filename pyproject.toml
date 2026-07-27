@@ -85,6 +85,7 @@ markers = [
     "real_llm: tests that call a live LLM provider (slow, costly, non-deterministic)",
     "process_acceptance: tests that launch real service/provider processes and HTTP sockets",
     "distributed: tests that require Redis and PostgreSQL services",
+    "corpus_acceptance: tests that require local data/paper_corpus (not run in CI)",
 ]
 
 [tool.ruff]
