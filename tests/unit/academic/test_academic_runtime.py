@@ -33,7 +33,7 @@ def test_parse_index_retrieve_resolve_and_evidence_bundle(tmp_path: Path) -> Non
     parsed = runtime.parse_paper(paper_id)
     assert parsed.status == "ready"
     assert parsed.page_count == 1
-    assert {"document", "page", "section", "paragraph"} <= {
+    assert {"document", "page", "section", "paragraph", "figure"} <= {
         item.object_type for item in parsed.objects
     }
     assert all(item.locator.version_id == parsed.version_id for item in parsed.objects)
@@ -53,6 +53,11 @@ def test_parse_index_retrieve_resolve_and_evidence_bundle(tmp_path: Path) -> Non
     artifact = runtime.save_evidence_bundle(result)
     assert artifact["artifact_type"] == "evidence_bundle"
     assert ".paperclaw" not in str(artifact)
+    assert runtime.save_research_artifact(
+        "baseline_card", "Baseline", {"method": "BM25"}
+    )["artifact_type"] == "baseline_card"
+    runtime.remember("project", "Use page-level evidence for figure questions.")
+    assert "page-level evidence" in runtime.memory_snapshot()["project"][0]
 
 
 def test_parser_revision_and_index_generation_are_idempotent(tmp_path: Path) -> None:

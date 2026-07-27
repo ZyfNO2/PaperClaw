@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from paperclaw.artifacts import ArtifactSourceLinks, FileArtifactStore
 from paperclaw.papers import PaperService
+from paperclaw.memory import ProjectScopedMemoryStore
 
 from .contracts import (
     AcademicLocator, AcademicObject, AcademicQuery, BoundingBox, IndexGeneration,
@@ -34,6 +35,9 @@ class AcademicRuntime:
         self.root.mkdir(parents=True, exist_ok=True)
         self.database = self.root / "academic.sqlite3"
         self.assets = self.root / "assets"
+        self.memory = ProjectScopedMemoryStore(
+            self.workspace / ".paperclaw" / "memory", project_id
+        )
         self._init_db()
 
     @classmethod
@@ -127,7 +131,7 @@ class AcademicRuntime:
             visual = 0.0
             fused = 0.65 * lexical + 0.35 * dense
             candidates.append(
-                RetrievalCandidate(locator, row[1], lexical, dense, visual, fused,
+                RetrievalCandidate(locator, row[1], {"lexical": lexical, "dense": dense, "visual": visual}, fused,
                                    ("bm25-compatible lexical", "deterministic dense fallback", "visual unavailable"))
             )
         candidates.sort(key=lambda item: (-item.fused_score, item.locator.object_id))
@@ -185,6 +189,51 @@ class AcademicRuntime:
         )
         return {"artifact_id": record.artifact_id, "artifact_type": record.artifact_type,
                 "revision_number": revision.revision_number, "sufficiency": result.sufficiency}
+
+    def save_research_artifact(
+        self, artifact_type: str, title: str, payload: dict[str, object]
+    ) -> dict[str, object]:
+        allowed = {
+            "paper_comparison", "baseline_card", "module_card",
+            "compatibility_matrix", "evidence_bundle",
+        }
+        if artifact_type not in allowed:
+            raise ValueError("unsupported academic artifact type")
+        encoded = json.dumps(
+            {"schema_version": 1, **payload}, ensure_ascii=False, sort_keys=True
+        ).encode()
+        key = hashlib.sha256(encoded).hexdigest()
+        store = FileArtifactStore(
+            self.root / "product_artifacts", confinement_root=self.workspace
+        )
+        record, revision, _ = store.create_artifact(
+            idempotency_key=f"academic:{artifact_type}:{key}",
+            artifact_type=artifact_type, title=title,
+            media_type="application/json", content=encoded,
+            source=ArtifactSourceLinks(project_id=self.project_id),
+        )
+        return {
+            "artifact_id": record.artifact_id, "artifact_type": artifact_type,
+            "revision_number": revision.revision_number,
+        }
+
+    def remember(self, scope: str, content: str) -> dict[str, object]:
+        if scope not in {"project", "user"}:
+            raise ValueError("academic memory scope must be project or user")
+        target = "memory" if scope == "project" else "user"
+        category = "project" if scope == "project" else "preference"
+        entry = self.memory.add(
+            target, content, category=category, source="academic_user_confirmed"
+        )
+        return {"entry_id": entry.entry_id, "scope": scope, "content_hash": entry.content_hash}
+
+    def memory_snapshot(self) -> dict[str, object]:
+        snapshot = self.memory.snapshot()
+        return {
+            "fingerprint": snapshot.fingerprint,
+            "project": [entry.content for entry in snapshot.memory_entries],
+            "user": [entry.content for entry in snapshot.user_entries],
+        }
 
     def _parse_pdf(self, paper_id, version_id, source_hash, content, fingerprint):
         import fitz

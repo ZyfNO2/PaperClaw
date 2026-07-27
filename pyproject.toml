@@ -30,6 +30,11 @@ academic = [
     "transformers>=4.50,<6",
     "torch>=2.4,<3",
 ]
+academic-visual = [
+    "paperclaw[academic]",
+    "colpali-engine>=0.3,<0.4",
+    "Pillow>=10,<13",
+]
 tui = [
     "textual>=1.0,<8",
 ]
