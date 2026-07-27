@@ -103,3 +103,24 @@ jobs:
           python -m ruff check src/paperclaw tests
           --select E9,F63,F7,F82
           --ignore F821
+
+  academic:
+    name: academic extra (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install project with academic extra
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,academic]"
+      - name: Run academic and papers tests
+        run: >-
+          python -m pytest -q
+          tests/unit/academic
+          tests/unit/desktop/test_papers_product.py
+          -m "not real_llm"

@@ -13,7 +13,6 @@ from paperclaw.tasks.contracts import (
     TaskConflictError,
     TaskNotFoundError,
     TaskRuntimeError,
-    TaskStatus,
 )
 
 from .contracts import ServiceError, ServiceRunRequest
@@ -78,6 +77,15 @@ def create_app(
         arxiv_id: str | None = Field(default=None, max_length=500)
         language: str | None = Field(default=None, max_length=100)
 
+    class AcademicQueryBody(BaseModel):
+        query: str = Field(min_length=1, max_length=10_000)
+        channels: list[str] = Field(
+            default_factory=lambda: ["lexical", "dense", "visual"], max_length=3
+        )
+        paper_ids: list[str] = Field(default_factory=list, max_length=100)
+        object_types: list[str] = Field(default_factory=list, max_length=20)
+        max_candidates: int = Field(default=10, ge=1, le=100)
+
     app = FastAPI(title="PaperClaw Service API", version="0.19.0")
     app.state.paperclaw_service = service
     task_service = getattr(service, "task_service", None)
@@ -98,7 +106,10 @@ def create_app(
             except (OSError, ValueError) as exc:
                 raise HTTPException(
                     status_code=400,
-                    detail={"code": "paper_source_invalid", "message": "Paper source is unavailable."},
+                    detail={
+                        "code": "paper_source_invalid",
+                        "message": "Paper source is unavailable.",
+                    },
                 ) from exc
             for root in app.state.paper_workspace_roots:
                 try:
@@ -131,7 +142,10 @@ def create_app(
                 return PaperService.for_workspace(workspace, project_id=project_id)
         raise HTTPException(
             status_code=400,
-            detail={"code": "paper_workspace_denied", "message": "Paper workspace is not allowed."},
+            detail={
+                "code": "paper_workspace_denied",
+                "message": "Paper workspace is not allowed.",
+            },
         )
 
     def paper_error(exc: Exception) -> HTTPException:
@@ -140,22 +154,41 @@ def create_app(
             PaperConflictError,
             PaperNotFoundError,
         )
+
         if isinstance(exc, PaperNotFoundError):
-            return HTTPException(404, detail={"code": "paper_not_found", "message": "Paper resource was not found."})
+            return HTTPException(
+                404,
+                detail={
+                    "code": "paper_not_found",
+                    "message": "Paper resource was not found.",
+                },
+            )
         if isinstance(exc, PaperConflictError):
             detail = {"code": "paper_conflict", "message": str(exc)[:500]}
             if exc.current_revision is not None:
                 detail["current_revision"] = exc.current_revision
             return HTTPException(409, detail=detail)
         if isinstance(exc, PaperCapacityError):
-            return HTTPException(413, detail={"code": "paper_too_large", "message": str(exc)[:500]})
+            return HTTPException(
+                413, detail={"code": "paper_too_large", "message": str(exc)[:500]}
+            )
         if isinstance(exc, (ValueError, TypeError)):
-            return HTTPException(422, detail={"code": "paper_validation_error", "message": str(exc)[:500]})
-        return HTTPException(500, detail={"code": "paper_runtime_error", "message": "Paper operation failed."})
+            return HTTPException(
+                422,
+                detail={"code": "paper_validation_error", "message": str(exc)[:500]},
+            )
+        return HTTPException(
+            500,
+            detail={
+                "code": "paper_runtime_error",
+                "message": "Paper operation failed.",
+            },
+        )
 
     @app.post("/v1/projects/{project_id}/papers/import", status_code=201)
     def import_paper(project_id: str, body: PaperImportBody):
         from paperclaw.papers import PaperImportRequest
+
         resolved = paper_service(project_id, body.source_path)
         try:
             return resolved.import_paper(
@@ -168,7 +201,12 @@ def create_app(
     def list_papers(project_id: str, cursor: str | None = None, limit: int = 50):
         resolved = paper_service(project_id)
         try:
-            return {"papers": [item.to_public_dict() for item in resolved.list_papers(project_id, cursor, limit)]}
+            return {
+                "papers": [
+                    item.to_public_dict()
+                    for item in resolved.list_papers(project_id, cursor, limit)
+                ]
+            }
         except Exception as exc:
             raise paper_error(exc) from exc
 
@@ -184,13 +222,19 @@ def create_app(
     def list_paper_versions(project_id: str, paper_id: str):
         resolved = paper_service(project_id)
         try:
-            return {"versions": [item.to_public_dict() for item in resolved.list_versions(project_id, paper_id)]}
+            return {
+                "versions": [
+                    item.to_public_dict()
+                    for item in resolved.list_versions(project_id, paper_id)
+                ]
+            }
         except Exception as exc:
             raise paper_error(exc) from exc
 
     @app.patch("/v1/projects/{project_id}/papers/{paper_id}/metadata")
     def confirm_paper_metadata(project_id: str, paper_id: str, body: PaperMetadataBody):
         from paperclaw.papers import MetadataPatch
+
         resolved = paper_service(project_id)
         try:
             return resolved.confirm_metadata(
@@ -206,6 +250,77 @@ def create_app(
                 ),
                 body.expected_revision,
             ).to_public_dict()
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.post("/v1/projects/{project_id}/papers/{paper_id}/parse")
+    def parse_academic_paper(project_id: str, paper_id: str):
+        from paperclaw.academic import AcademicRuntime
+
+        resolved = paper_service(project_id)
+        try:
+            result = AcademicRuntime.for_workspace(
+                resolved.workspace, project_id
+            ).parse_paper(paper_id)
+            return {
+                "manifest_id": result.manifest_id,
+                "status": result.status,
+                "paper_id": result.paper_id,
+                "version_id": result.version_id,
+                "page_count": result.page_count,
+                "object_count": len(result.objects),
+                "object_types": sorted({item.object_type for item in result.objects}),
+                "warnings": list(result.warnings),
+            }
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.post("/v1/projects/{project_id}/academic/index")
+    def build_academic_index(project_id: str):
+        from paperclaw.academic import AcademicRuntime
+
+        resolved = paper_service(project_id)
+        try:
+            generation = AcademicRuntime.for_workspace(
+                resolved.workspace, project_id
+            ).build_index()
+            return {
+                "generation_id": generation.generation_id,
+                "state": generation.state,
+                "object_count": generation.object_count,
+                "model_fingerprint": generation.model_fingerprint,
+            }
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.post("/v1/projects/{project_id}/academic/retrieve")
+    def retrieve_academic_evidence(project_id: str, body: AcademicQueryBody):
+        from paperclaw.academic import (
+            AcademicRuntime,
+            RetrievalBudget,
+            RetrievalRequest,
+        )
+
+        resolved = paper_service(project_id)
+        try:
+            runtime = AcademicRuntime.for_workspace(resolved.workspace, project_id)
+            result = runtime.retrieve(
+                RetrievalRequest(
+                    body.query,
+                    tuple(body.channels),
+                    tuple(body.paper_ids),
+                    tuple(body.object_types),
+                    RetrievalBudget(max_candidates=body.max_candidates),
+                ),
+            )
+            return {
+                "query": result.query,
+                "sufficiency": result.sufficiency,
+                "should_abstain": result.should_abstain,
+                "reasons": list(result.reasons),
+                "trace": result.trace.to_dict() if result.trace else None,
+                "candidates": [item.to_dict() for item in result.candidates],
+            }
         except Exception as exc:
             raise paper_error(exc) from exc
 
@@ -247,9 +362,7 @@ def create_app(
     @app.post("/v1/runs", status_code=202)
     async def create_run(
         body: RunBody,
-        idempotency_key: str | None = Header(
-            default=None, alias="Idempotency-Key"
-        ),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> dict[str, Any]:
         try:
             request = ServiceRunRequest(
@@ -265,9 +378,7 @@ def create_app(
                     max_tool_calls=body.limits.max_tool_calls,
                 ),
             )
-            outcome = service.submit(
-                request, idempotency_key=idempotency_key
-            )
+            outcome = service.submit(request, idempotency_key=idempotency_key)
             return {
                 "created": outcome.created,
                 "run": outcome.run.to_dict(),
@@ -296,9 +407,7 @@ def create_app(
     async def stream_events(
         request: Request,
         service_run_id: str,
-        last_event_id: str | None = Header(
-            default=None, alias="Last-Event-ID"
-        ),
+        last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
     ) -> StreamingResponse:
         try:
             after = int(last_event_id or "0")
@@ -366,9 +475,7 @@ def create_app(
         @app.post("/v1/tasks", status_code=202)
         async def create_task(
             body: TaskBody,
-            idempotency_key: str | None = Header(
-                default=None, alias="Idempotency-Key"
-            ),
+            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
         ) -> dict[str, Any]:
             try:
                 task, created = task_service.submit(
@@ -433,9 +540,7 @@ def create_app(
         async def stream_task_events(
             request: Request,
             task_id: str,
-            last_event_id: str | None = Header(
-                default=None, alias="Last-Event-ID"
-            ),
+            last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
         ) -> StreamingResponse:
             try:
                 after = int(last_event_id or "0")

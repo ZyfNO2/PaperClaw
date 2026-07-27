@@ -120,7 +120,37 @@
     for (const version of versionsResponse.versions) {
       versions.append(node("p", "mono", `v${version.version_number} · ${version.format} · ${version.byte_length} bytes · ${version.sha256.slice(0, 12)}`));
     }
-    target.append(meta, form, versions);
+    const academic = node("div", "card");
+    academic.append(node("h3", "panel-title", "ACADEMIC RAG"));
+    const parseButton = node("button", "btn", "PARSE STRUCTURE");
+    const indexButton = node("button", "btn", "BUILD INDEX");
+    const queryInput = node("input", "");
+    queryInput.placeholder = "Ask across parsed evidence";
+    const searchButton = node("button", "btn primary", "RETRIEVE");
+    const output = node("div", "product-list");
+    parseButton.onclick = async () => {
+      const response = await api().parse_academic_paper(workspace(), paper.paper_id);
+      output.textContent = response.ok
+        ? `${response.parse.status}: ${response.parse.page_count} pages, ${response.parse.object_count} objects`
+        : response.message || "Parse failed";
+    };
+    indexButton.onclick = async () => {
+      const response = await api().build_academic_index(workspace());
+      output.textContent = response.ok
+        ? `${response.index.state}: ${response.index.object_count} indexed objects`
+        : response.message || "Index failed";
+    };
+    searchButton.onclick = async () => {
+      const response = await api().retrieve_academic(workspace(), queryInput.value);
+      output.replaceChildren();
+      if (!response.ok) { output.textContent = response.message || "Retrieval failed"; return; }
+      output.append(node("p", "status-badge", response.result.sufficiency));
+      for (const item of response.result.candidates) {
+        output.append(node("p", "", `${item.score.toFixed(3)} · p${item.locator.page_number} · ${item.text}`));
+      }
+    };
+    academic.append(parseButton, indexButton, queryInput, searchButton, output);
+    target.append(meta, form, versions, academic);
   }
 
   const pages = window.PaperClawPages;

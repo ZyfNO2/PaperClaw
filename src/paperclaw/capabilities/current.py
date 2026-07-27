@@ -127,6 +127,33 @@ def default_capability_catalog() -> CapabilityCatalog:
                 "Metadata is local candidate data until explicitly confirmed.",
             ),
         ),
+        CapabilityDescriptor(
+            "academic.structured_objects",
+            "v0.40",
+            "shipped",
+            ("library", "cli", "service", "desktop"),
+            "Version-bound pages, sections, paragraphs and replayable academic objects.",
+            ("academic.paper_versioning",),
+            ("OCR and a full PDF editor are not included.",),
+        ),
+        CapabilityDescriptor(
+            "academic.multichannel_retrieval",
+            "v0.42",
+            "foundation",
+            ("library", "cli", "service", "desktop"),
+            "Atomic text and ColQwen2 visual generations with explainable channel scores.",
+            ("academic.structured_objects", "retrieval.local_bm25"),
+            ("GPU live validation is environment-dependent.",),
+        ),
+        CapabilityDescriptor(
+            "academic.evidence_workspace",
+            "v0.43",
+            "shipped",
+            ("library", "cli", "service", "desktop"),
+            "Sufficiency-aware Evidence Bundles, replay, research artifacts and scoped memory.",
+            ("academic.multichannel_retrieval",),
+            ("Native Desktop acceptance is a manual release gate.",),
+        ),
     )
     for item in additions:
         rows[item.capability_id] = item

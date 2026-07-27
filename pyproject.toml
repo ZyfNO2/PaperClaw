@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paperclaw"
-version = "0.38.0"
+version = "0.43.0"
 description = "A lightweight agent runtime for coding and research workflows"
 requires-python = ">=3.12"
 dependencies = [
@@ -24,6 +24,20 @@ paperclaw-retrieval-quality = "paperclaw.retrieval.quality_cli:main"
 paperclaw-project-extensions = "paperclaw.projects.extension_cli:main"
 
 [project.optional-dependencies]
+academic = [
+    "PyMuPDF>=1.24,<2",
+    "sentence-transformers>=3,<6",
+    "transformers>=4.51.1,<4.52",
+    "torch>=2.5,<2.7",
+]
+academic-visual = [
+    "PyMuPDF>=1.24,<2",
+    "transformers>=4.51.1,<4.52",
+    "torch>=2.5,<2.7",
+    "peft>=0.14,<0.16",
+    "colpali-engine==0.3.10",
+    "Pillow>=10,<13",
+]
 tui = [
     "textual>=1.0,<8",
 ]
@@ -61,6 +75,7 @@ where = ["src"]
 include = ["paperclaw*", "pocketflow*"]
 
 [tool.setuptools.package-data]
+"paperclaw" = ["py.typed"]
 "paperclaw.desktop" = ["static/*.html", "static/*.css", "static/*.js", "static/styles/*.css", "static/js/*.js"]
 
 [tool.pytest.ini_options]

@@ -13,6 +13,7 @@ from paperclaw.artifacts import (
 )
 from paperclaw.capabilities import default_capability_catalog
 from paperclaw.papers import MetadataPatch, PaperImportRequest, PaperService
+from paperclaw.academic import AcademicQuery, AcademicRuntime
 from paperclaw.projects import (
     ProjectKnowledgeRuntime,
     ProjectManifestStore,
@@ -34,12 +35,90 @@ class DesktopProductService:
     Provider credentials are never accepted or returned by this service.
     """
 
-    def import_paper(self, workspace: str, source_path: str, paper_id: str | None = None) -> dict[str, object]:
+    def parse_academic_paper(self, workspace: str, paper_id: str) -> dict[str, object]:
+        runtime, _ = self._academic_runtime(workspace)
+        try:
+            result = runtime.parse_paper(paper_id)
+        except (KeyError, OSError, RuntimeError, ValueError) as exc:
+            raise DesktopPublicError(
+                "academic_parse_failed", self._bounded(str(exc), 500)
+            ) from exc
+        return self._public(
+            {
+                "ok": True,
+                "parse": {
+                    "manifest_id": result.manifest_id,
+                    "status": result.status,
+                    "page_count": result.page_count,
+                    "object_count": len(result.objects),
+                    "object_types": sorted(
+                        {item.object_type for item in result.objects}
+                    ),
+                    "warnings": list(result.warnings),
+                },
+            }
+        )
+
+    def build_academic_index(self, workspace: str) -> dict[str, object]:
+        runtime, _ = self._academic_runtime(workspace)
+        try:
+            generation = runtime.build_index()
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise DesktopPublicError(
+                "academic_index_failed", self._bounded(str(exc), 500)
+            ) from exc
+        return self._public(
+            {
+                "ok": True,
+                "index": {
+                    "generation_id": generation.generation_id,
+                    "state": generation.state,
+                    "object_count": generation.object_count,
+                    "model_fingerprint": generation.model_fingerprint,
+                },
+            }
+        )
+
+    def retrieve_academic(self, workspace: str, query: str) -> dict[str, object]:
+        runtime, _ = self._academic_runtime(workspace)
+        try:
+            result = runtime.retrieve(AcademicQuery(query))
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise DesktopPublicError(
+                "academic_retrieval_failed", self._bounded(str(exc), 500)
+            ) from exc
+        return self._public(
+            {
+                "ok": True,
+                "result": {
+                    "query": result.query,
+                    "sufficiency": result.sufficiency,
+                    "should_abstain": result.should_abstain,
+                    "trace": result.trace.to_dict() if result.trace else None,
+                    "candidates": [item.to_dict() for item in result.candidates],
+                },
+            }
+        )
+
+    def _academic_runtime(self, workspace: str) -> tuple[AcademicRuntime, str]:
+        root = self._workspace(workspace)
+        manifest = ProjectManifestStore(root).load()
+        return AcademicRuntime.for_workspace(
+            root, manifest.project_id
+        ), manifest.project_id
+
+    def import_paper(
+        self, workspace: str, source_path: str, paper_id: str | None = None
+    ) -> dict[str, object]:
         service, project_id = self._paper_service(workspace)
         try:
-            result = service.import_paper(PaperImportRequest(project_id, source_path, paper_id=paper_id))
+            result = service.import_paper(
+                PaperImportRequest(project_id, source_path, paper_id=paper_id)
+            )
         except (OSError, RuntimeError, ValueError) as exc:
-            raise DesktopPublicError("paper_import_failed", self._bounded(str(exc), 500)) from exc
+            raise DesktopPublicError(
+                "paper_import_failed", self._bounded(str(exc), 500)
+            ) from exc
         return self._public({"ok": True, "result": result.to_public_dict()})
 
     def list_papers(self, workspace: str, limit: int = 50) -> dict[str, object]:
@@ -47,8 +126,12 @@ class DesktopProductService:
         try:
             papers = service.list_papers(project_id, limit=limit)
         except (OSError, RuntimeError, ValueError) as exc:
-            raise DesktopPublicError("paper_list_failed", self._bounded(str(exc), 500)) from exc
-        return self._public({"ok": True, "papers": [item.to_public_dict() for item in papers]})
+            raise DesktopPublicError(
+                "paper_list_failed", self._bounded(str(exc), 500)
+            ) from exc
+        return self._public(
+            {"ok": True, "papers": [item.to_public_dict() for item in papers]}
+        )
 
     def get_paper(self, workspace: str, paper_id: str) -> dict[str, object]:
         service, project_id = self._paper_service(workspace)
@@ -64,43 +147,65 @@ class DesktopProductService:
             versions = service.list_versions(project_id, paper_id)
         except (KeyError, OSError, RuntimeError, ValueError) as exc:
             raise DesktopPublicError("paper_not_found", "Paper was not found.") from exc
-        return self._public({"ok": True, "versions": [item.to_public_dict() for item in versions]})
+        return self._public(
+            {"ok": True, "versions": [item.to_public_dict() for item in versions]}
+        )
 
     def confirm_paper_metadata(
-        self, workspace: str, paper_id: str, patch: Mapping[str, Any], expected_revision: int
+        self,
+        workspace: str,
+        paper_id: str,
+        patch: Mapping[str, Any],
+        expected_revision: int,
     ) -> dict[str, object]:
         allowed = {"title", "authors", "year", "doi", "arxiv_id", "language"}
         if set(patch) - allowed:
-            raise DesktopPublicError("validation_error", "Unknown paper metadata fields.")
+            raise DesktopPublicError(
+                "validation_error", "Unknown paper metadata fields."
+            )
         authors = patch.get("authors")
         if authors is not None and not isinstance(authors, (list, tuple)):
             raise DesktopPublicError("validation_error", "authors must be an array.")
         service, project_id = self._paper_service(workspace)
         try:
             paper = service.confirm_metadata(
-                project_id, paper_id,
+                project_id,
+                paper_id,
                 MetadataPatch(
                     title=patch.get("title"),
-                    authors=tuple(str(item) for item in authors) if authors is not None else None,
-                    year=patch.get("year"), doi=patch.get("doi"),
-                    arxiv_id=patch.get("arxiv_id"), language=patch.get("language"),
+                    authors=tuple(str(item) for item in authors)
+                    if authors is not None
+                    else None,
+                    year=patch.get("year"),
+                    doi=patch.get("doi"),
+                    arxiv_id=patch.get("arxiv_id"),
+                    language=patch.get("language"),
                 ),
                 expected_revision,
             )
         except (KeyError, OSError, RuntimeError, ValueError) as exc:
-            raise DesktopPublicError("paper_metadata_failed", self._bounded(str(exc), 500)) from exc
+            raise DesktopPublicError(
+                "paper_metadata_failed", self._bounded(str(exc), 500)
+            ) from exc
         return self._public({"ok": True, "paper": paper.to_public_dict()})
 
     def _paper_service(self, workspace: str) -> tuple[PaperService, str]:
         root = self._workspace(workspace)
         store = ProjectManifestStore(root)
         if not store.exists:
-            raise DesktopPublicError("project_not_found", "This workspace does not contain .paperclaw/project.json.")
+            raise DesktopPublicError(
+                "project_not_found",
+                "This workspace does not contain .paperclaw/project.json.",
+            )
         try:
             manifest = store.load()
         except (OSError, ValueError) as exc:
-            raise DesktopPublicError("project_invalid", "Project manifest is invalid.") from exc
-        return PaperService.for_workspace(root, project_id=manifest.project_id), manifest.project_id
+            raise DesktopPublicError(
+                "project_invalid", "Project manifest is invalid."
+            ) from exc
+        return PaperService.for_workspace(
+            root, project_id=manifest.project_id
+        ), manifest.project_id
 
     def get_capabilities(
         self,
@@ -240,9 +345,7 @@ class DesktopProductService:
         artifact_type = self._optional_identifier(
             values.get("artifact_type"), "artifact_type"
         )
-        project_id = self._optional_identifier(
-            values.get("project_id"), "project_id"
-        )
+        project_id = self._optional_identifier(values.get("project_id"), "project_id")
         store = self._existing_artifact_store(root)
         if store is None:
             return self._public({"ok": True, "count": 0, "artifacts": []})
@@ -278,7 +381,9 @@ class DesktopProductService:
                 max_revisions=_MAX_ARTIFACT_REVISIONS,
             )
         except ArtifactNotFoundError as exc:
-            raise DesktopPublicError("artifact_not_found", "Artifact was not found.") from exc
+            raise DesktopPublicError(
+                "artifact_not_found", "Artifact was not found."
+            ) from exc
         except ArtifactCapacityError as exc:
             raise DesktopPublicError(
                 "artifact_too_large",
@@ -311,9 +416,7 @@ class DesktopProductService:
                 "validation_error", "revision_number must be a positive integer."
             )
         if not isinstance(overwrite, bool):
-            raise DesktopPublicError(
-                "validation_error", "overwrite must be a boolean."
-            )
+            raise DesktopPublicError("validation_error", "overwrite must be a boolean.")
         path = self._relative_path(relative_path) if relative_path is not None else None
         store = self._existing_artifact_store(root)
         if store is None:
@@ -334,7 +437,9 @@ class DesktopProductService:
                 overwrite=overwrite,
             )
         except ArtifactNotFoundError as exc:
-            raise DesktopPublicError("artifact_not_found", "Artifact was not found.") from exc
+            raise DesktopPublicError(
+                "artifact_not_found", "Artifact was not found."
+            ) from exc
         except DesktopPublicError:
             raise
         except FileExistsError as exc:

@@ -1,0 +1,67 @@
+# PaperClaw Multimodal Academic RAG - Project Configuration
+# Generated: 2026-07-27
+
+project:
+  name: multimodal-academic-rag
+  version: 0.43.0
+  phase: p0-e
+
+data_root: data/paper_corpus
+runtime_root: .paperclaw/academic
+
+directories:
+  corpus: data/paper_corpus
+  index: .paperclaw/index
+  pages: .paperclaw/pages
+  cache: .paperclaw/cache
+  versions: data/paper_corpus/.versions
+
+corpus_categories:
+  - crack_detection
+  - reconstruction_3d
+  - segmentation
+  - references
+  - thesis
+  - chinese_papers
+
+visual_retriever:
+  model_name: vidore/colqwen2-base
+  model_type: colqwen2
+  embedding_dimension: 128
+  max_image_patches: 768
+  processor_version: colqwen2-base
+  index_version: v1
+  batch_size: 1
+  device: cuda
+  fallback_device: cpu
+  dtype: bfloat16
+
+text_retriever:
+  dense_model: sentence-transformers/all-MiniLM-L6-v2
+  embedding_dimension: 384
+  bm25_enabled: true
+  reranker_enabled: true
+
+ingestion:
+  supported_formats: [pdf, md, txt]
+  hash_algorithm: sha256
+  page_dpi: 200
+  extract_figures: true
+  extract_tables: true
+  extract_equations: true
+
+upgrade_policy:
+  preserve_artifacts:
+    - original_pdfs
+    - page_images
+    - figure_crops
+    - table_crops
+    - structured_parse
+    - locators_and_coordinates
+    - captions_and_context
+  visual_model_upgrade_path:
+    current: vidore/colqwen2-base
+    candidates:
+      - vidore/colqwen2.5-v0.2
+      - qwen3-colvision (future)
+      - qwen3.5-colvision (future)
