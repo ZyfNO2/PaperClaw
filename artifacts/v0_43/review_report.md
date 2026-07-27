@@ -11,6 +11,8 @@ Review scope: `5891d87..23b8c49`
    Desktop 和 Evidence Bundle；
 4. 视觉索引一次性批量加载页面：改为逐页有界推理，inference CUDA OOM 时清理
    cache 并降级 CPU。
+5. 复审发现 active generation 与当前 encoder 可能静默不兼容：retrieval 现强制
+   校验 runtime/index model fingerprint；失配要求重建，并有回归测试。
 
 同时修复 locator 完整反序列化，并产出 paragraph/table-cell locator。
 
