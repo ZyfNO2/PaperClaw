@@ -3,7 +3,7 @@
 > 最后更新：2026-07-28  
 > 适用仓库：`ZyfNO2/PaperAgent`、`ZyfNO2/PaperClaw`  
 > 状态：`offline_validated / P0 GO blocked`  
-> 文档修订：`2026-07-28-h0-ci-repair-pushed`
+> 文档修订：`2026-07-28-h0-corpus-freeze`
 
 ## 0. 远端基线
 
@@ -119,15 +119,25 @@ Academic Tailoring 和科学决策的事实源。PaperAgent 不得直接读取 P
 - [x] PaperClaw `codex/academic-rag-p0` 已推送；
 - [x] 两仓统一 Handoff 已同步；
 - [x] 建立两仓关联 Draft PR；
-- [ ] 修复第 8 节 CI blocker，推送后记录两仓 final head SHA 和全绿 CI run URL/ID；
-- [ ] 为 107 条 corpus 生成许可、来源和有效性 manifest，不提交全文；
-- [ ] 对 10 条 failed/invalid/corrupt input 执行重新获取、隔离或明确排除决策，
+- [x] 修复第 8 节 CI blocker，推送后记录两仓 final head SHA 和全绿 CI run URL/ID；
+- [x] 为 107 条 corpus 生成许可、来源和有效性 manifest，不提交全文；
+- [x] 对 10 条 failed/invalid/corrupt input 执行重新获取、隔离或明确排除决策，
   保留原 hash 和失败原因；
-- [ ] 从有效语料冻结 12 篇：裂缝检测、三维重建/立体匹配、分割、主材料各 3 篇；
-- [ ] 提交只含 metadata/hash/license/status 的 frozen corpus manifest。
+- [x] 从有效语料冻结 12 篇：裂缝检测、三维重建/立体匹配、分割、主材料各 3 篇；
+- [x] 提交只含 metadata/hash/license/status 的 frozen corpus manifest。
 
 完成条件：两仓 clean tracked worktree；branch/commit/CI 可复算；manifest digest 可复算；
 原 PDF 保持 untracked。
+
+H0 corpus 证据（PaperClaw canonical）：
+
+- commit：`2c74b0f5fb5a679440f3064d11067fa26a824f12`
+- manifest：`benchmarks/academic_rag/v1/corpus_manifest.jsonl`
+- manifest SHA-256：`2f156d739934b89b62a129a065bd10bd2415b18f66768acf2e3bcf24ccc5a55b`
+- frozen set ID：`academic-rag-h0-v1`
+- 12 篇分类：crack_detection 3、reconstruction_3d_stereo 3、segmentation 3、concrete_material 3
+- 10 个失败输入：reacquire 7、exclude 2、quarantine 1
+- CI 证据：PaperAgent PR #65 comment、PaperClaw PR #74 comment
 
 ### H1：canonical parser 与 locator 完整化
 
