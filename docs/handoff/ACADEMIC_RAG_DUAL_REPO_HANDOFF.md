@@ -3,7 +3,7 @@
 > 最后更新：2026-07-28  
 > 适用仓库：`ZyfNO2/PaperAgent`、`ZyfNO2/PaperClaw`  
 > 状态：`offline_validated / P0 GO blocked`  
-> 文档修订：`2026-07-28-h0-ci-repair-handoff`
+> 文档修订：`2026-07-28-h0-ci-repair-pushed`
 
 ## 0. 远端基线
 
@@ -349,6 +349,39 @@ extra smoke，避免只让 full pytest 变绿。
 5. 再次确认两份 Handoff 的 Git blob SHA 完全一致，之后才把 H0 的 CI 项勾选完成。
 6. 在 corpus 许可、10 个失败输入和冻结 12 篇验收集完成前，状态仍保持
    `offline_validated / P0 GO blocked`。
+
+### 2026-07-28 修复批次已推送
+
+| 仓库 | 修复 commit | 修复内容 |
+|---|---|---|
+| PaperAgent | `dd0d03a22f0f73c58d9ea34e3c4a3c3faa6d2ee6` | holdout digest → LF blob SHA-256；browser smoke 重写匹配实际前端；CSP style-src 加 `'unsafe-inline'` |
+| PaperClaw | `512d9d6cd9e3d12cdddca1e2b70524193dbed7fd` | `import fitz` → `pytest.importorskip("fitz")`；ci.yml 新增 academic extra job |
+
+PaperAgent 修复细节：
+
+- `evals/v0_6/holdout_manifest.json`：`content_digest` 更新为
+  `5f7f0bba25fa1cd0a9f2ad3e7e2fe242970f688838bdeab6d0684f8afa1e268f`
+  （Git blob LF 字节的 SHA-256）；holdout 内容未改动。
+- `tests/browser/test_pwa_smoke.py`：原测试使用 `#question`、`#submit-button`、
+  `#status-badge` 等选择器，但重建后的前端是 hash 路由研究工作台，不存在这些元素。
+  重写为验证 app shell 加载、导航渲染、文献卡片、Evidence 接受流程。
+  同时通过 `sessionStorage` 跳过 intro overlay。
+- `src/paperagent/web/routes.py` + `assets/index.html`：前端 JS 动态生成 inline
+  style，CSP `style-src 'self'` 阻止了所有样式。HTTP header 和 meta tag 均加入
+  `'unsafe-inline'`。
+
+PaperClaw 修复细节：
+
+- `tests/unit/academic/test_academic_runtime.py`、
+  `tests/unit/desktop/test_papers_product.py`：顶层 `import fitz` 改为
+  `fitz = pytest.importorskip("fitz")`，未安装 academic extra 时 skip 而非
+  collection error。
+- `.github/workflows/ci.yml`：新增 `academic` job（Ubuntu, Python 3.12），
+  安装 `.[dev,academic]` 并运行 `tests/unit/academic` 和
+  `tests/unit/desktop/test_papers_product.py`。
+
+本地验证：PaperAgent holdout 4 passed + browser smoke 1 passed；
+PaperClaw academic+papers 15 passed。CI 全绿待远端确认。
 
 ## 9. 推荐验证命令
 
