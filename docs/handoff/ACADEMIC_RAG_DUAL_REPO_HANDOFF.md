@@ -3,14 +3,14 @@
 > 最后更新：2026-07-28  
 > 适用仓库：`ZyfNO2/PaperAgent`、`ZyfNO2/PaperClaw`  
 > 状态：`offline_validated / P0 GO blocked`  
-> 文档修订：`2026-07-28-remote-alignment-2`
+> 文档修订：`2026-07-28-h0-ci-repair-handoff`
 
 ## 0. 远端基线
 
 | 仓库 | 分支 | 对齐前远端基线 | 说明 |
 |---|---|---|---|
-| PaperAgent | `codex/academic-rag-p0` | `e92b7f6b3ab942526c15f8c4a58116f1413e4537` | 已推送；Academic RAG 实现基线为 `16cf771792617164d06d0160df1266cc8bb6cd89` |
-| PaperClaw | `codex/academic-rag-p0` | `537b70bea7cd0ff1e964dd4209cd8ab3cb0cb370` | 已推送；包含 v0.43 Academic RAG 实现和旧版统一 Handoff |
+| PaperAgent | `codex/academic-rag-p0` | `17f6c6084b9a2a2f7dba6321ef86d5d7135672c9` | 已推送；Academic RAG 实现基线为 `16cf771792617164d06d0160df1266cc8bb6cd89` |
+| PaperClaw | `codex/academic-rag-p0` | `66072553ba152eb3ca7617f7dc90295f50724183` | 已推送；v0.43 实现基线为 `537b70bea7cd0ff1e964dd4209cd8ab3cb0cb370` |
 | PaperClaw main | `main` | `5891d87ec2a68f434fe8f728ba9be0999932c325` | 当前主线仍为 v0.38；v0.43 分支尚未合并 |
 
 本文不在正文中自引用本次文档同步产生的 commit。获取包含当前文件的提交：
@@ -81,7 +81,10 @@ Academic Tailoring 和科学决策的事实源。PaperAgent 不得直接读取 P
 
 - 两仓远端开发分支均为 `codex/academic-rag-p0`；
 - PaperClaw v0.43 尚未合并到 `main`；
-- 本轮尚未建立关联 PR，也尚未记录对应 CI run URL/ID；
+- 已建立关联 Draft PR：PaperAgent
+  [#65](https://github.com/ZyfNO2/PaperAgent/pull/65) 与 PaperClaw
+  [#74](https://github.com/ZyfNO2/PaperClaw/pull/74)；
+- 两仓 PR 初始 head 的 CI 已运行但未全绿，已确认的修复工作见第 8 节；
 - PaperAgent 的 `.venv-paperagent/`、`output/` 不进入版本控制；
 - PaperClaw 的 `data/` 为私人/本地 corpus，不提交原始 PDF；
 - 模型权重、页面缓存、向量、数据库、原始日志和 Secret 不提交；
@@ -115,7 +118,8 @@ Academic Tailoring 和科学决策的事实源。PaperAgent 不得直接读取 P
 - [x] PaperAgent `codex/academic-rag-p0` 已推送；
 - [x] PaperClaw `codex/academic-rag-p0` 已推送；
 - [x] 两仓统一 Handoff 已同步；
-- [ ] 建立关联 PR，并记录两仓 final head SHA 和 CI run URL/ID；
+- [x] 建立两仓关联 Draft PR；
+- [ ] 修复第 8 节 CI blocker，推送后记录两仓 final head SHA 和全绿 CI run URL/ID；
 - [ ] 为 107 条 corpus 生成许可、来源和有效性 manifest，不提交全文；
 - [ ] 对 10 条 failed/invalid/corrupt input 执行重新获取、隔离或明确排除决策，
   保留原 hash 和失败原因；
@@ -257,7 +261,96 @@ P1 不得在 P0 hard Gate 未闭合时改写 P0 契约。
 - 自动化通过不等于 live/scientific/human validation；
 - 缺失证据、冲突、版本漂移或无法 resolve 的 Claim 必须 fail closed。
 
-## 8. 推荐验证命令
+## 8. H0 CI 修复交接
+
+本节仅记录 2026-07-28 已实际观察到的 PR/CI 证据。当前批次在确认根因后停止，
+没有修改功能代码、workflow、holdout 或测试。下一执行者应先完成本节，再继续 corpus
+冻结；不得把已存在的离线验收记录当作当前 PR head 全绿。
+
+### PR 与失败 head
+
+| 仓库 | Draft PR | 已运行 head | 当前结论 |
+|---|---|---|---|
+| PaperAgent | [#65](https://github.com/ZyfNO2/PaperAgent/pull/65) | `17f6c6084b9a2a2f7dba6321ef86d5d7135672c9` | 多项 CI 失败；至少包含 holdout exact-byte digest 与独立 browser smoke 问题 |
+| PaperClaw | [#74](https://github.com/ZyfNO2/PaperClaw/pull/74) | `66072553ba152eb3ca7617f7dc90295f50724183` | 多个 full/focused job 在 collection 阶段因缺少 `fitz` 失败 |
+
+文档提交会产生新的 branch head，所以上表 SHA 是失败诊断对应的代码 head，不是待推送
+Handoff commit。最终修复后必须在 PR 中记录新的 exact head 与对应 CI run；不要把旧 run
+挂到新 head 上。
+
+### PaperAgent：已确认 blocker
+
+1. Holdout manifest 的 digest 与 Git blob 原始字节不一致。
+   - 失败测试：
+     `tests/evals/test_holdout_manifest.py::test_holdout_manifest_freezes_exact_16_case_corpus`
+   - 失败 run：
+     [30285878782](https://github.com/ZyfNO2/PaperAgent/actions/runs/30285878782)
+   - manifest 当前值：
+     `24ef38eb9c345610daee14222e69d967318e8dca360be6e709ef10a9f17a6801`
+   - CI 对 committed LF blob 计算值：
+     `5f7f0bba25fa1cd0a9f2ad3e7e2fe242970f688838bdeab6d0684f8afa1e268f`
+   - `.gitattributes` 已规定 `*.jsonl text eol=lf`。本地既有 Windows 工作树仍可能保留
+     stale CRLF，因此本地文件 hash 可能恰好等于旧值，但 fresh checkout/CI 使用 LF。
+   - 修复原则：将 manifest 更新为 Git blob 的 exact SHA-256；不得修改 16 条 holdout
+     的内容来迎合 digest，不得改变 diagnostic-only、anti-leakage 或人工评审约束。
+   - 建议先用下列命令直接对 Git blob 字节复算：
+
+     ```powershell
+     python -c "import hashlib,subprocess; b=subprocess.check_output(['git','cat-file','blob','HEAD:evals/v0_6/holdout_cases.v1.jsonl']); print(hashlib.sha256(b).hexdigest())"
+     ```
+
+2. Chromium vertical smoke 是独立失败，尚未完成根因定位。
+   - 失败 run：
+     [30285879406](https://github.com/ZyfNO2/PaperAgent/actions/runs/30285879406)
+   - 失败测试：
+     `tests/browser/test_pwa_smoke.py::test_pwa__submit_progress_review_and_export`
+   - 现象：Playwright 等待 `locator("#question")` 30 秒超时。
+   - 下一执行者需保留 server/browser console、首屏 URL、HTTP 状态与截图，再判断是
+     asset/route 启动问题还是 selector 漂移；不要直接增加 timeout 掩盖失败。
+
+其余 PaperAgent 失败 job 可能包含同一 holdout failure，但本批次没有逐一完成去重。
+修复上述两项后应重新检查 `cloud-fast`、Python 3.11/3.12 offline、interview 与
+academic-tailoring workflow，不能仅重跑单个 pytest job。
+
+### PaperClaw：已确认 blocker
+
+PaperClaw 的失败不是测试断言，而是 CI 安装集合与测试收集范围不匹配：
+
+- `pyproject.toml` 把 `PyMuPDF>=1.24,<2` 放在 optional `academic` extra；
+- 多个 workflow 只执行 `python -m pip install -e ".[dev]"`；
+- full/focused pytest 随后收集
+  `tests/unit/academic/test_academic_runtime.py` 与
+  `tests/unit/desktop/test_papers_product.py`，两者顶层 `import fitz`；
+- Linux 与 Windows 均报 `ModuleNotFoundError: No module named 'fitz'`。
+
+已确认的失败 run：
+
+- [30285883436](https://github.com/ZyfNO2/PaperClaw/actions/runs/30285883436)
+  （Windows pytest）；
+- [30285883511](https://github.com/ZyfNO2/PaperClaw/actions/runs/30285883511)
+  （Ubuntu focused）；
+- [30285883594](https://github.com/ZyfNO2/PaperClaw/actions/runs/30285883594)
+  （full non-live）。
+
+优先修复方向：凡会收集 Academic/Papers tests 的 job 安装 `.[dev,academic]`，或将
+`academic` 纳入一个专用、明确的 CI job 并让不安装 extra 的 job 排除这些测试。
+选择必须与“基础安装不依赖 Academic optional dependencies”的产品约束一致；不要把
+PyMuPDF 无条件移入基础 dependencies。修复后同时验证基础 wheel smoke 与 academic
+extra smoke，避免只让 full pytest 变绿。
+
+### 修复提交与收口顺序
+
+1. 每仓分别做范围单一的修复 commit，不提交 `.venv-paperagent/`、`output/`、
+   PaperClaw `data/`、PDF、缓存或 CI 下载日志。
+2. 本地先跑定向测试，再推送两个 Draft PR。
+3. 等待新 head 的全部 required checks 终态；按新日志继续去重，不假定本节已列出全部
+   blocker。
+4. 在两仓 PR comment 和本 Handoff 中记录最终 head SHA、CI run URL/ID、测试摘要。
+5. 再次确认两份 Handoff 的 Git blob SHA 完全一致，之后才把 H0 的 CI 项勾选完成。
+6. 在 corpus 许可、10 个失败输入和冻结 12 篇验收集完成前，状态仍保持
+   `offline_validated / P0 GO blocked`。
+
+## 9. 推荐验证命令
 
 PaperAgent：
 
@@ -285,15 +378,17 @@ python -m build
 跨仓 tracer 环境：Python 3.12、PaperAgent editable install、PaperClaw 0.43
 editable/wheel install、PyMuPDF。
 
-## 9. 下一执行者起点
+## 10. 下一执行者起点
 
 本文同步完成后停止，不继续执行 H0–H5。
 
-下一批次从 H0 剩余事项开始：
+下一批次从 H0 CI 修复开始：
 
-1. 建立两仓关联 PR，记录 final head SHA 和 CI run；
-2. 生成 corpus license/source/status manifest；
-3. 处理 10 条 failed/invalid/corrupt 输入；
-4. 冻结 12 篇验收集；
-5. 未完成 Native Desktop、真实 LLM、blinded labels 和人工审批前，状态保持
+1. 按第 8 节修复 PaperAgent holdout digest 与 Chromium smoke；
+2. 按第 8 节修复 PaperClaw Academic optional dependency 的 CI 安装/收集边界；
+3. 推送后记录两仓 final head SHA 和全绿 CI run；
+4. 生成 corpus license/source/status manifest；
+5. 处理 10 条 failed/invalid/corrupt 输入；
+6. 冻结 12 篇验收集；
+7. 未完成 Native Desktop、真实 LLM、blinded labels 和人工审批前，状态保持
    `offline_validated / P0 GO blocked`。
