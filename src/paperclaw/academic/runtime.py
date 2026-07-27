@@ -429,6 +429,35 @@ class AcademicRuntime:
         if channels == ("visual",) and "visual" in degraded:
             sufficiency = "insufficient"
             reasons = ("visual channel unavailable",)
+        corrective_used = 0
+        if (
+            sufficiency == "insufficient"
+            and budget.max_corrective_rounds > 0
+            and (query.paper_ids or query.object_types)
+        ):
+            corrective_used = 1
+            relaxed = RetrievalRequest(
+                text=query.text,
+                channels=channels,
+                paper_ids=(),
+                object_types=(),
+                budget=budget,
+            )
+            corrective_result = self._retrieve_single(relaxed, generation_id)
+            if corrective_result.candidates:
+                selected = corrective_result.candidates
+                top = selected[0].fused_score
+                sufficiency = (
+                    "sufficient"
+                    if top >= 0.02
+                    else "partial"
+                    if top >= 0.008
+                    else "insufficient"
+                )
+                reasons = (
+                    "corrective round: relaxed filters produced matches",
+                )
+                degraded = list(corrective_result.trace.degraded_channels) if corrective_result.trace else degraded
         per_channel_top = {
             ch: ranked[0][1] if ranked else 0.0
             for ch, ranked in channel_rankings.items()
@@ -452,11 +481,18 @@ class AcademicRuntime:
                 "generation": self._runtime_model_fingerprint(),
                 "per_channel_top": json.dumps(per_channel_top, sort_keys=True),
             },
-            {"corrective": 0, "conflict": 0},
+            {"corrective": corrective_used, "conflict": 0},
             tuple(degraded),
-            "budget_or_candidates_exhausted",
+            "corrective_relaxed_filters"
+            if corrective_used
+            else "budget_or_candidates_exhausted",
         )
         return RetrievalResult(query.text, selected, sufficiency, reasons, trace)
+
+    def _retrieve_single(
+        self, request: RetrievalRequest, generation_id: str
+    ) -> RetrievalResult:
+        return self.retrieve(request)
 
     def _bm25_rank(
         self,
