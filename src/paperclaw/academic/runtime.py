@@ -443,6 +443,12 @@ class AcademicRuntime:
         return tuple(ordered[max(0, index - neighbors) : index + neighbors + 1])
 
     def resolve(self, locator: AcademicLocator) -> AcademicObject:
+        paper = self.papers.get_paper(self.project_id, locator.paper_id)
+        if paper.current_version_id != locator.version_id:
+            raise KeyError(
+                "academic locator references a superseded version; "
+                "resolve is fail-closed for non-current versions"
+            )
         result = self.get_parse(locator.paper_id, locator.version_id)
         for item in result.objects:
             if (
