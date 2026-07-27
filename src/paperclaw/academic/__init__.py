@@ -13,6 +13,7 @@ from .contracts import (
     RetrievalResult,
     RetrievalTrace,
 )
+from .parser import PaperParser
 from .runtime import AcademicRuntime
 from .visual import ColQwen2Encoder, VisualEncoder, late_interaction_score
 
@@ -23,6 +24,7 @@ __all__ = [
     "AcademicRuntime",
     "BoundingBox",
     "IndexGeneration",
+    "PaperParser",
     "ParseResult",
     "RetrievalBudget",
     "RetrievalCandidate",

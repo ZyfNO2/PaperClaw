@@ -29,11 +29,10 @@ from .contracts import (
     RetrievalResult,
     RetrievalTrace,
 )
+from .parser import PaperParser
 from .visual import VisualEncoder, late_interaction_score
 from .text import DenseEncoder
 
-_PARSER = "pymupdf"
-_PARSER_VERSION = "1"
 _MODEL_FINGERPRINT = "bm25+hashing-dense+colqwen2-base:unavailable"
 _TOKENS = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 _IDENTIFIERS = re.compile(
@@ -48,6 +47,7 @@ class AcademicRuntime:
         workspace: Path,
         project_id: str,
         *,
+        parser: PaperParser | None = None,
         visual_encoder: VisualEncoder | None = None,
         dense_encoder: DenseEncoder | None = None,
     ) -> None:
@@ -58,6 +58,17 @@ class AcademicRuntime:
         self.root.mkdir(parents=True, exist_ok=True)
         self.database = self.root / "academic.sqlite3"
         self.assets = self.root / "assets"
+        if parser is None:
+            from .parsers import PyMuPDFParser
+
+            parser = PyMuPDFParser()
+        self.parser = parser
+        self._parsers: dict[str, PaperParser] = {}
+        self._register_parser(parser)
+        from .parsers import LatexParser, MarkdownParser, TextParser
+
+        for extra in (MarkdownParser(), TextParser(), LatexParser()):
+            self._register_parser(extra)
         self.visual_encoder = visual_encoder
         self.dense_encoder = dense_encoder
         self.memory = ProjectScopedMemoryStore(
@@ -65,15 +76,25 @@ class AcademicRuntime:
         )
         self._init_db()
 
+    def _register_parser(self, parser: PaperParser) -> None:
+        for fmt in parser.supported_formats:
+            if fmt not in self._parsers:
+                self._parsers[fmt] = parser
+
     @classmethod
     def for_workspace(
         cls,
         workspace: str | Path,
         project_id: str,
         *,
+        parser: PaperParser | None = None,
         visual_encoder: VisualEncoder | None = None,
         dense_encoder: DenseEncoder | None = None,
     ) -> "AcademicRuntime":
+        if parser is None and os.getenv("PAPERCLAW_ACADEMIC_PARSER") == "docling":
+            from .parsers.docling_parser import DoclingParser
+
+            parser = DoclingParser()
         if visual_encoder is None and os.getenv("PAPERCLAW_ACADEMIC_VISUAL") == "1":
             from .visual import ColQwen2Encoder
 
@@ -85,6 +106,7 @@ class AcademicRuntime:
         return cls(
             Path(workspace).resolve(strict=True),
             project_id,
+            parser=parser,
             visual_encoder=visual_encoder,
             dense_encoder=dense_encoder,
         )
@@ -94,8 +116,14 @@ class AcademicRuntime:
         version = self.papers.repository.get_version(
             self.project_id, paper_id, paper.current_version_id
         )
+        if version.format not in self._parsers:
+            raise ValueError(
+                f"no parser registered for format '{version.format}'; "
+                f"supported: {sorted(self._parsers.keys())}"
+            )
+        active_parser = self._parsers[version.format]
         fingerprint = hashlib.sha256(
-            f"{_PARSER}:{_PARSER_VERSION}:{version.sha256}".encode()
+            f"{active_parser.fingerprint}:{version.sha256}".encode()
         ).hexdigest()
         with self._connect() as db:
             row = db.execute(
@@ -107,10 +135,13 @@ class AcademicRuntime:
         content = self.papers.read_version(
             self.project_id, paper_id, version.version_id
         )
-        if version.format != "pdf":
-            raise ValueError("structured academic parser currently requires PDF")
-        result = self._parse_pdf(
-            paper_id, version.version_id, version.sha256, content, fingerprint
+        result = active_parser.parse(
+            content,
+            version.format,
+            paper_id=paper_id,
+            version_id=version.version_id,
+            source_hash=version.sha256,
+            asset_dir=self.assets,
         )
         payload = self._result_dict(result)
         with self._connect() as db:
@@ -477,7 +508,7 @@ class AcademicRuntime:
             if self.visual_encoder
             else "visual:unavailable"
         )
-        return f"bm25+{dense}+{visual}"
+        return f"{self.parser.fingerprint}+bm25+{dense}+{visual}"
 
     def save_research_artifact(
         self, artifact_type: str, title: str, payload: dict[str, object]
@@ -533,221 +564,6 @@ class AcademicRuntime:
             "project": [entry.content for entry in snapshot.memory_entries],
             "user": [entry.content for entry in snapshot.user_entries],
         }
-
-    def _parse_pdf(self, paper_id, version_id, source_hash, content, fingerprint):
-        import fitz
-
-        document = fitz.open(stream=content, filetype="pdf")
-        objects = []
-        warnings: list[str] = []
-        order = 0
-        doc_locator = AcademicLocator(
-            paper_id, version_id, f"{version_id}:document", 1, "document", source_hash
-        )
-        objects.append(
-            AcademicObject(doc_locator.object_id, "document", order, doc_locator)
-        )
-        headings: list[str] = []
-        for page_index, page in enumerate(document):
-            page_number = page_index + 1
-            paragraph_index = 0
-            asset_hash = None
-            try:
-                pix = page.get_pixmap(dpi=120, alpha=False)
-                asset = pix.tobytes("png")
-                asset_hash = hashlib.sha256(asset).hexdigest()
-                asset_path = self.assets / asset_hash[:2] / f"{asset_hash}.png"
-                asset_path.parent.mkdir(parents=True, exist_ok=True)
-                if not asset_path.exists():
-                    asset_path.write_bytes(asset)
-            except Exception as exc:
-                warnings.append(
-                    f"page {page_number} image unavailable: {type(exc).__name__}"
-                )
-            order += 1
-            page_locator = AcademicLocator(
-                paper_id,
-                version_id,
-                f"{version_id}:page:{page_number}",
-                page_number,
-                "page",
-                source_hash,
-                bounding_box=BoundingBox(0, 0, page.rect.width, page.rect.height),
-            )
-            objects.append(
-                AcademicObject(
-                    page_locator.object_id,
-                    "page",
-                    order,
-                    page_locator,
-                    asset_hash=asset_hash,
-                )
-            )
-            for block_index, block in enumerate(page.get_text("blocks", sort=True)):
-                text = str(block[4]).strip()
-                if not text:
-                    continue
-                bbox = _safe_bbox(
-                    (float(block[0]), float(block[1]), float(block[2]), float(block[3])),
-                    page.rect.width,
-                    page.rect.height,
-                )
-                is_heading = len(text) < 160 and (
-                    block_index == 0 or re.match(r"^\d+(\.\d+)*\s+\S+", text)
-                )
-                normalized = text.lower().strip()
-                object_type = "section" if is_heading else "paragraph"
-                if normalized.startswith(("figure ", "fig. ", "图 ")):
-                    object_type = "caption"
-                elif normalized.startswith(("algorithm ", "算法 ")):
-                    object_type = "algorithm"
-                elif normalized.startswith(("references", "参考文献")):
-                    object_type = "reference"
-                elif re.search(r"[=∑∫√]|\\b(?:argmin|argmax)\\b", text):
-                    object_type = "equation"
-                if is_heading:
-                    headings = [text.replace("\n", " ").strip()]
-                if object_type == "paragraph":
-                    paragraph_index += 1
-                order += 1
-                object_id = f"{version_id}:{page_number}:{block_index}:{object_type}"
-                locator = AcademicLocator(
-                    paper_id,
-                    version_id,
-                    object_id,
-                    page_number,
-                    object_type,
-                    source_hash,
-                    tuple(headings),
-                    bbox,
-                    paragraph_index if object_type == "paragraph" else None,
-                )
-                objects.append(
-                    AcademicObject(object_id, object_type, order, locator, text=text)
-                )
-            for drawing_index, drawing in enumerate(page.get_drawings()):
-                rect = drawing.get("rect")
-                if rect is None or rect.width < 10 or rect.height < 10:
-                    continue
-                clip_hash = None
-                try:
-                    clip = page.get_pixmap(clip=rect, dpi=120, alpha=False).tobytes(
-                        "png"
-                    )
-                    clip_hash = hashlib.sha256(clip).hexdigest()
-                    clip_path = self.assets / clip_hash[:2] / f"{clip_hash}.png"
-                    clip_path.parent.mkdir(parents=True, exist_ok=True)
-                    if not clip_path.exists():
-                        clip_path.write_bytes(clip)
-                except Exception as exc:
-                    warnings.append(
-                        f"page {page_number} drawing {drawing_index} image unavailable: "
-                        f"{type(exc).__name__}"
-                    )
-                order += 1
-                object_id = f"{version_id}:{page_number}:drawing:{drawing_index}"
-                locator = AcademicLocator(
-                    paper_id,
-                    version_id,
-                    object_id,
-                    page_number,
-                    "figure",
-                    source_hash,
-                    tuple(headings),
-                    _safe_bbox(
-                        (rect.x0, rect.y0, rect.x1, rect.y1),
-                        page.rect.width,
-                        page.rect.height,
-                    ),
-                )
-                objects.append(
-                    AcademicObject(
-                        object_id, "figure", order, locator, asset_hash=clip_hash
-                    )
-                )
-            try:
-                tables = page.find_tables().tables
-            except Exception:
-                tables = ()
-            for table_index, table in enumerate(tables):
-                bbox = table.bbox
-                order += 1
-                object_id = f"{version_id}:{page_number}:table:{table_index}"
-                locator = AcademicLocator(
-                    paper_id,
-                    version_id,
-                    object_id,
-                    page_number,
-                    "table",
-                    source_hash,
-                    tuple(headings),
-                    _safe_bbox(
-                        tuple(map(float, bbox)),
-                        page.rect.width,
-                        page.rect.height,
-                    ),
-                )
-                table_text = "\n".join(
-                    " | ".join(str(cell or "") for cell in row)
-                    for row in table.extract()
-                )
-                objects.append(
-                    AcademicObject(object_id, "table", order, locator, text=table_text)
-                )
-                rows = table.extract()
-                cells = list(table.cells)
-                cell_index = 0
-                for row_index, row in enumerate(rows):
-                    for column_index, value in enumerate(row):
-                        if cell_index >= len(cells):
-                            break
-                        cell_bbox = cells[cell_index]
-                        cell_index += 1
-                        if cell_bbox is None:
-                            continue
-                        order += 1
-                        cell_id = (
-                            f"{version_id}:{page_number}:table:{table_index}:"
-                            f"cell:{row_index}:{column_index}"
-                        )
-                        cell_locator = AcademicLocator(
-                            paper_id,
-                            version_id,
-                            cell_id,
-                            page_number,
-                            "table_cell",
-                            source_hash,
-                            tuple(headings),
-                            _safe_bbox(
-                                tuple(map(float, cell_bbox)),
-                                page.rect.width,
-                                page.rect.height,
-                            ),
-                            table_row=row_index,
-                            table_column=column_index,
-                        )
-                        objects.append(
-                            AcademicObject(
-                                cell_id,
-                                "table_cell",
-                                order,
-                                cell_locator,
-                                text=str(value or ""),
-                            )
-                        )
-        document.close()
-        return ParseResult(
-            f"parse-{fingerprint}",
-            paper_id,
-            version_id,
-            _PARSER,
-            _PARSER_VERSION,
-            fingerprint,
-            "partial" if warnings else "ready",
-            len([o for o in objects if o.object_type == "page"]),
-            tuple(objects),
-            tuple(warnings),
-        )
 
     def _init_db(self):
         with self._connect() as db:

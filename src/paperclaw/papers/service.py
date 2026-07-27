@@ -56,7 +56,7 @@ class PaperService:
         if not resolved.is_file():
             raise ValueError("paper source must be a regular file")
         suffix = resolved.suffix.lower()
-        if suffix not in {".pdf", ".md", ".txt"}:
+        if suffix not in {".pdf", ".md", ".txt", ".tex"}:
             raise ValueError("unsupported paper format")
         size = resolved.stat().st_size
         if size > self.max_file_bytes:
@@ -154,7 +154,7 @@ class PaperService:
                 _ = len(reader.pages)
             except Exception as exc:
                 raise ValueError("paper is not a valid PDF file") from exc
-        if suffix in {".md", ".txt"}:
+        if suffix in {".md", ".txt", ".tex"}:
             try:
                 content.decode("utf-8")
             except UnicodeDecodeError as exc:
