@@ -8,11 +8,13 @@ import pytest
 from paperclaw.academic import (
     AcademicQuery,
     AcademicRuntime,
+    BoundingBox,
     RetrievalBudget,
     RetrievalRequest,
 )
 from paperclaw.papers import PaperImportRequest, PaperService
 from paperclaw.projects import ProjectManifestStore
+from paperclaw.academic.runtime import _safe_bbox
 
 
 class _FakeVisualEncoder:
@@ -35,6 +37,7 @@ def _runtime(tmp_path: Path, *, visual_encoder=None) -> tuple[AcademicRuntime, s
     page = document.new_page()
     page.insert_text((72, 72), "1 Introduction", fontsize=18)
     page.insert_text((72, 110), "Concrete crack evidence appears on this page.")
+    page.insert_text((72, 130), "DOI 10.1234/ABC.Def")
     page.draw_rect(fitz.Rect(72, 150, 240, 230))
     source = tmp_path / "paper.pdf"
     document.save(source)
@@ -101,6 +104,29 @@ def test_insufficient_query_abstains(tmp_path: Path) -> None:
     result = runtime.retrieve(AcademicQuery("quantum banana unobtainium"))
     assert result.sufficiency == "insufficient"
     assert result.should_abstain is True
+
+
+def test_exact_identifier_channel_preserves_doi_identity(tmp_path: Path) -> None:
+    runtime, paper_id = _runtime(tmp_path)
+    runtime.parse_paper(paper_id)
+    runtime.build_index()
+
+    result = runtime.retrieve(
+        RetrievalRequest(
+            "Find DOI 10.1234/ABC.Def",
+            ("exact", "lexical"),
+            (paper_id,),
+        )
+    )
+
+    assert result.candidates
+    assert result.candidates[0].channel_scores["exact"] == 1.0
+
+
+def test_parser_clamps_out_of_page_and_reversed_bounding_boxes() -> None:
+    bbox = _safe_bbox((900.0, -5.0, -10.0, 700.0), 600.0, 500.0)
+
+    assert bbox == BoundingBox(0.0, 0.0, 600.0, 500.0)
 
 
 def test_visual_generation_and_retrieval_use_replaceable_encoder(

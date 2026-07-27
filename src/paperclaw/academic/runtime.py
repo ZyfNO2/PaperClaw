@@ -36,6 +36,10 @@ _PARSER = "pymupdf"
 _PARSER_VERSION = "1"
 _MODEL_FINGERPRINT = "bm25+hashing-dense+colqwen2-base:unavailable"
 _TOKENS = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
+_IDENTIFIERS = re.compile(
+    r"\b(?:10\.\d{4,9}/[-._;()/:A-Za-z0-9]+|arXiv:\d{4}\.\d{4,5})\b",
+    re.IGNORECASE,
+)
 
 
 class AcademicRuntime:
@@ -268,6 +272,9 @@ class AcademicRuntime:
                 (active[0],),
             ).fetchall()
         query_tokens = set(_tokens(query.text))
+        query_identifiers = {
+            value.casefold() for value in _IDENTIFIERS.findall(query.text)
+        }
         query_vector = (
             self.dense_encoder.encode_query(query.text)
             if self.dense_encoder
@@ -281,6 +288,16 @@ class AcademicRuntime:
             if query.object_types and locator.object_type not in query.object_types:
                 continue
             text_tokens = set(_tokens(row[1]))
+            text_identifiers = {
+                value.casefold() for value in _IDENTIFIERS.findall(row[1])
+            }
+            exact = (
+                1.0
+                if "exact" in channels
+                and query_identifiers
+                and query_identifiers <= text_identifiers
+                else 0.0
+            )
             lexical = (
                 len(query_tokens & text_tokens) / max(1, len(query_tokens))
                 if "lexical" in channels
@@ -292,14 +309,20 @@ class AcademicRuntime:
                 else 0.0
             )
             visual = 0.0
-            fused = 0.65 * lexical + 0.35 * dense
+            fused = max(exact, 0.65 * lexical + 0.35 * dense)
             candidates.append(
                 RetrievalCandidate(
                     locator,
                     row[1],
-                    {"lexical": lexical, "dense": dense, "visual": visual},
+                    {
+                        "exact": exact,
+                        "lexical": lexical,
+                        "dense": dense,
+                        "visual": visual,
+                    },
                     fused,
                     (
+                        "exact identifier match" if exact else "no exact identifier match",
                         "bm25-compatible lexical",
                         "deterministic dense fallback",
                         "visual unavailable",
@@ -319,7 +342,12 @@ class AcademicRuntime:
                     RetrievalCandidate(
                         locator,
                         "",
-                        {"lexical": 0.0, "dense": 0.0, "visual": visual},
+                        {
+                            "exact": 0.0,
+                            "lexical": 0.0,
+                            "dense": 0.0,
+                            "visual": visual,
+                        },
                         visual,
                         ("ColQwen2 late-interaction visual score",),
                     )
@@ -511,6 +539,7 @@ class AcademicRuntime:
 
         document = fitz.open(stream=content, filetype="pdf")
         objects = []
+        warnings: list[str] = []
         order = 0
         doc_locator = AcademicLocator(
             paper_id, version_id, f"{version_id}:document", 1, "document", source_hash
@@ -522,13 +551,19 @@ class AcademicRuntime:
         for page_index, page in enumerate(document):
             page_number = page_index + 1
             paragraph_index = 0
-            pix = page.get_pixmap(dpi=120, alpha=False)
-            asset = pix.tobytes("png")
-            asset_hash = hashlib.sha256(asset).hexdigest()
-            asset_path = self.assets / asset_hash[:2] / f"{asset_hash}.png"
-            asset_path.parent.mkdir(parents=True, exist_ok=True)
-            if not asset_path.exists():
-                asset_path.write_bytes(asset)
+            asset_hash = None
+            try:
+                pix = page.get_pixmap(dpi=120, alpha=False)
+                asset = pix.tobytes("png")
+                asset_hash = hashlib.sha256(asset).hexdigest()
+                asset_path = self.assets / asset_hash[:2] / f"{asset_hash}.png"
+                asset_path.parent.mkdir(parents=True, exist_ok=True)
+                if not asset_path.exists():
+                    asset_path.write_bytes(asset)
+            except Exception as exc:
+                warnings.append(
+                    f"page {page_number} image unavailable: {type(exc).__name__}"
+                )
             order += 1
             page_locator = AcademicLocator(
                 paper_id,
@@ -552,8 +587,10 @@ class AcademicRuntime:
                 text = str(block[4]).strip()
                 if not text:
                     continue
-                bbox = BoundingBox(
-                    float(block[0]), float(block[1]), float(block[2]), float(block[3])
+                bbox = _safe_bbox(
+                    (float(block[0]), float(block[1]), float(block[2]), float(block[3])),
+                    page.rect.width,
+                    page.rect.height,
                 )
                 is_heading = len(text) < 160 and (
                     block_index == 0 or re.match(r"^\d+(\.\d+)*\s+\S+", text)
@@ -592,12 +629,21 @@ class AcademicRuntime:
                 rect = drawing.get("rect")
                 if rect is None or rect.width < 10 or rect.height < 10:
                     continue
-                clip = page.get_pixmap(clip=rect, dpi=120, alpha=False).tobytes("png")
-                clip_hash = hashlib.sha256(clip).hexdigest()
-                clip_path = self.assets / clip_hash[:2] / f"{clip_hash}.png"
-                clip_path.parent.mkdir(parents=True, exist_ok=True)
-                if not clip_path.exists():
-                    clip_path.write_bytes(clip)
+                clip_hash = None
+                try:
+                    clip = page.get_pixmap(clip=rect, dpi=120, alpha=False).tobytes(
+                        "png"
+                    )
+                    clip_hash = hashlib.sha256(clip).hexdigest()
+                    clip_path = self.assets / clip_hash[:2] / f"{clip_hash}.png"
+                    clip_path.parent.mkdir(parents=True, exist_ok=True)
+                    if not clip_path.exists():
+                        clip_path.write_bytes(clip)
+                except Exception as exc:
+                    warnings.append(
+                        f"page {page_number} drawing {drawing_index} image unavailable: "
+                        f"{type(exc).__name__}"
+                    )
                 order += 1
                 object_id = f"{version_id}:{page_number}:drawing:{drawing_index}"
                 locator = AcademicLocator(
@@ -608,7 +654,11 @@ class AcademicRuntime:
                     "figure",
                     source_hash,
                     tuple(headings),
-                    BoundingBox(rect.x0, rect.y0, rect.x1, rect.y1),
+                    _safe_bbox(
+                        (rect.x0, rect.y0, rect.x1, rect.y1),
+                        page.rect.width,
+                        page.rect.height,
+                    ),
                 )
                 objects.append(
                     AcademicObject(
@@ -631,7 +681,11 @@ class AcademicRuntime:
                     "table",
                     source_hash,
                     tuple(headings),
-                    BoundingBox(*map(float, bbox)),
+                    _safe_bbox(
+                        tuple(map(float, bbox)),
+                        page.rect.width,
+                        page.rect.height,
+                    ),
                 )
                 table_text = "\n".join(
                     " | ".join(str(cell or "") for cell in row)
@@ -664,7 +718,11 @@ class AcademicRuntime:
                             "table_cell",
                             source_hash,
                             tuple(headings),
-                            BoundingBox(*map(float, cell_bbox)),
+                            _safe_bbox(
+                                tuple(map(float, cell_bbox)),
+                                page.rect.width,
+                                page.rect.height,
+                            ),
                             table_row=row_index,
                             table_column=column_index,
                         )
@@ -685,9 +743,10 @@ class AcademicRuntime:
             _PARSER,
             _PARSER_VERSION,
             fingerprint,
-            "ready",
+            "partial" if warnings else "ready",
             len([o for o in objects if o.object_type == "page"]),
             tuple(objects),
+            tuple(warnings),
         )
 
     def _init_db(self):
@@ -759,6 +818,17 @@ def _locator(value):
 
 def _tokens(text):
     return [token.lower() for token in _TOKENS.findall(text)]
+
+
+def _safe_bbox(values, page_width, page_height):
+    x0, y0, x1, y1 = values
+    width = max(0.0, float(page_width))
+    height = max(0.0, float(page_height))
+    left = min(width, max(0.0, min(x0, x1)))
+    right = min(width, max(left, max(x0, x1)))
+    top = min(height, max(0.0, min(y0, y1)))
+    bottom = min(height, max(top, max(y0, y1)))
+    return BoundingBox(left, top, right, bottom)
 
 
 def _vector(text, dimensions=128):

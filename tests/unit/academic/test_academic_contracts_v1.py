@@ -91,6 +91,15 @@ def test_retrieval_request_validates_channels_and_bounded_rounds() -> None:
         RetrievalBudget(max_primary_rounds=2)
 
 
+def test_exact_identifier_channel_is_part_of_academic_v1() -> None:
+    request = RetrievalRequest(
+        text="Find DOI 10.1234/ABC.Def",
+        channels=("exact", "lexical"),
+    )
+
+    assert RetrievalRequest.from_dict(request.to_dict()) == request
+
+
 def test_visual_request_cannot_be_sufficient_when_visual_channel_is_degraded() -> None:
     trace = RetrievalTrace(
         trace_id="trace-visual",

@@ -132,7 +132,7 @@ class RetrievalRequest:
     def __post_init__(self) -> None:
         if not self.text.strip():
             raise ValueError("retrieval text must not be empty")
-        allowed = {"lexical", "dense", "visual"}
+        allowed = {"exact", "lexical", "dense", "visual"}
         if any(channel not in allowed for channel in self.channels):
             raise ValueError("unsupported retrieval channel")
 

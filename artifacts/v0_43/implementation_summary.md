@@ -12,3 +12,9 @@ Evidence Bundle、Memory 与 Desktop 的本地闭环。
 
 参考现有 Artifact Store 的 content-addressed 与 revision 思路，未复制其数据库表；
 复用了现有 Project Memory 与 Artifact 公共接口。
+# PaperAgent synchronization follow-up
+
+PaperClaw 0.43 now publishes a PEP 561 typed interface and accepts the `exact`
+retrieval channel required for DOI/arXiv identity preservation. PaperAgent uses
+the canonical Python interface through optional evidence and Artifact adapters;
+it does not read PaperClaw SQLite, parser caches, or model indexes.

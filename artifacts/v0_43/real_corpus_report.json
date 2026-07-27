@@ -1,0 +1,100 @@
+{
+  "category_counts": {
+    "chinese_papers": 3,
+    "crack_detection": 46,
+    "reconstruction_3d": 29,
+    "references": 13,
+    "segmentation": 12,
+    "thesis": 4
+  },
+  "contains_full_text": false,
+  "corpus_digest": "57ef613aa18f060e0ef9d683436d32f2b0c08e68127011403e81c76e2a4ca816",
+  "corpus_root_name": "paper_corpus",
+  "elapsed_seconds": 324.407,
+  "exact_identifier_smoke": {
+    "candidate_count": 10,
+    "identifier_sha256": "4ba549efafa92c6cdc4a82aac540d336ac2ce541fc04e95f3814c33dcb799dff",
+    "sufficiency": "sufficient",
+    "top_exact_score": 1.0
+  },
+  "failure_count": 10,
+  "failures": [
+    {
+      "error_type": "ValueError",
+      "message": "paper is not a valid PDF file",
+      "path": "crack_detection/10_Deep_Learning_Crack_Detection_Survey_2022.pdf"
+    },
+    {
+      "error_type": "ValueError",
+      "message": "paper is not a valid PDF file",
+      "path": "crack_detection/10_PointNet++_2017.pdf"
+    },
+    {
+      "error_type": "ValueError",
+      "message": "paper is not a valid PDF file",
+      "path": "crack_detection/11_Pavement_Crack_Segmentation_Attention_2023.pdf"
+    },
+    {
+      "error_type": "ValueError",
+      "message": "paper is not a valid PDF file",
+      "path": "crack_detection/12_Crack_Properties_Image_Processing_2020.pdf"
+    },
+    {
+      "error_type": "ValueError",
+      "message": "paper is not a valid PDF file",
+      "path": "crack_detection/13_Autonomous_Concrete_Crack_FCN_2018.pdf"
+    },
+    {
+      "error_type": "ValueError",
+      "message": "paper is not a valid PDF file",
+      "path": "crack_detection/Asparagus_YOLO_point_cloud_2025.pdf"
+    },
+    {
+      "error_type": "ValueError",
+      "message": "paper is not a valid PDF file",
+      "path": "crack_detection/Crack_Recognition_DL_2024.pdf"
+    },
+    {
+      "error_type": "ValueError",
+      "message": "paper is not a valid PDF file",
+      "path": "crack_detection/YOLOV10_ViT_Crack_Classification_2025.pdf"
+    },
+    {
+      "error_type": "ValueError",
+      "message": "paper is not a valid PDF file",
+      "path": "segmentation/Improved_UNet_Pavement_PMC_2025.pdf"
+    },
+    {
+      "error_type": "ValueError",
+      "message": "paper is not a valid PDF file",
+      "path": "segmentation/Transformer_Seg_Electronics_2025.pdf"
+    }
+  ],
+  "index_generation": {
+    "corpus_hash": "c51ac4e183983044c9cc8e58017f1fbb48c9a7aa4a436e985df0f38f7f9e49ad",
+    "generation_id": "70f9a10549c99e5d0bd5a2033b4dbdd6b9cfde132fdf6290b966d03a24323898",
+    "model_fingerprint": "bm25+hashing-dense+visual:unavailable",
+    "object_count": 45281,
+    "state": "ready"
+  },
+  "object_counts": {
+    "algorithm": 16,
+    "caption": 1013,
+    "document": 97,
+    "equation": 1959,
+    "figure": 8777,
+    "page": 1660,
+    "paragraph": 23806,
+    "reference": 96,
+    "section": 2676,
+    "table": 662,
+    "table_cell": 18433
+  },
+  "parse_status_counts": {
+    "failed": 10,
+    "partial": 7,
+    "ready": 90
+  },
+  "pdf_count": 107,
+  "schema_version": 1
+}
