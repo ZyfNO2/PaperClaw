@@ -4,8 +4,13 @@ Checks:
 - corpus_manifest.jsonl is valid UTF-8, LF, no BOM
 - 107 entries, sorted by entry_id, fixed key order
 - All file_sha256 values are 64-char hex
+- year is null or 1900-2099; arxiv_id format valid
 - frozen_12.json references valid entry_ids with matching sha256
-- invalid_input_decisions.jsonl covers exactly the failed entries
+- blind IDs P01-P12 unique and consecutive
+- 12 frozen SHA values are distinct
+- four benchmark strata each have exactly 3 papers
+- frozen entries must have parser_status=ready
+- invalid_input_decisions.jsonl covers exactly the 10 failed entries
 - No local absolute paths or usernames in any file
 """
 
@@ -15,6 +20,7 @@ import hashlib
 import json
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 BASE = Path("benchmarks/academic_rag/v1")
@@ -44,7 +50,9 @@ KEY_ORDER = [
 ]
 
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
+_ARXIV_RE = re.compile(r"^\d{4}\.\d{4,5}$")
 _FORBIDDEN = re.compile(r"(C:\\Users|/home/|/Users/)", re.IGNORECASE)
+_EXPECTED_STRATA = {"crack_detection", "reconstruction_3d_stereo", "segmentation", "concrete_material"}
 
 
 def main() -> int:
@@ -76,19 +84,51 @@ def main() -> int:
             break
         if not _SHA_RE.match(entry["file_sha256"]):
             errors.append(f"{entry['entry_id']}: invalid sha256 format")
+        year = entry["year"]
+        if year is not None and not (1900 <= year <= 2099):
+            errors.append(f"{entry['entry_id']}: year {year} out of range")
+        arxiv = entry["arxiv_id"]
+        if arxiv is not None and not _ARXIV_RE.match(arxiv):
+            errors.append(f"{entry['entry_id']}: invalid arxiv_id '{arxiv}'")
 
-    content = text.encode("utf-8")
     for line in lines:
         if _FORBIDDEN.search(line):
             errors.append("forbidden path pattern found in manifest")
             break
 
+    content = text.encode("utf-8")
+    manifest_digest = hashlib.sha256(content).hexdigest()
+
     frozen = json.loads(FROZEN.read_text(encoding="utf-8"))
-    if frozen["manifest_sha256"] != hashlib.sha256(content).hexdigest():
+    if frozen["manifest_sha256"] != manifest_digest:
         errors.append("frozen_12 manifest_sha256 does not match manifest content")
 
+    papers = frozen["papers"]
+    if len(papers) != 12:
+        errors.append(f"frozen set has {len(papers)} papers, expected 12")
+
+    blind_ids = [p["blind_id"] for p in papers]
+    expected_blind = [f"P{i:02d}" for i in range(1, 13)]
+    if blind_ids != expected_blind:
+        errors.append(f"blind IDs not P01-P12 consecutive: {blind_ids}")
+
+    frozen_shas = [p["file_sha256"] for p in papers]
+    if len(set(frozen_shas)) != len(frozen_shas):
+        errors.append("frozen set contains duplicate SHA-256 values")
+
+    strata = Counter(p["benchmark_stratum"] for p in papers)
+    if set(strata.keys()) != _EXPECTED_STRATA:
+        errors.append(f"unexpected strata: {set(strata.keys())}")
+    for stratum, count in strata.items():
+        if count != 3:
+            errors.append(f"stratum '{stratum}' has {count} papers, expected 3")
+
+    stratum_counts = frozen.get("stratum_counts", {})
+    if stratum_counts != dict(strata):
+        errors.append("stratum_counts field does not match actual paper distribution")
+
     entry_map = {e["entry_id"]: e for e in entries}
-    for paper in frozen["papers"]:
+    for paper in papers:
         eid = paper["entry_id"]
         if eid not in entry_map:
             errors.append(f"frozen {eid} not in manifest")
@@ -97,13 +137,13 @@ def main() -> int:
         elif entry_map[eid]["parser_status"] != "ready":
             errors.append(f"frozen {eid} parser_status is not ready")
 
-    if len(frozen["papers"]) != 12:
-        errors.append(f"frozen set has {len(frozen['papers'])} papers, expected 12")
-
     failed_ids = {e["entry_id"] for e in entries if e["parser_status"] == "failed"}
     dec_lines = DECISIONS.read_text(encoding="utf-8").splitlines()
     decisions = [json.loads(line) for line in dec_lines]
     decision_ids = {d["entry_id"] for d in decisions}
+
+    if len(decisions) != 10:
+        errors.append(f"expected 10 decisions, got {len(decisions)}")
     if decision_ids != failed_ids:
         missing = failed_ids - decision_ids
         extra = decision_ids - failed_ids
@@ -116,11 +156,11 @@ def main() -> int:
         if dec["decision"] not in ("reacquire", "quarantine", "exclude"):
             errors.append(f"{dec['entry_id']}: invalid decision '{dec['decision']}'")
 
-    manifest_digest = hashlib.sha256(content).hexdigest()
     print(f"manifest_sha256: {manifest_digest}")
     print(f"entries: {len(entries)}")
-    print(f"frozen: {len(frozen['papers'])}")
+    print(f"frozen: {len(papers)}")
     print(f"decisions: {len(decisions)}")
+    print(f"strata: {dict(strata)}")
 
     if errors:
         print(f"\nFAILED ({len(errors)} errors):", file=sys.stderr)

@@ -13,7 +13,7 @@ Frozen corpus manifest for the Academic RAG P0 acceptance pipeline.
 ## Manifest digest
 
 ```text
-manifest_sha256: 2f156d739934b89b62a129a065bd10bd2415b18f66768acf2e3bcf24ccc5a55b
+manifest_sha256: 389be651cc8ca001f0d8cf2a5be3343ba7764407bc0f4669d620b37c5135ea20
 ```
 
 ## Frozen 12 category distribution

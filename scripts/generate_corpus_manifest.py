@@ -16,8 +16,8 @@ from pathlib import Path
 CORPUS_ROOT = Path("data/paper_corpus")
 OUTPUT = Path("benchmarks/academic_rag/v1/corpus_manifest.jsonl")
 
-_YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
-_ARXIV_RE = re.compile(r"\b(\d{4}\.\d{4,5})\b")
+_YEAR_RE = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
+_ARXIV_RE = re.compile(r"(?<!\d)(\d{4}\.\d{4,5})(?!\d)")
 _DOI_RE = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)\b", re.IGNORECASE)
 
 KEY_ORDER = [
@@ -43,7 +43,8 @@ KEY_ORDER = [
 
 
 def _derive_title(stem: str) -> str:
-    title = re.sub(r"^\d+[_\-\s]*", "", stem)
+    title = re.sub(r"^\d{4}\.\d{4,5}[_\-\s]*", "", stem)
+    title = re.sub(r"^\d{1,3}[_\-\s]+", "", title)
     title = title.replace("_", " ").replace("-", " ")
     title = re.sub(r"\s+", " ", title).strip()
     return title or stem
@@ -52,7 +53,9 @@ def _derive_title(stem: str) -> str:
 def _derive_year(stem: str) -> int | None:
     matches = _YEAR_RE.findall(stem)
     if matches:
-        return int(matches[-1])
+        year = int(matches[-1])
+        if 1900 <= year <= 2099:
+            return year
     return None
 
 

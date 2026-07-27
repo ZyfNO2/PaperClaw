@@ -133,7 +133,7 @@ H0 corpus 证据（PaperClaw canonical）：
 
 - commit：`2c74b0f5fb5a679440f3064d11067fa26a824f12`
 - manifest：`benchmarks/academic_rag/v1/corpus_manifest.jsonl`
-- manifest SHA-256：`2f156d739934b89b62a129a065bd10bd2415b18f66768acf2e3bcf24ccc5a55b`
+- manifest SHA-256：`389be651cc8ca001f0d8cf2a5be3343ba7764407bc0f4669d620b37c5135ea20`
 - frozen set ID：`academic-rag-h0-v1`
 - 12 篇分类：crack_detection 3、reconstruction_3d_stereo 3、segmentation 3、concrete_material 3
 - 10 个失败输入：reacquire 7、exclude 2、quarantine 1
