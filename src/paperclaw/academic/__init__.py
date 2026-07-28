@@ -21,6 +21,11 @@ from .contracts import (
 )
 from .parser import PaperParser
 from .runtime import AcademicRuntime
+from .retrieval_service import (
+    GroundedRetrievalHit,
+    RetrievalResponse,
+    RetrievalService,
+)
 from .visual import ColQwen2Encoder, VisualEncoder, late_interaction_score
 
 __all__ = [
@@ -45,6 +50,9 @@ __all__ = [
     "PaperVersion",
     "RetrievalRequest",
     "RetrievalTrace",
+    "GroundedRetrievalHit",
+    "RetrievalResponse",
+    "RetrievalService",
     "ColQwen2Encoder",
     "VisualEncoder",
     "late_interaction_score",
