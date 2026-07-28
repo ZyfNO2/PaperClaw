@@ -164,6 +164,7 @@ class PyMuPDFParser:
         )
         headings: list[str] = []
         scanned_pages = 0
+        in_references = False
         for page_index, page in enumerate(document):
             page_number = page_index + 1
             paragraph_index = 0
@@ -226,16 +227,22 @@ class PyMuPDFParser:
                 )
                 normalized = text.lower().strip()
                 object_type = "section" if is_heading else "paragraph"
-                if normalized.startswith(("figure ", "fig. ", "图 ")):
+                reference_heading = normalized.startswith(
+                    ("references", "bibliography", "参考文献")
+                )
+                if normalized.startswith(
+                    ("figure ", "fig. ", "图 ", "图.", "table ", "表 ")
+                ):
                     object_type = "caption"
                 elif normalized.startswith(("algorithm ", "算法 ")):
                     object_type = "algorithm"
-                elif normalized.startswith(("references", "参考文献")):
+                elif reference_heading or (in_references and not is_heading):
                     object_type = "reference"
-                elif re.search(r"[=∑∫√]|\b(?:argmin|argmax)\b", text):
+                elif re.search(r"[=∑∫√∂]|\b(?:argmin|argmax)\b", text):
                     object_type = "equation"
                 if is_heading:
                     headings = [text.replace("\n", " ").strip()]
+                    in_references = reference_heading
                 if object_type == "paragraph":
                     paragraph_index += 1
                 order += 1

@@ -251,3 +251,70 @@ def test_pdf_parser_marks_double_column_reading_order_as_partial(
         warning.startswith("double_column_reading_order_uncertain:")
         for warning in result.warnings
     )
+
+
+def test_pdf_parser_emits_complete_core_object_vocabulary(
+    workspace: tuple,
+) -> None:
+    tmp_path, runtime, papers, project_id = workspace
+    document = fitz.open()
+    page = document.new_page(width=600, height=800)
+    page.insert_textbox(fitz.Rect(50, 40, 500, 80), "1 Introduction", fontsize=16)
+    page.insert_textbox(
+        fitz.Rect(50, 90, 500, 125),
+        "The baseline improves accuracy [1].",
+    )
+    page.insert_textbox(fitz.Rect(50, 135, 500, 170), "Figure 1 Architecture")
+    page.insert_textbox(fitz.Rect(50, 180, 500, 215), "Algorithm 1 Training")
+    page.insert_textbox(fitz.Rect(50, 225, 500, 260), "E = mc^2")
+    page.draw_rect(fitz.Rect(400, 300, 550, 420))
+    for x in (50, 200, 350):
+        page.draw_line((x, 300), (x, 400))
+    for y in (300, 350, 400):
+        page.draw_line((50, y), (350, y))
+    page.insert_text((70, 330), "A")
+    page.insert_text((220, 330), "B")
+    page.insert_text((70, 380), "1")
+    page.insert_text((220, 380), "2")
+
+    references = document.new_page(width=600, height=800)
+    references.insert_textbox(
+        fitz.Rect(50, 40, 500, 80), "References", fontsize=16
+    )
+    references.insert_textbox(
+        fitz.Rect(50, 120, 500, 180),
+        "[1] Smith, J. A grounded paper. 2025.",
+    )
+    source = tmp_path / "core-vocabulary.pdf"
+    document.save(source)
+    document.close()
+
+    imported = papers.import_paper(PaperImportRequest(project_id, source))
+    result = runtime.parse_paper(imported.paper.paper_id)
+    types = {item.object_type for item in result.objects}
+
+    assert {
+        "document",
+        "page",
+        "section",
+        "paragraph",
+        "reference",
+        "citation",
+        "figure",
+        "caption",
+        "table",
+        "table_cell",
+        "equation",
+        "algorithm",
+    } <= types
+    for object_type in ("figure", "table", "equation", "algorithm"):
+        item = next(value for value in result.objects if value.object_type == object_type)
+        assert {asset.kind for asset in item.assets} == {"page", "region"}
+    cells = [value for value in result.objects if value.object_type == "table_cell"]
+    assert cells
+    assert all(
+        cell.locator.table_row is not None
+        and cell.locator.table_column is not None
+        and cell.locator.bounding_box is not None
+        for cell in cells
+    )
