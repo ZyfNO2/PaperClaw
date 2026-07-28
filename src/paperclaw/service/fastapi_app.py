@@ -665,6 +665,19 @@ def create_app(
                     f"$defs/{definition}"
                 )
             }
+        paper_record_paths = (
+            ("/v1/projects/{project_id}/papers/{paper_id}", "get"),
+            ("/v1/projects/{project_id}/papers/{paper_id}/metadata", "patch"),
+        )
+        for path, method in paper_record_paths:
+            schema["paths"][path][method]["responses"]["200"]["content"][
+                "application/json"
+            ]["schema"] = {
+                "$ref": (
+                    "#/components/schemas/AcademicV1Contract/"
+                    "$defs/paper_record"
+                )
+            }
         app.openapi_schema = schema
         return schema
 

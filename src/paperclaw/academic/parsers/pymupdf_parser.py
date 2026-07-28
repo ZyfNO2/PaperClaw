@@ -73,6 +73,31 @@ def _safe_bbox(
     return BoundingBox(left, top, right, bottom)
 
 
+def _appears_multi_column(
+    blocks: list[tuple], page_width: float
+) -> bool:
+    """Conservatively detect disjoint, vertically overlapping text columns."""
+
+    midpoint = float(page_width) / 2.0
+    margin = max(12.0, float(page_width) * 0.04)
+    left = [
+        block
+        for block in blocks
+        if float(block[2]) <= midpoint + margin and str(block[4]).strip()
+    ]
+    right = [
+        block
+        for block in blocks
+        if float(block[0]) >= midpoint - margin and str(block[4]).strip()
+    ]
+    return any(
+        max(float(left_block[1]), float(right_block[1]))
+        < min(float(left_block[3]), float(right_block[3]))
+        for left_block in left
+        for right_block in right
+    )
+
+
 class PyMuPDFParser:
     @property
     def fingerprint(self) -> str:
@@ -177,6 +202,10 @@ class PyMuPDFParser:
             )
             blocks = page.get_text("blocks", sort=True)
             text_blocks = [b for b in blocks if str(b[4]).strip()]
+            if _appears_multi_column(text_blocks, page.rect.width):
+                warnings.append(
+                    f"double_column_reading_order_uncertain: page {page_number}"
+                )
             if not text_blocks and page.get_images():
                 scanned_pages += 1
                 warnings.append(

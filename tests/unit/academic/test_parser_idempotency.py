@@ -223,3 +223,31 @@ def test_docling_adapter_normalizes_items_and_keeps_page_assets(
     assert section.locator.bounding_box is not None
     assert section.locator.section_path == ("Introduction",)
     assert page.assets and page.assets[0].kind == "page"
+
+
+def test_pdf_parser_marks_double_column_reading_order_as_partial(
+    workspace: tuple,
+) -> None:
+    tmp_path, runtime, papers, project_id = workspace
+    document = fitz.open()
+    page = document.new_page(width=600, height=800)
+    page.insert_textbox(
+        fitz.Rect(50, 80, 260, 300),
+        "Left column paragraph.\nSecond left line.",
+    )
+    page.insert_textbox(
+        fitz.Rect(340, 80, 550, 300),
+        "Right column paragraph.\nSecond right line.",
+    )
+    source = tmp_path / "two-column.pdf"
+    document.save(source)
+    document.close()
+
+    imported = papers.import_paper(PaperImportRequest(project_id, source))
+    result = runtime.parse_paper(imported.paper.paper_id)
+
+    assert result.status == "partial"
+    assert any(
+        warning.startswith("double_column_reading_order_uncertain:")
+        for warning in result.warnings
+    )

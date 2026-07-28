@@ -91,6 +91,19 @@ def test_openapi_and_contract_endpoint_publish_academic_v1(tmp_path) -> None:
         ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
         == "#/components/schemas/AcademicV1Contract/$defs/academic_object"
     )
+    assert (
+        openapi["paths"]["/v1/projects/{project_id}/papers/{paper_id}"]["get"]
+        ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+        == "#/components/schemas/AcademicV1Contract/$defs/paper_record"
+    )
+    assert (
+        openapi["paths"][
+            "/v1/projects/{project_id}/papers/{paper_id}/metadata"
+        ]["patch"]["responses"]["200"]["content"]["application/json"]["schema"][
+            "$ref"
+        ]
+        == "#/components/schemas/AcademicV1Contract/$defs/paper_record"
+    )
 
 
 def test_rest_rejects_source_outside_allowed_roots(tmp_path) -> None:
