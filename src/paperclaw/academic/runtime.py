@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from dataclasses import replace
 import hashlib
 import json
 import math
@@ -23,6 +24,7 @@ from .contracts import (
     ArtifactRevision,
     BoundingBox,
     EvidenceBundle,
+    EvidenceLocator,
     IndexGeneration,
     MemoryEntrySnapshot,
     MemorySnapshot,
@@ -34,6 +36,13 @@ from .contracts import (
     RetrievalTrace,
 )
 from .fusion import DEFAULT_WEIGHTS, weighted_rrf
+from .errors import (
+    AcademicFingerprintMismatchError,
+    AcademicIndexNotReadyError,
+    AcademicIntegrityError,
+    AcademicStaleIndexError,
+    AcademicStaleSchemaError,
+)
 from .parser import PaperParser
 from .store import AcademicObjectStore
 from .visual import VisualEncoder, late_interaction_score
@@ -253,17 +262,421 @@ class AcademicRuntime:
             else:
                 db.execute("UPDATE index_generations SET active=0")
                 db.execute(
-                    "UPDATE index_generations SET active=1 WHERE generation_id=? AND state='ready'",
+                    "DELETE FROM academic_index_manifests WHERE generation_id=?",
                     (generation_id,),
                 )
+                db.execute(
+                    "DELETE FROM academic_index WHERE generation_id=?",
+                    (generation_id,),
+                )
+                db.execute(
+                    "DELETE FROM academic_visual_index WHERE generation_id=?",
+                    (generation_id,),
+                )
+                db.execute(
+                    "DELETE FROM academic_fts WHERE generation_id=?",
+                    (generation_id,),
+                )
+                for item, dense_vector in zip(objects, dense_vectors, strict=True):
+                    db.execute(
+                        "INSERT INTO academic_index VALUES(?,?,?,?,?)",
+                        (
+                            generation_id,
+                            item.object_id,
+                            item.text,
+                            json.dumps(item.locator.to_dict()),
+                            json.dumps(dense_vector, separators=(",", ":")),
+                        ),
+                    )
+                    db.execute(
+                        "INSERT INTO academic_fts(generation_id,object_id,text) VALUES(?,?,?)",
+                        (generation_id, item.object_id, item.text),
+                    )
+                if self.visual_encoder and visual_objects:
+                    paths = [
+                        self.assets / item.asset_hash[:2] / f"{item.asset_hash}.png"
+                        for item in visual_objects
+                    ]
+                    embeddings = self.visual_encoder.encode_images(paths)
+                    for item, embedding in zip(visual_objects, embeddings, strict=True):
+                        db.execute(
+                            "INSERT INTO academic_visual_index VALUES(?,?,?,?)",
+                            (
+                                generation_id,
+                                item.object_id,
+                                json.dumps(item.locator.to_dict()),
+                                json.dumps(embedding, separators=(",", ":")),
+                            ),
+                        )
+                db.execute(
+                    """
+                    UPDATE index_generations
+                    SET active=1,state='ready',object_count=?
+                    WHERE generation_id=?
+                    """,
+                    (len(objects) + len(visual_objects), generation_id),
+                )
                 db.commit()
-        return IndexGeneration(
+        generation = IndexGeneration(
             generation_id,
             corpus_hash,
             model_fingerprint,
             "ready",
             len(objects) + len(visual_objects),
         )
+        self._seal_active_index()
+        return generation
+
+    def sync_index_version(
+        self, paper_id: str, version_id: str
+    ) -> IndexGeneration:
+        """Atomically upsert one parsed version into a copy-on-write generation."""
+
+        parsed = self.object_store.get(paper_id, version_id)
+        expected = self.papers.repository.get_version(
+            self.project_id, paper_id, version_id
+        )
+        if parsed.source_hash != expected.sha256:
+            raise AcademicIntegrityError(
+                "parsed version source hash conflicts with paper store"
+            )
+        text_objects = [
+            item
+            for item in parsed.objects
+            if item.text
+            and item.object_type
+            in {"section", "paragraph", "caption", "table", "table_cell", "equation"}
+        ]
+        visual_objects = [
+            item
+            for item in parsed.objects
+            if item.asset_hash and item.object_type in {"page", "figure", "table"}
+        ]
+        model_fingerprint = self._runtime_model_fingerprint()
+        vectors = (
+            self.dense_encoder.encode_documents(
+                [item.text or "" for item in text_objects]
+            )
+            if self.dense_encoder
+            else [_vector(item.text or "") for item in text_objects]
+        )
+        with self._connect() as db:
+            active = db.execute(
+                """
+                SELECT generation_id,model_fingerprint
+                FROM index_generations WHERE active=1 AND state='ready'
+                """
+            ).fetchone()
+            old_text = []
+            old_visual = []
+            if active is not None:
+                if active["model_fingerprint"] != model_fingerprint:
+                    raise AcademicFingerprintMismatchError(
+                        "academic index model fingerprint is incompatible with runtime; "
+                        "rebuild the index with the active encoders"
+                    )
+                old_text = db.execute(
+                    """
+                    SELECT object_id,text,locator_json,vector_json
+                    FROM academic_index WHERE generation_id=?
+                    """,
+                    (active["generation_id"],),
+                ).fetchall()
+                old_visual = db.execute(
+                    """
+                    SELECT object_id,locator_json,vector_json
+                    FROM academic_visual_index WHERE generation_id=?
+                    """,
+                    (active["generation_id"],),
+                ).fetchall()
+        text_rows = [
+            (row["object_id"], row["text"], row["locator_json"], row["vector_json"])
+            for row in old_text
+            if (
+                (locator := _locator(json.loads(row["locator_json"]))).paper_id,
+                locator.version_id,
+            )
+            != (paper_id, version_id)
+        ]
+        text_rows.extend(
+            (
+                item.object_id,
+                item.text or "",
+                json.dumps(item.locator.to_dict()),
+                json.dumps(vector, separators=(",", ":")),
+            )
+            for item, vector in zip(text_objects, vectors, strict=True)
+        )
+        visual_rows = [
+            (row["object_id"], row["locator_json"], row["vector_json"])
+            for row in old_visual
+            if (
+                (locator := _locator(json.loads(row["locator_json"]))).paper_id,
+                locator.version_id,
+            )
+            != (paper_id, version_id)
+        ]
+        if self.visual_encoder and visual_objects:
+            paths = [
+                self.assets / item.asset_hash[:2] / f"{item.asset_hash}.png"
+                for item in visual_objects
+            ]
+            embeddings = self.visual_encoder.encode_images(paths)
+            visual_rows.extend(
+                (
+                    item.object_id,
+                    json.dumps(item.locator.to_dict()),
+                    json.dumps(embedding, separators=(",", ":")),
+                )
+                for item, embedding in zip(visual_objects, embeddings, strict=True)
+            )
+        return self._commit_index_generation(
+            text_rows, visual_rows, model_fingerprint=model_fingerprint
+        )
+
+    def delete_index_version(
+        self, paper_id: str, version_id: str
+    ) -> IndexGeneration:
+        """Converge the active index after canonical version deletion."""
+
+        with self._connect() as db:
+            active = db.execute(
+                """
+                SELECT generation_id,model_fingerprint
+                FROM index_generations WHERE active=1 AND state='ready'
+                """
+            ).fetchone()
+            if active is None:
+                raise AcademicIndexNotReadyError("academic index is not ready")
+            text_rows = db.execute(
+                """
+                SELECT object_id,text,locator_json,vector_json
+                FROM academic_index WHERE generation_id=?
+                """,
+                (active["generation_id"],),
+            ).fetchall()
+            visual_rows = db.execute(
+                """
+                SELECT object_id,locator_json,vector_json
+                FROM academic_visual_index WHERE generation_id=?
+                """,
+                (active["generation_id"],),
+            ).fetchall()
+        kept_text = [
+            (row["object_id"], row["text"], row["locator_json"], row["vector_json"])
+            for row in text_rows
+            if (
+                (locator := _locator(json.loads(row["locator_json"]))).paper_id,
+                locator.version_id,
+            )
+            != (paper_id, version_id)
+        ]
+        kept_visual = [
+            (row["object_id"], row["locator_json"], row["vector_json"])
+            for row in visual_rows
+            if (
+                (locator := _locator(json.loads(row["locator_json"]))).paper_id,
+                locator.version_id,
+            )
+            != (paper_id, version_id)
+        ]
+        return self._commit_index_generation(
+            kept_text,
+            kept_visual,
+            model_fingerprint=str(active["model_fingerprint"]),
+        )
+
+    def _commit_index_generation(
+        self,
+        text_rows: list[tuple[str, str, str, str]],
+        visual_rows: list[tuple[str, str, str]],
+        *,
+        model_fingerprint: str,
+    ) -> IndexGeneration:
+        text_rows.sort(key=lambda row: row[0])
+        visual_rows.sort(key=lambda row: row[0])
+        corpus_hash = hashlib.sha256(
+            json.dumps(
+                {"text": text_rows, "visual": visual_rows},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        generation_id = hashlib.sha256(
+            f"{corpus_hash}:{model_fingerprint}".encode()
+        ).hexdigest()
+        created = False
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            existing = db.execute(
+                """
+                SELECT state FROM index_generations WHERE generation_id=?
+                """,
+                (generation_id,),
+            ).fetchone()
+            if existing is None:
+                created = True
+                db.execute(
+                    "INSERT INTO index_generations VALUES(?,?,?,?,?,0)",
+                    (
+                        generation_id,
+                        corpus_hash,
+                        model_fingerprint,
+                        "building",
+                        len(text_rows) + len(visual_rows),
+                    ),
+                )
+                db.executemany(
+                    "INSERT INTO academic_index VALUES(?,?,?,?,?)",
+                    (
+                        (generation_id, object_id, text, locator_json, vector_json)
+                        for object_id, text, locator_json, vector_json in text_rows
+                    ),
+                )
+                db.executemany(
+                    "INSERT INTO academic_fts(generation_id,object_id,text) VALUES(?,?,?)",
+                    (
+                        (generation_id, object_id, text)
+                        for object_id, text, _, _ in text_rows
+                    ),
+                )
+                db.executemany(
+                    "INSERT INTO academic_visual_index VALUES(?,?,?,?)",
+                    (
+                        (generation_id, object_id, locator_json, vector_json)
+                        for object_id, locator_json, vector_json in visual_rows
+                    ),
+                )
+                db.execute(
+                    """
+                    UPDATE index_generations SET state='ready'
+                    WHERE generation_id=?
+                    """,
+                    (generation_id,),
+                )
+            elif existing["state"] != "ready":
+                raise AcademicIntegrityError(
+                    "matching academic index generation is not ready"
+                )
+            db.execute("UPDATE index_generations SET active=0")
+            db.execute(
+                """
+                UPDATE index_generations SET active=1
+                WHERE generation_id=? AND state='ready'
+                """,
+                (generation_id,),
+            )
+            db.commit()
+        generation = IndexGeneration(
+            generation_id,
+            corpus_hash,
+            model_fingerprint,
+            "ready",
+            len(text_rows) + len(visual_rows),
+        )
+        if created:
+            self._seal_active_index()
+        else:
+            from .index import AcademicObjectIndex
+
+            AcademicObjectIndex(self).snapshot()
+        return generation
+
+    def _seal_active_index(self) -> None:
+        """Validate locators and persist the canonical active-manifest digest."""
+
+        from .index import AcademicIndexEntry, AcademicIndexManifest
+
+        with self._connect() as db:
+            generation = db.execute(
+                """
+                SELECT generation_id,corpus_hash,model_fingerprint,state
+                FROM index_generations WHERE active=1
+                """
+            ).fetchone()
+            if generation is None or generation["state"] != "ready":
+                raise AcademicIndexNotReadyError("academic index is not ready")
+            rows = db.execute(
+                """
+                SELECT locator_json FROM academic_index WHERE generation_id=?
+                UNION
+                SELECT locator_json FROM academic_visual_index WHERE generation_id=?
+                """,
+                (generation["generation_id"], generation["generation_id"]),
+            ).fetchall()
+        objects: dict[tuple[str, str, str], AcademicObject] = {}
+        for row in rows:
+            locator = EvidenceLocator.from_dict(json.loads(row["locator_json"]))
+            item = self.resolve(locator)
+            objects[
+                (locator.paper_id, locator.version_id, locator.object_id)
+            ] = item
+        entries = tuple(
+            AcademicIndexEntry.from_object(item)
+            for item in sorted(
+                objects.values(),
+                key=lambda item: (
+                    item.locator.paper_id,
+                    item.locator.version_id,
+                    item.reading_order,
+                    item.object_id,
+                ),
+            )
+        )
+        manifest = AcademicIndexManifest.create(
+            generation_id=str(generation["generation_id"]),
+            corpus_hash=str(generation["corpus_hash"]),
+            model_fingerprint=str(generation["model_fingerprint"]),
+            entries=entries,
+        )
+        with self._connect() as db:
+            db.execute(
+                """
+                INSERT INTO academic_index_manifests(
+                    generation_id,schema_version,index_version,content_hash
+                ) VALUES(?,?,?,?)
+                ON CONFLICT(generation_id) DO UPDATE SET
+                    schema_version=excluded.schema_version,
+                    index_version=excluded.index_version,
+                    content_hash=excluded.content_hash
+                """,
+                (
+                    manifest.generation_id,
+                    manifest.schema_version,
+                    manifest.index_version,
+                    manifest.content_hash,
+                ),
+            )
+            db.commit()
+
+    def _activate_index_generation(self, generation_id: str) -> None:
+        """Rollback helper: reactivate one previously sealed ready generation."""
+
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            target = db.execute(
+                """
+                SELECT g.state,m.content_hash
+                FROM index_generations g
+                LEFT JOIN academic_index_manifests m USING(generation_id)
+                WHERE g.generation_id=?
+                """,
+                (generation_id,),
+            ).fetchone()
+            if (
+                target is None
+                or target["state"] != "ready"
+                or target["content_hash"] is None
+            ):
+                raise AcademicIntegrityError(
+                    "rollback academic index generation is not sealed and ready"
+                )
+            db.execute("UPDATE index_generations SET active=0")
+            db.execute(
+                "UPDATE index_generations SET active=1 WHERE generation_id=?",
+                (generation_id,),
+            )
+            db.commit()
 
     def retrieve(
         self,
@@ -282,12 +695,32 @@ class AcademicRuntime:
             budget = query.budget
         with self._connect() as db:
             active = db.execute(
-                "SELECT generation_id,model_fingerprint FROM index_generations WHERE active=1"
+                """
+                SELECT g.generation_id,g.model_fingerprint,g.state,
+                       m.schema_version,m.index_version,m.content_hash
+                FROM index_generations g
+                LEFT JOIN academic_index_manifests m USING(generation_id)
+                WHERE g.active=1
+                """
             ).fetchone()
             if not active:
-                raise RuntimeError("academic index is not ready")
+                raise AcademicIndexNotReadyError("academic index is not ready")
+            from .index import ACADEMIC_INDEX_VERSION
+
+            if active["state"] != "ready" or active["content_hash"] is None:
+                raise AcademicIntegrityError(
+                    "academic index integrity metadata is missing; rebuild"
+                )
+            if active["schema_version"] != "academic.v1":
+                raise AcademicStaleSchemaError(
+                    "academic index schema version is stale; rebuild"
+                )
+            if active["index_version"] != ACADEMIC_INDEX_VERSION:
+                raise AcademicStaleIndexError(
+                    "academic index version is stale; rebuild"
+                )
             if active[1] != self._runtime_model_fingerprint():
-                raise RuntimeError(
+                raise AcademicFingerprintMismatchError(
                     "academic index model fingerprint is incompatible with runtime; "
                     "rebuild the index with the active encoders"
                 )
@@ -300,6 +733,9 @@ class AcademicRuntime:
                 "SELECT object_id,locator_json,vector_json FROM academic_visual_index WHERE generation_id=?",
                 (generation_id,),
             ).fetchall()
+        from .index import AcademicObjectIndex
+
+        AcademicObjectIndex(self).snapshot()
 
         locator_map: dict[str, AcademicLocator] = {}
         text_map: dict[str, str] = {}
@@ -308,10 +744,27 @@ class AcademicRuntime:
             locator_map[row[0]] = _locator(json.loads(row[2]))
             text_map[row[0]] = row[1]
             vector_map[row[0]] = json.loads(row[3])
+        current_versions: dict[str, str] = {}
 
         def _passes_filters(locator: AcademicLocator) -> bool:
             if query.paper_ids and locator.paper_id not in query.paper_ids:
                 return False
+            if (
+                isinstance(query, RetrievalRequest)
+                and query.version_ids
+                and locator.version_id not in query.version_ids
+            ):
+                return False
+            if isinstance(query, RetrievalRequest) and not query.version_ids:
+                if locator.paper_id not in current_versions:
+                    try:
+                        current_versions[locator.paper_id] = self.papers.get_paper(
+                            self.project_id, locator.paper_id
+                        ).current_version_id
+                    except KeyError:
+                        return False
+                if locator.version_id != current_versions[locator.paper_id]:
+                    return False
             if query.object_types and locator.object_type not in query.object_types:
                 return False
             return True
@@ -404,7 +857,24 @@ class AcademicRuntime:
                     ),
                 )
             )
-        selected = tuple(candidates)
+        selected_values: list[RetrievalCandidate] = []
+        remaining_chars = budget.max_chars
+        for candidate in candidates:
+            if remaining_chars <= 0:
+                break
+            text = candidate.text
+            if len(text) > remaining_chars:
+                candidate = replace(
+                    candidate,
+                    text=text[:remaining_chars],
+                    explanation=(
+                        *candidate.explanation,
+                        "text truncated by retrieval character budget",
+                    ),
+                )
+            selected_values.append(candidate)
+            remaining_chars -= len(candidate.text)
+        selected = tuple(selected_values)
         top = selected[0].fused_score if selected else 0.0
         sufficiency = (
             "sufficient"
@@ -434,6 +904,11 @@ class AcademicRuntime:
                 paper_ids=(),
                 object_types=(),
                 budget=budget,
+                version_ids=(
+                    query.version_ids
+                    if isinstance(query, RetrievalRequest)
+                    else ()
+                ),
             )
             corrective_result = self._retrieve_single(relaxed, generation_id)
             if corrective_result.candidates:
@@ -462,6 +937,11 @@ class AcademicRuntime:
                         "text": query.text,
                         "channels": channels,
                         "paper_ids": query.paper_ids,
+                        "version_ids": (
+                            query.version_ids
+                            if isinstance(query, RetrievalRequest)
+                            else ()
+                        ),
                         "object_types": query.object_types,
                     },
                     sort_keys=True,
@@ -560,12 +1040,11 @@ class AcademicRuntime:
         return tuple(ordered[max(0, index - neighbors) : index + neighbors + 1])
 
     def resolve(self, locator: AcademicLocator) -> AcademicObject:
-        paper = self.papers.get_paper(self.project_id, locator.paper_id)
-        if paper.current_version_id != locator.version_id:
-            raise KeyError(
-                "academic locator references a superseded version; "
-                "resolve is fail-closed for non-current versions"
-            )
+        version = self.papers.repository.get_version(
+            self.project_id, locator.paper_id, locator.version_id
+        )
+        if version.sha256 != locator.source_hash:
+            raise KeyError("academic locator source hash does not match paper version")
         return self.object_store.resolve(locator)
 
     def read_asset(self, locator: AcademicLocator, asset_hash: str) -> bytes:
@@ -751,6 +1230,12 @@ class AcademicRuntime:
             CREATE TABLE IF NOT EXISTS index_generations(generation_id TEXT PRIMARY KEY,corpus_hash TEXT,model_fingerprint TEXT,state TEXT,object_count INTEGER,active INTEGER);
             CREATE TABLE IF NOT EXISTS academic_index(generation_id TEXT,object_id TEXT,text TEXT,locator_json TEXT,vector_json TEXT,PRIMARY KEY(generation_id,object_id));
             CREATE TABLE IF NOT EXISTS academic_visual_index(generation_id TEXT,object_id TEXT,locator_json TEXT,vector_json TEXT,PRIMARY KEY(generation_id,object_id));
+            CREATE TABLE IF NOT EXISTS academic_index_manifests(
+                generation_id TEXT PRIMARY KEY REFERENCES index_generations(generation_id),
+                schema_version TEXT NOT NULL,
+                index_version TEXT NOT NULL,
+                content_hash TEXT NOT NULL CHECK(length(content_hash)=64)
+            );
             CREATE VIRTUAL TABLE IF NOT EXISTS academic_fts USING fts5(generation_id UNINDEXED,object_id UNINDEXED,text,tokenize='unicode61');
             """)
             db.commit()

@@ -155,6 +155,14 @@ class PaperService:
             raise RuntimeError("managed paper blob failed integrity validation")
         return content
 
+    def delete_version(
+        self, project_id: str, paper_id: str, version_id: str
+    ) -> PaperVersion | None:
+        """Remove a canonical version record without deleting its managed blob."""
+
+        self._project(project_id)
+        return self.repository.delete_version(project_id, paper_id, version_id)
+
     def confirm_metadata(self, project_id: str, paper_id: str, patch: MetadataPatch, expected_revision: int) -> PaperRecord:
         paper = self.get_paper(project_id, paper_id)
         return self.repository.update_metadata(

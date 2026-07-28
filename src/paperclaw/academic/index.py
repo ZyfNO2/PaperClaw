@@ -8,6 +8,13 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from .contracts import ACADEMIC_SCHEMA_VERSION, AcademicObject, EvidenceLocator
+from .errors import (
+    AcademicFingerprintMismatchError,
+    AcademicIndexNotReadyError,
+    AcademicIntegrityError,
+    AcademicStaleIndexError,
+    AcademicStaleSchemaError,
+)
 
 if TYPE_CHECKING:
     from .runtime import AcademicRuntime
@@ -166,6 +173,26 @@ class AcademicObjectIndex:
         self._runtime.build_index()
         return self.snapshot()
 
+    def sync_version(self, paper_id: str, version_id: str) -> AcademicIndexManifest:
+        self._runtime.sync_index_version(paper_id, version_id)
+        return self.snapshot()
+
+    def delete_version(self, paper_id: str, version_id: str) -> AcademicIndexManifest:
+        previous = self.snapshot()
+        self._runtime.papers.repository.get_version(
+            self._runtime.project_id, paper_id, version_id
+        )
+        self._runtime.delete_index_version(paper_id, version_id)
+        try:
+            self._runtime.papers.delete_version(
+                self._runtime.project_id, paper_id, version_id
+            )
+        except Exception:
+            self._runtime._activate_index_generation(previous.generation_id)
+            raise
+        self._runtime.object_store.deactivate_version(paper_id, version_id)
+        return self.snapshot()
+
     def snapshot(self) -> AcademicIndexManifest:
         with self._runtime._connect() as db:
             generation = db.execute(
@@ -175,7 +202,9 @@ class AcademicObjectIndex:
                 """
             ).fetchone()
             if generation is None or generation["state"] != "ready":
-                raise RuntimeError("academic object index is not ready")
+                raise AcademicIndexNotReadyError(
+                    "academic object index is not ready"
+                )
             locator_rows = db.execute(
                 """
                 SELECT locator_json FROM academic_index WHERE generation_id=?
@@ -188,7 +217,9 @@ class AcademicObjectIndex:
             generation["model_fingerprint"]
             != self._runtime._runtime_model_fingerprint()
         ):
-            raise RuntimeError("academic object index encoder fingerprint is stale")
+            raise AcademicFingerprintMismatchError(
+                "academic object index encoder fingerprint is stale"
+            )
         objects: dict[str, AcademicObject] = {}
         for row in locator_rows:
             locator = EvidenceLocator.from_dict(json.loads(row["locator_json"]))
@@ -206,9 +237,34 @@ class AcademicObjectIndex:
                 ),
             )
         )
-        return AcademicIndexManifest.create(
+        manifest = AcademicIndexManifest.create(
             generation_id=str(generation["generation_id"]),
             corpus_hash=str(generation["corpus_hash"]),
             model_fingerprint=str(generation["model_fingerprint"]),
             entries=entries,
         )
+        with self._runtime._connect() as db:
+            stored = db.execute(
+                """
+                SELECT schema_version,index_version,content_hash
+                FROM academic_index_manifests WHERE generation_id=?
+                """,
+                (manifest.generation_id,),
+            ).fetchone()
+        if stored is None:
+            raise AcademicIntegrityError(
+                "academic index integrity metadata is missing; rebuild"
+            )
+        if stored["schema_version"] != ACADEMIC_SCHEMA_VERSION:
+            raise AcademicStaleSchemaError(
+                "academic object index schema is stale; rebuild"
+            )
+        if stored["index_version"] != ACADEMIC_INDEX_VERSION:
+            raise AcademicStaleIndexError(
+                "academic object index version is stale; rebuild"
+            )
+        if stored["content_hash"] != manifest.content_hash:
+            raise AcademicIntegrityError(
+                "academic object index manifest integrity failure"
+            )
+        return manifest

@@ -26,6 +26,9 @@ class PaperRepository(Protocol):
     def get_paper(self, project_id: str, paper_id: str) -> PaperRecord: ...
     def list_papers(self, project_id: str, *, cursor: str | None = None, limit: int = 50) -> tuple[PaperRecord, ...]: ...
     def list_versions(self, project_id: str, paper_id: str) -> tuple[PaperVersion, ...]: ...
+    def delete_version(
+        self, project_id: str, paper_id: str, version_id: str
+    ) -> PaperVersion | None: ...
 
 
 class SQLitePaperRepository:
@@ -142,6 +145,70 @@ class SQLitePaperRepository:
         if row is None:
             raise PaperNotFoundError(version_id)
         return _version(row)
+
+    def delete_version(
+        self, project_id: str, paper_id: str, version_id: str
+    ) -> PaperVersion | None:
+        """Delete one immutable version row and deterministically select its successor.
+
+        Managed blobs are intentionally retained.  Returning ``None`` means the
+        paper no longer has versions and its identity row was removed.
+        """
+
+        with self.transaction() as connection:
+            target = connection.execute(
+                """
+                SELECT * FROM paper_versions
+                WHERE project_id=? AND paper_id=? AND version_id=?
+                """,
+                (project_id, paper_id, version_id),
+            ).fetchone()
+            if target is None:
+                raise PaperNotFoundError(version_id)
+            remaining = connection.execute(
+                """
+                SELECT * FROM paper_versions
+                WHERE project_id=? AND paper_id=? AND version_id<>?
+                ORDER BY version_number DESC
+                """,
+                (project_id, paper_id, version_id),
+            ).fetchall()
+            if remaining:
+                successor = _version(remaining[0])
+                connection.execute(
+                    """
+                    UPDATE papers
+                    SET current_version_id=?, current_version_number=?, updated_at=?
+                    WHERE project_id=? AND paper_id=?
+                    """,
+                    (
+                        successor.version_id,
+                        successor.version_number,
+                        _now(),
+                        project_id,
+                        paper_id,
+                    ),
+                )
+                connection.execute(
+                    """
+                    DELETE FROM paper_versions
+                    WHERE project_id=? AND paper_id=? AND version_id=?
+                    """,
+                    (project_id, paper_id, version_id),
+                )
+                return successor
+            connection.execute(
+                """
+                DELETE FROM paper_versions
+                WHERE project_id=? AND paper_id=? AND version_id=?
+                """,
+                (project_id, paper_id, version_id),
+            )
+            connection.execute(
+                "DELETE FROM papers WHERE project_id=? AND paper_id=?",
+                (project_id, paper_id),
+            )
+            return None
 
     def update_metadata(self, project_id: str, paper_id: str, metadata: PaperMetadata, expected_revision: int) -> PaperRecord:
         now = _now()

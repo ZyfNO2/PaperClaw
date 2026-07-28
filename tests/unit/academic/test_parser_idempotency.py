@@ -65,7 +65,9 @@ def test_index_generation_is_idempotent(workspace: tuple) -> None:
     assert gen1.state == "ready"
 
 
-def test_old_version_locator_fails_after_new_version(workspace: tuple) -> None:
+def test_old_version_locator_remains_resolvable_until_canonical_deletion(
+    workspace: tuple,
+) -> None:
     tmp_path, runtime, papers, project_id = workspace
     pdf_v1 = _make_pdf(tmp_path, "Version one content")
     imported = papers.import_paper(PaperImportRequest(project_id, pdf_v1))
@@ -86,8 +88,7 @@ def test_old_version_locator_fails_after_new_version(workspace: tuple) -> None:
 
     v1_non_doc = [o for o in v1_objects if o.object_type != "document"]
     if v1_non_doc:
-        with pytest.raises(KeyError):
-            runtime.resolve(v1_non_doc[0].locator)
+        assert runtime.resolve(v1_non_doc[0].locator) == v1_non_doc[0]
 
 
 def test_markdown_parser_produces_sections_and_paragraphs(

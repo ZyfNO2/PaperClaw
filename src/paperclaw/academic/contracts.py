@@ -371,6 +371,7 @@ class RetrievalRequest:
     paper_ids: tuple[str, ...] = ()
     object_types: tuple[str, ...] = ()
     budget: RetrievalBudget = field(default_factory=RetrievalBudget)
+    version_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.text.strip():
@@ -384,6 +385,7 @@ class RetrievalRequest:
             "text": self.text,
             "channels": list(self.channels),
             "paper_ids": list(self.paper_ids),
+            "version_ids": list(self.version_ids),
             "object_types": list(self.object_types),
             "budget": asdict(self.budget),
         }
@@ -396,6 +398,7 @@ class RetrievalRequest:
             tuple(value.get("paper_ids", ())),
             tuple(value.get("object_types", ())),
             RetrievalBudget(**value.get("budget", {})),
+            tuple(value.get("version_ids", ())),
         )
 
 

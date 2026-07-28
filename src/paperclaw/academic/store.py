@@ -282,6 +282,21 @@ class AcademicObjectStore:
             ).fetchall()
         return tuple(self.get(row["paper_id"], row["version_id"]) for row in rows)
 
+    def deactivate_version(self, paper_id: str, version_id: str) -> None:
+        """Hide a deleted canonical version while retaining its audit payload."""
+
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                """
+                UPDATE academic_parse_manifests_v1
+                SET active=0, status='stale'
+                WHERE paper_id=? AND version_id=? AND active=1
+                """,
+                (paper_id, version_id),
+            )
+            db.commit()
+
     def resolve(self, locator: EvidenceLocator) -> AcademicObject:
         with self._connect() as db:
             row = db.execute(
