@@ -477,3 +477,62 @@ editable/wheel install、PyMuPDF。
 6. 冻结 12 篇验收集；
 7. 未完成 Native Desktop、真实 LLM、blinded labels 和人工审批前，状态保持
    `offline_validated / P0 GO blocked`。
+
+## 11. 2026-07-29 Release Gate 与 Batch 5 进展
+
+### 远端 Release Gate
+
+| 仓库 | 实现 head | CI | 结果 |
+|---|---|---|---|
+| PaperClaw | `1715ced1eebf9f36a394001e27f3ead51712a8a5` | Actions `30392043509` | Windows full pytest、Ubuntu academic extra、Ruff 全绿 |
+| PaperAgent | `7faaabd6989fd92d8eb3b9cbadf30fc73484a5cd` | Actions `30392478189` | Python 3.11/3.12 lint、format、mypy、offline tests 全绿 |
+
+待发布 commit range 使用 Gitleaks 8.30.1 扫描：PaperClaw 34 commits、
+PaperAgent 17 commits，均为 `no leaks found`。受保护的 PaperClaw `data/` 与
+PaperAgent `.venv-paperagent/`、`output/`、`academic/claims.py`、
+`academic/factory.py`、`academic/planner.py` 未进入提交。
+
+clean clone 验证：
+
+- PaperClaw：`python -m build` 成功；Academic/Papers 定向回归 `53 passed`。
+- PaperAgent：`python -m build` 成功；clean source Academic 回归 `25 passed`。
+- 两仓远端 branch SHA 可解析；`academic.v1` schema/golden 本批未修改。
+
+### Batch 5 已实现的 tracer
+
+PaperClaw 新增：
+
+- `AcademicIndexEntry`、`AcademicIndexManifest`、`AcademicObjectIndex`：
+  固定 `academic-object-index.v1`，manifest content hash 覆盖 generation、
+  corpus、encoder fingerprint 与完整 object identity；snapshot 从持久化索引
+  读取并逐 locator fail-closed resolve，重启后保持确定性。
+- `RetrievalService.search`：统一完成 bounded retrieve、canonical object resolve、
+  neighbor expansion、asset byte budget、资产关联与 SHA-256 校验、标准
+  `EvidenceBundle` 输出。
+- service locator/PNG readback 与 restart tracer：`14 passed`（与既有 Academic
+  runtime 定向集合合并运行）。
+
+PaperAgent 新增：
+
+- `PaperClawAcademicEvidenceSource` 优先消费
+  `RetrievalService.search/resolve_locator`，旧 `AcademicRuntime` seam 仅保留短期兼容。
+- 真实 PDF 跨仓 tracer 已改为
+  parse → index → RetrievalService → PaperAgent Evidence Ledger →
+  locator resolve → PNG SHA-256 readback；adapter 定向 `6 passed`，mypy 通过。
+
+### 当前状态与下一步
+
+```text
+第 1～4 步：COMPLETE
+远端 push / CI / clean-clone：COMPLETE
+Batch 5 object-aware manifest：IMPLEMENTED + CI VALIDATED
+Batch 5 Python RetrievalService tracer：IMPLEMENTED + CI VALIDATED
+增量 upsert / 版本删除 / stale index migration：PENDING
+REST/OpenAPI RetrievalService shape：PENDING
+真实论文 Benchmark / 人工验收：PENDING
+P0 Release：NO-GO / PENDING
+```
+
+下一 slice 只继续 Batch 5：增量版本同步、旧版本删除与幽灵结果测试、stale
+schema/index 拒绝、REST/OpenAPI 契约及跨仓 fixture；不提前进入 Query Planner、
+Relation Graph 或 Coding Worker。
