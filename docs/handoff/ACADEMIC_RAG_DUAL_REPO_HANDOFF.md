@@ -47,7 +47,7 @@ git log -1 --format=%H -- docs/handoff/ACADEMIC_RAG_DUAL_REPO_HANDOFF.md
   （基础提交：`bff2df6687173b07ec1388ca348d61ba244384a8`）；
 - PaperAgent 消费提交：`f2e8a72295a6fe6690fd23da93d0b83a69c3fa42`
   （基础提交：`8ba1313f64de3e9e5b325d68d534e4c21b6eb626`）；
-- PaperClaw offline regression：`1063 passed, 27 skipped, 11 deselected`；
+- PaperClaw offline regression：`1064 passed, 27 skipped, 11 deselected`；
 - PaperAgent offline regression：`761 passed, 1 skipped, 12 deselected`；
 - PaperAgent strict mypy：`161 source files / no issues`；
 - 两仓 wheel 与 sdist 构建成功；wheel 内 `academic.v1` schema digest 与第 33 行一致；
