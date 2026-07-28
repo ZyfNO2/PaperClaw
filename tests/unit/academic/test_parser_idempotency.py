@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from pathlib import Path
 import sys
@@ -12,6 +13,7 @@ import pytest
 fitz = pytest.importorskip("fitz")
 
 from paperclaw.academic import AcademicRuntime  # noqa: E402
+from paperclaw.academic.parsers.pymupdf_parser import PyMuPDFParser  # noqa: E402
 from paperclaw.papers import PaperImportRequest, PaperService  # noqa: E402
 from paperclaw.projects import ProjectManifestStore  # noqa: E402
 
@@ -330,3 +332,61 @@ def test_pdf_parser_emits_complete_core_object_vocabulary(
         and cell.locator.bounding_box is not None
         for cell in cells
     )
+
+
+def test_pdf_parser_failure_and_scanned_partial_states(tmp_path: Path) -> None:
+    parser = PyMuPDFParser()
+
+    encrypted_document = fitz.open()
+    encrypted_document.new_page()
+    encrypted = encrypted_document.tobytes(
+        encryption=fitz.PDF_ENCRYPT_AES_256,
+        user_pw="reader",
+        owner_pw="owner",
+    )
+    encrypted_document.close()
+    encrypted_result = parser.parse(
+        encrypted,
+        "pdf",
+        paper_id="encrypted",
+        version_id="encrypted-v1",
+        source_hash=hashlib.sha256(encrypted).hexdigest(),
+        asset_dir=tmp_path / "encrypted-assets",
+    )
+    assert encrypted_result.status == "failed"
+    assert encrypted_result.objects == ()
+    assert encrypted_result.warnings[0].startswith("encrypted_pdf:")
+
+    corrupt = b"%PDF-1.7\nbroken"
+    corrupt_result = parser.parse(
+        corrupt,
+        "pdf",
+        paper_id="corrupt",
+        version_id="corrupt-v1",
+        source_hash=hashlib.sha256(corrupt).hexdigest(),
+        asset_dir=tmp_path / "corrupt-assets",
+    )
+    assert corrupt_result.status == "failed"
+    assert corrupt_result.objects == ()
+
+    scanned_document = fitz.open()
+    scanned_page = scanned_document.new_page(width=200, height=200)
+    raster = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 20, 20), False)
+    raster.clear_with(255)
+    scanned_page.insert_image(fitz.Rect(20, 20, 180, 180), pixmap=raster)
+    scanned = scanned_document.tobytes()
+    scanned_document.close()
+    scanned_result = parser.parse(
+        scanned,
+        "pdf",
+        paper_id="scanned",
+        version_id="scanned-v1",
+        source_hash=hashlib.sha256(scanned).hexdigest(),
+        asset_dir=tmp_path / "scanned-assets",
+    )
+    assert scanned_result.status == "partial"
+    assert {item.object_type for item in scanned_result.objects} == {
+        "document",
+        "page",
+    }
+    assert any("appears scanned" in warning for warning in scanned_result.warnings)
