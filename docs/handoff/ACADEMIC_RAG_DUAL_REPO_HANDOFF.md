@@ -41,6 +41,20 @@ git log -1 --format=%H -- docs/handoff/ACADEMIC_RAG_DUAL_REPO_HANDOFF.md
 - PaperAgent 通过 adapter 消费 canonical `EvidenceBundle` 并转换为自己的
   `AcademicEvidenceLedger`，不读取 PaperClaw 内部存储。
 
+本批次可复算实施证据：
+
+- PaperClaw 实现提交：`6c42f32a170419c78d03d4ce02fd2201aaa3ac93`
+  （基础提交：`bff2df6687173b07ec1388ca348d61ba244384a8`）；
+- PaperAgent 消费提交：`f2e8a72295a6fe6690fd23da93d0b83a69c3fa42`
+  （基础提交：`8ba1313f64de3e9e5b325d68d534e4c21b6eb626`）；
+- PaperClaw offline regression：`1062 passed, 27 skipped, 11 deselected`；
+- PaperAgent offline regression：`761 passed, 1 skipped, 12 deselected`；
+- PaperAgent strict mypy：`161 source files / no issues`；
+- 两仓 wheel 与 sdist 构建成功；wheel 内 `academic.v1` schema digest 与第 33 行一致；
+- 跨仓 tracer 已覆盖真实 PDF import → parse → normalized persistence →
+  canonical `EvidenceBundle` → PaperAgent adapter → locator resolve → PNG asset
+  readback 与 SHA-256 校验。
+
 PaperClaw 是 `academic.v1`、论文版本、解析/索引、Evidence、Artifact 和 Desktop
 的事实源。PaperAgent 是 Query Planning、Evidence Ledger、跨论文推理、
 Academic Tailoring 和科学决策的事实源。PaperAgent 不得直接读取 PaperClaw SQLite、
