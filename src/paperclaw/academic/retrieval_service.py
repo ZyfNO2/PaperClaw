@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Any
 
 from .contracts import (
     AcademicObject,
@@ -13,6 +14,11 @@ from .contracts import (
     RetrievalResult,
 )
 from .runtime import AcademicRuntime
+from .errors import (
+    AcademicIntegrityError,
+    AcademicInvalidBudgetError,
+    AcademicLocatorNotFoundError,
+)
 
 
 @dataclass(frozen=True)
@@ -23,6 +29,13 @@ class GroundedRetrievalHit:
     neighbor_context: tuple[AcademicObject, ...] = ()
     assets: tuple[AssetReference, ...] = ()
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "object": self.object.to_dict(),
+            "neighbor_context": [item.to_dict() for item in self.neighbor_context],
+            "assets": [asdict(item) for item in self.assets],
+        }
+
 
 @dataclass(frozen=True)
 class RetrievalResponse:
@@ -31,6 +44,20 @@ class RetrievalResponse:
     result: RetrievalResult
     bundle: EvidenceBundle
     hits: tuple[GroundedRetrievalHit, ...]
+    asset_bytes_used: int = 0
+    assets_truncated: bool = False
+    text_chars_used: int = 0
+    text_truncated: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "bundle": self.bundle.to_dict(),
+            "hits": [item.to_dict() for item in self.hits],
+            "asset_bytes_used": self.asset_bytes_used,
+            "assets_truncated": self.assets_truncated,
+            "text_chars_used": self.text_chars_used,
+            "text_truncated": self.text_truncated,
+        }
 
 
 class RetrievalService:
@@ -48,9 +75,11 @@ class RetrievalService:
         max_asset_bytes: int,
     ) -> None:
         if include_neighbor_context and not 0 <= neighbor_count <= 5:
-            raise ValueError("neighbor count must be in [0, 5]")
+            raise AcademicInvalidBudgetError("neighbor count must be in [0, 5]")
         if include_assets and not 1 <= max_asset_bytes <= 50 * 1024 * 1024:
-            raise ValueError("asset byte budget must be in [1, 52428800]")
+            raise AcademicInvalidBudgetError(
+                "asset byte budget must be in [1, 52428800]"
+            )
 
     def search(
         self,
@@ -71,6 +100,7 @@ class RetrievalService:
         )
         result = self._runtime.retrieve(request)
         remaining_asset_bytes = max_asset_bytes
+        assets_truncated = False
         hits: list[GroundedRetrievalHit] = []
         for candidate in result.candidates:
             obj = self.resolve_locator(candidate.locator)
@@ -88,6 +118,7 @@ class RetrievalService:
                         .st_size
                     )
                     if size > remaining_asset_bytes:
+                        assets_truncated = True
                         continue
                     # read_asset performs identity, association and hash validation.
                     self._runtime.read_asset(obj.locator, asset.asset_hash)
@@ -95,11 +126,33 @@ class RetrievalService:
                     remaining_asset_bytes -= size
             hits.append(GroundedRetrievalHit(obj, tuple(neighbors), tuple(assets)))
         return RetrievalResponse(
-            result, self._runtime.evidence_bundle(result), tuple(hits)
+            result,
+            self._runtime.evidence_bundle(result),
+            tuple(hits),
+            max_asset_bytes - remaining_asset_bytes if include_assets else 0,
+            assets_truncated,
+            sum(len(candidate.text) for candidate in result.candidates),
+            any(
+                "text truncated by retrieval character budget"
+                in candidate.explanation
+                for candidate in result.candidates
+            ),
         )
 
     def resolve_locator(self, locator: EvidenceLocator) -> AcademicObject:
-        return self._runtime.resolve(locator)
+        try:
+            return self._runtime.resolve(locator)
+        except KeyError as exc:
+            message = str(exc)
+            if "integrity" in message or "hash" in message or "drift" in message:
+                raise AcademicIntegrityError(message) from exc
+            raise AcademicLocatorNotFoundError(message) from exc
 
     def read_asset(self, locator: EvidenceLocator, asset_hash: str) -> bytes:
-        return self._runtime.read_asset(locator, asset_hash)
+        try:
+            return self._runtime.read_asset(locator, asset_hash)
+        except KeyError as exc:
+            message = str(exc)
+            if "integrity" in message or "hash" in message:
+                raise AcademicIntegrityError(message) from exc
+            raise AcademicLocatorNotFoundError(message) from exc

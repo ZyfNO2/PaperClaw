@@ -84,8 +84,16 @@ def create_app(
             default_factory=lambda: ["lexical", "dense", "visual"], max_length=3
         )
         paper_ids: list[str] = Field(default_factory=list, max_length=100)
+        version_ids: list[str] = Field(default_factory=list, max_length=100)
         object_types: list[str] = Field(default_factory=list, max_length=20)
         max_candidates: int = Field(default=10, ge=1, le=100)
+        max_chars: int = Field(default=12_000, ge=1, le=1_000_000)
+        include_neighbors: bool = False
+        neighbor_count: int = Field(default=1, ge=0, le=5)
+        include_assets: bool = False
+        max_asset_bytes: int = Field(
+            default=10 * 1024 * 1024, ge=1, le=50 * 1024 * 1024
+        )
 
     class AcademicResolveBody(BaseModel):
         locator: dict[str, Any]
@@ -93,6 +101,111 @@ def create_app(
     class AcademicAssetBody(BaseModel):
         locator: dict[str, Any]
         asset_hash: str = Field(min_length=64, max_length=64)
+
+    class BoundingBoxWire(BaseModel):
+        x0: float
+        y0: float
+        x1: float
+        y1: float
+
+    class EvidenceLocatorWire(BaseModel):
+        schema_version: str
+        paper_id: str
+        version_id: str
+        object_id: str
+        page_number: int
+        object_type: str
+        source_hash: str
+        section_path: list[str]
+        bounding_box: BoundingBoxWire | None = None
+        paragraph_index: int | None = None
+        line_range: list[int] | None = None
+        table_row: int | None = None
+        table_column: int | None = None
+
+    class AssetReferenceWire(BaseModel):
+        asset_hash: str
+        kind: str
+        media_type: str
+        width_px: int | None = None
+        height_px: int | None = None
+        dpi: int
+
+    class AcademicObjectWire(BaseModel):
+        schema_version: str
+        object_id: str
+        object_type: str
+        reading_order: int
+        locator: EvidenceLocatorWire
+        text: str | None = None
+        assets: list[AssetReferenceWire]
+        structured_content: dict[str, Any]
+        provenance: str
+
+    class RetrievalCandidateWire(BaseModel):
+        locator: EvidenceLocatorWire
+        text: str
+        channel_scores: dict[str, float]
+        fused_score: float
+        explanation: list[str]
+        provenance: str
+
+    class RetrievalTraceWire(BaseModel):
+        trace_id: str
+        request_fingerprint: str
+        index_generation_id: str
+        channels: list[str]
+        model_fingerprints: dict[str, str]
+        rounds_used: dict[str, int]
+        degraded_channels: list[str]
+        stop_reason: str
+
+    class EvidenceBundleWire(BaseModel):
+        schema_version: str
+        bundle_id: str
+        project_id: str
+        query: str
+        candidates: list[RetrievalCandidateWire]
+        sufficiency: str
+        reasons: list[str]
+        trace: RetrievalTraceWire
+
+    class GroundedHitWire(BaseModel):
+        object: AcademicObjectWire
+        neighbor_context: list[AcademicObjectWire]
+        assets: list[AssetReferenceWire]
+
+    class RetrievalResponseWire(BaseModel):
+        bundle: EvidenceBundleWire
+        hits: list[GroundedHitWire]
+        asset_bytes_used: int
+        assets_truncated: bool
+        text_chars_used: int
+        text_truncated: bool
+
+    class AcademicIndexEntryWire(BaseModel):
+        paper_id: str
+        version_id: str
+        source_hash: str
+        object_id: str
+        object_type: str
+        page_number: int
+        reading_order: int
+        locator: EvidenceLocatorWire
+        text_hash: str | None = None
+        asset_hashes: list[str]
+        provenance: str
+        schema_version: str
+        index_version: str
+
+    class AcademicIndexManifestWire(BaseModel):
+        generation_id: str
+        corpus_hash: str
+        model_fingerprint: str
+        entries: list[AcademicIndexEntryWire]
+        content_hash: str
+        schema_version: str
+        index_version: str
 
     app = FastAPI(title="PaperClaw Service API", version="0.19.0")
     app.state.paperclaw_service = service
@@ -157,12 +270,18 @@ def create_app(
         )
 
     def paper_error(exc: Exception) -> HTTPException:
+        from paperclaw.academic.errors import AcademicRetrievalError
         from paperclaw.papers import (
             PaperCapacityError,
             PaperConflictError,
             PaperNotFoundError,
         )
 
+        if isinstance(exc, AcademicRetrievalError):
+            return HTTPException(
+                exc.status_code,
+                detail={"code": exc.code, "message": str(exc)[:500]},
+            )
         if isinstance(exc, PaperNotFoundError):
             return HTTPException(
                 404,
@@ -300,7 +419,10 @@ def create_app(
         except Exception as exc:
             raise paper_error(exc) from exc
 
-    @app.post("/v1/projects/{project_id}/academic/retrieve")
+    @app.post(
+        "/v1/projects/{project_id}/academic/search",
+        response_model=RetrievalResponseWire,
+    )
     def retrieve_academic_evidence(project_id: str, body: AcademicQueryBody):
         from paperclaw.academic import (
             AcademicRuntime,
@@ -308,31 +430,51 @@ def create_app(
             RetrievalRequest,
         )
 
+        from paperclaw.academic.retrieval_service import RetrievalService
+
         resolved = paper_service(project_id)
         try:
             runtime = AcademicRuntime.for_workspace(resolved.workspace, project_id)
-            result = runtime.retrieve(
+            response = RetrievalService(runtime).search(
                 RetrievalRequest(
                     body.query,
                     tuple(body.channels),
                     tuple(body.paper_ids),
                     tuple(body.object_types),
-                    RetrievalBudget(max_candidates=body.max_candidates),
+                    RetrievalBudget(
+                        max_candidates=body.max_candidates,
+                        max_chars=body.max_chars,
+                    ),
+                    tuple(body.version_ids),
                 ),
+                include_assets=body.include_assets,
+                include_neighbor_context=body.include_neighbors,
+                neighbor_count=body.neighbor_count,
+                max_asset_bytes=body.max_asset_bytes,
             )
-            return runtime.evidence_bundle(result).to_dict()
+            return response.to_dict()
         except Exception as exc:
             raise paper_error(exc) from exc
 
-    @app.post("/v1/projects/{project_id}/academic/resolve")
+    @app.post("/v1/projects/{project_id}/academic/retrieve", deprecated=True)
+    def retrieve_academic_evidence_legacy(project_id: str, body: AcademicQueryBody):
+        """One-release compatibility adapter; wire output remains EvidenceBundle."""
+
+        return retrieve_academic_evidence(project_id, body)["bundle"]
+
+    @app.post(
+        "/v1/projects/{project_id}/academic/resolve",
+        response_model=AcademicObjectWire,
+    )
     def resolve_academic_object(project_id: str, body: AcademicResolveBody):
         from paperclaw.academic import AcademicRuntime, EvidenceLocator
+        from paperclaw.academic.retrieval_service import RetrievalService
 
         resolved = paper_service(project_id)
         try:
             runtime = AcademicRuntime.for_workspace(resolved.workspace, project_id)
             locator = EvidenceLocator.from_dict(body.locator)
-            return runtime.resolve(locator).to_dict()
+            return RetrievalService(runtime).resolve_locator(locator).to_dict()
         except Exception as exc:
             raise paper_error(exc) from exc
 
@@ -352,6 +494,26 @@ def create_app(
                     "Cache-Control": "private, immutable",
                 },
             )
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.get(
+        "/v1/projects/{project_id}/academic/index",
+        response_model=AcademicIndexManifestWire,
+    )
+    def inspect_academic_index(project_id: str):
+        from paperclaw.academic import AcademicRuntime
+        from paperclaw.academic.index import AcademicObjectIndex
+
+        resolved = paper_service(project_id)
+        try:
+            manifest = AcademicObjectIndex(
+                AcademicRuntime.for_workspace(resolved.workspace, project_id)
+            ).snapshot()
+            return {
+                **manifest.__dict__,
+                "entries": [entry.to_dict() for entry in manifest.entries],
+            }
         except Exception as exc:
             raise paper_error(exc) from exc
 
@@ -653,6 +815,16 @@ def create_app(
         schema.setdefault("components", {}).setdefault("schemas", {})[
             "AcademicV1Contract"
         ] = contract
+        canonical_components = schema["components"]["schemas"]
+        canonical_components["EvidenceLocatorWire"] = {
+            "$ref": "#/components/schemas/AcademicV1Contract/$defs/evidence_locator"
+        }
+        canonical_components["AcademicObjectWire"] = {
+            "$ref": "#/components/schemas/AcademicV1Contract/$defs/academic_object"
+        }
+        canonical_components["EvidenceBundleWire"] = {
+            "$ref": "#/components/schemas/AcademicV1Contract/$defs/evidence_bundle"
+        }
         response_refs = {
             "/v1/projects/{project_id}/academic/retrieve": "evidence_bundle",
             "/v1/projects/{project_id}/academic/resolve": "academic_object",
