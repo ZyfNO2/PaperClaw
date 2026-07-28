@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
@@ -310,6 +311,17 @@ def test_pdf_parser_emits_complete_core_object_vocabulary(
     for object_type in ("figure", "table", "equation", "algorithm"):
         item = next(value for value in result.objects if value.object_type == object_type)
         assert {asset.kind for asset in item.assets} == {"page", "region"}
+        region = next(asset for asset in item.assets if asset.kind == "region")
+        bbox = item.locator.bounding_box
+        assert bbox is not None
+        assert region.width_px == (
+            math.ceil(bbox.x1 * region.dpi / 72)
+            - math.floor(bbox.x0 * region.dpi / 72)
+        )
+        assert region.height_px == (
+            math.ceil(bbox.y1 * region.dpi / 72)
+            - math.floor(bbox.y0 * region.dpi / 72)
+        )
     cells = [value for value in result.objects if value.object_type == "table_cell"]
     assert cells
     assert all(
