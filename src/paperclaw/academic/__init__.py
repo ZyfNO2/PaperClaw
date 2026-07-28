@@ -20,6 +20,12 @@ from .contracts import (
     RetrievalTrace,
 )
 from .parser import PaperParser
+from .index import (
+    ACADEMIC_INDEX_VERSION,
+    AcademicIndexEntry,
+    AcademicIndexManifest,
+    AcademicObjectIndex,
+)
 from .runtime import AcademicRuntime
 from .retrieval_service import (
     GroundedRetrievalHit,
@@ -30,6 +36,10 @@ from .visual import ColQwen2Encoder, VisualEncoder, late_interaction_score
 
 __all__ = [
     "AcademicLocator",
+    "ACADEMIC_INDEX_VERSION",
+    "AcademicIndexEntry",
+    "AcademicIndexManifest",
+    "AcademicObjectIndex",
     "AcademicObject",
     "AcademicQuery",
     "AcademicRuntime",

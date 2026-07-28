@@ -7,6 +7,7 @@ import pytest
 fitz = pytest.importorskip("fitz")
 
 from paperclaw.academic import AcademicRuntime, RetrievalRequest  # noqa: E402
+from paperclaw.academic.index import AcademicObjectIndex  # noqa: E402
 from paperclaw.academic.retrieval_service import RetrievalService  # noqa: E402
 from paperclaw.papers import PaperImportRequest, PaperService  # noqa: E402
 from paperclaw.projects import ProjectManifestStore  # noqa: E402
@@ -88,3 +89,21 @@ def test_search_rejects_unbounded_asset_requests() -> None:
             neighbor_count=0,
             max_asset_bytes=0,
         )
+
+
+def test_index_manifest_is_object_aware_deterministic_and_restart_safe(
+    tmp_path: Path,
+) -> None:
+    runtime, paper_id = _indexed_runtime(tmp_path)
+    first = AcademicObjectIndex(runtime).snapshot()
+
+    assert first.index_version == "academic-object-index.v1"
+    assert first.entries
+    assert {entry.paper_id for entry in first.entries} == {paper_id}
+    assert all(entry.source_hash and entry.object_type for entry in first.entries)
+    assert any(entry.asset_hashes for entry in first.entries)
+
+    reopened = AcademicRuntime.for_workspace(tmp_path, runtime.project_id)
+    second = AcademicObjectIndex(reopened).snapshot()
+
+    assert second == first
