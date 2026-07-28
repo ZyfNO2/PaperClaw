@@ -100,6 +100,8 @@ def test_normalized_store_rejects_coordinate_drift_and_asset_tampering(
     )
     store.save(result, parse_fingerprint="f" * 64)
     assert store.resolve(item.locator) == item
+    reopened = AcademicObjectStore(database, assets)
+    assert reopened.resolve(item.locator) == item
 
     locator = EvidenceLocator.from_dict(
         {**item.locator.to_dict(), "page_number": 2}
