@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from paperclaw.projects import ProjectManifestStore
-from .contracts import RetrievalRequest
+from .contracts import EvidenceLocator, RetrievalRequest
 from .runtime import AcademicRuntime
 
 
@@ -23,6 +23,11 @@ def main(argv=None) -> int:
     search.add_argument(
         "--channel", action="append", choices=("lexical", "dense", "visual")
     )
+    resolve = commands.add_parser("resolve")
+    resolve.add_argument(
+        "locator",
+        help="academic.v1 EvidenceLocator JSON or path to a JSON file",
+    )
     args = parser.parse_args(argv)
     try:
         root = Path(args.workspace).resolve(strict=True)
@@ -30,18 +35,10 @@ def main(argv=None) -> int:
         runtime = AcademicRuntime.for_workspace(root, manifest.project_id)
         if args.command == "parse":
             result = runtime.parse_paper(args.paper_id)
-            payload = {
-                "manifest_id": result.manifest_id,
-                "status": result.status,
-                "paper_id": result.paper_id,
-                "version_id": result.version_id,
-                "page_count": result.page_count,
-                "object_count": len(result.objects),
-                "warnings": list(result.warnings),
-            }
+            payload = result.to_public_summary()
         elif args.command == "index":
             payload = as_public(runtime.build_index())
-        else:
+        elif args.command == "search":
             result = runtime.retrieve(
                 RetrievalRequest(
                     args.query,
@@ -49,14 +46,17 @@ def main(argv=None) -> int:
                     tuple(args.paper_id),
                 )
             )
-            payload = {
-                "query": result.query,
-                "sufficiency": result.sufficiency,
-                "should_abstain": result.should_abstain,
-                "reasons": list(result.reasons),
-                "trace": result.trace.to_dict() if result.trace else None,
-                "candidates": [item.to_dict() for item in result.candidates],
-            }
+            payload = runtime.evidence_bundle(result).to_dict()
+        else:
+            locator_path = Path(args.locator)
+            try:
+                is_locator_file = locator_path.is_file()
+            except OSError:
+                is_locator_file = False
+            raw_locator = locator_path.read_text(encoding="utf-8") if is_locator_file else args.locator
+            payload = runtime.resolve(
+                EvidenceLocator.from_dict(json.loads(raw_locator))
+            ).to_dict()
     except Exception as exc:
         print(
             json.dumps(

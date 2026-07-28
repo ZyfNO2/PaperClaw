@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from datetime import UTC, datetime
 import hashlib
 import json
 import math
@@ -20,8 +20,12 @@ from .contracts import (
     AcademicLocator,
     AcademicObject,
     AcademicQuery,
+    ArtifactRevision,
     BoundingBox,
+    EvidenceBundle,
     IndexGeneration,
+    MemoryEntrySnapshot,
+    MemorySnapshot,
     ParseResult,
     RetrievalBudget,
     RetrievalCandidate,
@@ -29,8 +33,9 @@ from .contracts import (
     RetrievalResult,
     RetrievalTrace,
 )
-from .fusion import ChannelWeight, DEFAULT_WEIGHTS, weighted_rrf
+from .fusion import DEFAULT_WEIGHTS, weighted_rrf
 from .parser import PaperParser
+from .store import AcademicObjectStore
 from .visual import VisualEncoder, late_interaction_score
 from .text import DenseEncoder
 
@@ -76,6 +81,13 @@ class AcademicRuntime:
             self.workspace / ".paperclaw" / "memory", project_id
         )
         self._init_db()
+        self.object_store = AcademicObjectStore(
+            self.database,
+            self.assets,
+            version_source_hash=lambda paper_id, version_id: self.papers.repository.get_version(
+                self.project_id, paper_id, version_id
+            ).sha256,
+        )
 
     def _register_parser(self, parser: PaperParser) -> None:
         for fmt in parser.supported_formats:
@@ -126,13 +138,9 @@ class AcademicRuntime:
         fingerprint = hashlib.sha256(
             f"{active_parser.fingerprint}:{version.sha256}".encode()
         ).hexdigest()
-        with self._connect() as db:
-            row = db.execute(
-                "SELECT payload FROM parse_manifests WHERE fingerprint=?",
-                (fingerprint,),
-            ).fetchone()
-        if row:
-            return self._parse_result(json.loads(row[0]))
+        existing = self.object_store.get_by_fingerprint(fingerprint)
+        if existing is not None:
+            return existing
         content = self.papers.read_version(
             self.project_id, paper_id, version.version_id
         )
@@ -144,30 +152,14 @@ class AcademicRuntime:
             source_hash=version.sha256,
             asset_dir=self.assets,
         )
-        payload = self._result_dict(result)
-        with self._connect() as db:
-            db.execute(
-                "INSERT INTO parse_manifests VALUES(?,?,?,?,?)",
-                (
-                    result.manifest_id,
-                    paper_id,
-                    version.version_id,
-                    fingerprint,
-                    json.dumps(payload, ensure_ascii=False),
-                ),
-            )
-            db.commit()
+        if result.source_hash != version.sha256:
+            raise ValueError("parser returned a source hash that does not match paper version")
+        self.object_store.save(result, parse_fingerprint=fingerprint)
         return result
 
     def build_index(self) -> IndexGeneration:
-        with self._connect() as db:
-            rows = db.execute(
-                "SELECT payload FROM parse_manifests ORDER BY manifest_id"
-            ).fetchall()
         parsed_objects = [
-            item
-            for row in rows
-            for item in self._parse_result(json.loads(row[0])).objects
+            item for result in self.object_store.list_active() for item in result.objects
         ]
         objects = [
             item
@@ -574,34 +566,20 @@ class AcademicRuntime:
                 "academic locator references a superseded version; "
                 "resolve is fail-closed for non-current versions"
             )
-        result = self.get_parse(locator.paper_id, locator.version_id)
-        for item in result.objects:
-            if (
-                item.object_id == locator.object_id
-                and item.locator.source_hash == locator.source_hash
-            ):
-                return item
-        raise KeyError("academic locator could not be resolved")
+        return self.object_store.resolve(locator)
+
+    def read_asset(self, locator: AcademicLocator, asset_hash: str) -> bytes:
+        # Resolve performs the full current-version and identity checks before
+        # the object store verifies the attached content-addressed asset.
+        self.resolve(locator)
+        return self.object_store.read_asset(locator, asset_hash)
 
     def get_parse(self, paper_id: str, version_id: str) -> ParseResult:
-        with self._connect() as db:
-            row = db.execute(
-                "SELECT payload FROM parse_manifests WHERE paper_id=? AND version_id=? ORDER BY rowid DESC LIMIT 1",
-                (paper_id, version_id),
-            ).fetchone()
-        if not row:
-            raise KeyError("paper version has not been parsed")
-        return self._parse_result(json.loads(row[0]))
+        return self.object_store.get(paper_id, version_id)
 
     def save_evidence_bundle(self, result: RetrievalResult) -> dict[str, object]:
-        payload = {
-            "schema_version": 1,
-            "query": result.query,
-            "sufficiency": result.sufficiency,
-            "reasons": list(result.reasons),
-            "candidates": [item.to_dict() for item in result.candidates],
-            "trace": result.trace.to_dict() if result.trace else None,
-        }
+        bundle = self.evidence_bundle(result)
+        payload = bundle.to_dict()
         store = FileArtifactStore(
             self.root / "product_artifacts", confinement_root=self.workspace
         )
@@ -616,12 +594,49 @@ class AcademicRuntime:
             media_type="application/json",
             source=ArtifactSourceLinks(project_id=self.project_id),
         )
+        canonical = ArtifactRevision(
+            artifact_id=record.artifact_id,
+            revision_id=revision.revision_id,
+            revision_number=revision.revision_number,
+            parent_revision_id=None,
+            state="draft",
+            content_hash=revision.content_hash,
+            byte_length=revision.byte_length,
+            media_type=revision.media_type,
+            evidence=tuple(item.locator for item in result.candidates),
+            created_at=datetime.fromtimestamp(revision.created_at, UTC).isoformat(),
+        )
         return {
-            "artifact_id": record.artifact_id,
+            **canonical.to_dict(),
             "artifact_type": record.artifact_type,
-            "revision_number": revision.revision_number,
             "sufficiency": result.sufficiency,
         }
+
+    def evidence_bundle(self, result: RetrievalResult) -> EvidenceBundle:
+        if result.trace is None:
+            raise ValueError("retrieval result has no trace")
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "project_id": self.project_id,
+                    "query": result.query,
+                    "trace_id": result.trace.trace_id,
+                    "locators": [
+                        item.locator.to_dict() for item in result.candidates
+                    ],
+                },
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        return EvidenceBundle(
+            bundle_id=f"evidence-{fingerprint}",
+            project_id=self.project_id,
+            query=result.query,
+            candidates=result.candidates,
+            sufficiency=result.sufficiency,
+            reasons=result.reasons,
+            trace=result.trace,
+        )
 
     def _active_model_fingerprint(self) -> str:
         with self._connect() as db:
@@ -690,11 +705,44 @@ class AcademicRuntime:
 
     def memory_snapshot(self) -> dict[str, object]:
         snapshot = self.memory.snapshot()
-        return {
-            "fingerprint": snapshot.fingerprint,
-            "project": [entry.content for entry in snapshot.memory_entries],
-            "user": [entry.content for entry in snapshot.user_entries],
-        }
+        entries = tuple(
+            MemoryEntrySnapshot(
+                entry.entry_id,
+                scope,
+                entry.category,
+                entry.content,
+                entry.content_hash,
+                entry.updated_at,
+            )
+            for scope, collection in (
+                ("project", snapshot.memory_entries),
+                ("user", snapshot.user_entries),
+            )
+            for entry in collection
+        )
+        canonical = MemorySnapshot(
+            project_id=self.project_id,
+            entries=entries,
+            used_chars={
+                "project": snapshot.memory_used_chars,
+                "user": snapshot.user_used_chars,
+                "task": 0,
+            },
+            limit_chars={
+                "project": snapshot.memory_limit_chars,
+                "user": snapshot.user_limit_chars,
+                "task": 0,
+            },
+            fingerprint=snapshot.fingerprint,
+            generated_at=datetime.now(UTC).isoformat(),
+        ).to_dict()
+        # Deprecated convenience projections retained for the 0.43 Python
+        # interface; REST/CLI/Desktop use the canonical entries collection.
+        canonical["project"] = [
+            entry.content for entry in snapshot.memory_entries
+        ]
+        canonical["user"] = [entry.content for entry in snapshot.user_entries]
+        return canonical
 
     def _init_db(self):
         with self._connect() as db:
@@ -713,28 +761,18 @@ class AcademicRuntime:
         return connection
 
     def _result_dict(self, result):
-        return {
-            **asdict(result),
-            "objects": [item.to_dict() for item in result.objects],
-        }
+        return result.to_dict()
 
     def _parse_result(self, payload):
-        objects = tuple(
-            AcademicObject(
-                item["object_id"],
-                item["object_type"],
-                item["reading_order"],
-                _locator(item["locator"]),
-                item.get("text"),
-                item.get("asset_hash"),
-                item.get("provenance", "extracted"),
-            )
-            for item in payload["objects"]
-        )
+        objects = tuple(AcademicObject.from_dict(item) for item in payload["objects"])
+        source_hash = payload.get("source_hash")
+        if source_hash is None and objects:
+            source_hash = objects[0].locator.source_hash
         return ParseResult(
             payload["manifest_id"],
             payload["paper_id"],
             payload["version_id"],
+            source_hash,
             payload["parser_name"],
             payload["parser_version"],
             payload["parser_fingerprint"],
@@ -746,22 +784,7 @@ class AcademicRuntime:
 
 
 def _locator(value):
-    bbox = BoundingBox(**value["bounding_box"]) if value.get("bounding_box") else None
-    line_range = tuple(value["line_range"]) if value.get("line_range") else None
-    return AcademicLocator(
-        value["paper_id"],
-        value["version_id"],
-        value["object_id"],
-        value["page_number"],
-        value["object_type"],
-        value["source_hash"],
-        tuple(value.get("section_path", ())),
-        bbox,
-        value.get("paragraph_index"),
-        line_range,
-        value.get("table_row"),
-        value.get("table_column"),
-    )
+    return AcademicLocator.from_dict(value)
 
 
 def _tokens(text):

@@ -106,6 +106,40 @@ class PaperService:
             raise ValueError("paper_id is required")
         return self.repository.get_paper(project_id, paper_id)
 
+    def canonical_record(self, project_id: str, paper_id: str) -> object:
+        """Return the sole cross-repository ``academic.v1`` paper contract."""
+
+        from paperclaw.academic.contracts import (
+            PaperRecord as AcademicPaperRecord,
+            PaperVersion as AcademicPaperVersion,
+        )
+
+        paper = self.get_paper(project_id, paper_id)
+        version = self.repository.get_version(
+            project_id, paper_id, paper.current_version_id
+        )
+        return AcademicPaperRecord(
+            paper_id=paper.paper_id,
+            project_id=paper.project_id,
+            current_version=AcademicPaperVersion(
+                version_id=version.version_id,
+                version_number=version.version_number,
+                source_hash=version.sha256,
+                format=version.format,
+                original_filename=version.original_filename,
+                byte_length=version.byte_length,
+                created_at=version.created_at,
+            ),
+            metadata=paper.metadata.to_dict(),
+            metadata_revision=paper.metadata_revision,
+            source={
+                "kind": "local_import",
+                "filename": version.original_filename,
+            },
+            created_at=paper.created_at,
+            updated_at=paper.updated_at,
+        )
+
     def list_versions(self, project_id: str, paper_id: str) -> tuple[PaperVersion, ...]:
         self._project(project_id)
         return self.repository.list_versions(project_id, paper_id)

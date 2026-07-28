@@ -13,7 +13,7 @@ from paperclaw.artifacts import (
 )
 from paperclaw.capabilities import default_capability_catalog
 from paperclaw.papers import MetadataPatch, PaperImportRequest, PaperService
-from paperclaw.academic import AcademicQuery, AcademicRuntime
+from paperclaw.academic import AcademicQuery, AcademicRuntime, EvidenceLocator
 from paperclaw.projects import (
     ProjectKnowledgeRuntime,
     ProjectManifestStore,
@@ -46,16 +46,7 @@ class DesktopProductService:
         return self._public(
             {
                 "ok": True,
-                "parse": {
-                    "manifest_id": result.manifest_id,
-                    "status": result.status,
-                    "page_count": result.page_count,
-                    "object_count": len(result.objects),
-                    "object_types": sorted(
-                        {item.object_type for item in result.objects}
-                    ),
-                    "warnings": list(result.warnings),
-                },
+                "parse": result.to_public_summary(),
             }
         )
 
@@ -90,13 +81,7 @@ class DesktopProductService:
         return self._public(
             {
                 "ok": True,
-                "result": {
-                    "query": result.query,
-                    "sufficiency": result.sufficiency,
-                    "should_abstain": result.should_abstain,
-                    "trace": result.trace.to_dict() if result.trace else None,
-                    "candidates": [item.to_dict() for item in result.candidates],
-                },
+                "result": runtime.evidence_bundle(result).to_dict(),
             }
         )
 
@@ -119,7 +104,30 @@ class DesktopProductService:
             raise DesktopPublicError(
                 "paper_import_failed", self._bounded(str(exc), 500)
             ) from exc
-        return self._public({"ok": True, "result": result.to_public_dict()})
+        return self._public(
+            {
+                "ok": True,
+                "result": {
+                    "paper": service.canonical_record(
+                        project_id, result.paper.paper_id
+                    ).to_dict(),
+                    "created": result.created,
+                    "warnings": list(result.warnings),
+                },
+            }
+        )
+
+    def resolve_academic(
+        self, workspace: str, locator: Mapping[str, Any]
+    ) -> dict[str, object]:
+        runtime, _ = self._academic_runtime(workspace)
+        try:
+            item = runtime.resolve(EvidenceLocator.from_dict(locator))
+        except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise DesktopPublicError(
+                "academic_resolve_failed", self._bounded(str(exc), 500)
+            ) from exc
+        return self._public({"ok": True, "result": item.to_dict()})
 
     def list_papers(self, workspace: str, limit: int = 50) -> dict[str, object]:
         service, project_id = self._paper_service(workspace)
@@ -130,7 +138,13 @@ class DesktopProductService:
                 "paper_list_failed", self._bounded(str(exc), 500)
             ) from exc
         return self._public(
-            {"ok": True, "papers": [item.to_public_dict() for item in papers]}
+            {
+                "ok": True,
+                "papers": [
+                    service.canonical_record(project_id, item.paper_id).to_dict()
+                    for item in papers
+                ],
+            }
         )
 
     def get_paper(self, workspace: str, paper_id: str) -> dict[str, object]:
@@ -139,7 +153,12 @@ class DesktopProductService:
             paper = service.get_paper(project_id, paper_id)
         except (KeyError, OSError, RuntimeError, ValueError) as exc:
             raise DesktopPublicError("paper_not_found", "Paper was not found.") from exc
-        return self._public({"ok": True, "paper": paper.to_public_dict()})
+        return self._public(
+            {
+                "ok": True,
+                "paper": service.canonical_record(project_id, paper.paper_id).to_dict(),
+            }
+        )
 
     def list_paper_versions(self, workspace: str, paper_id: str) -> dict[str, object]:
         service, project_id = self._paper_service(workspace)
@@ -187,7 +206,12 @@ class DesktopProductService:
             raise DesktopPublicError(
                 "paper_metadata_failed", self._bounded(str(exc), 500)
             ) from exc
-        return self._public({"ok": True, "paper": paper.to_public_dict()})
+        return self._public(
+            {
+                "ok": True,
+                "paper": service.canonical_record(project_id, paper.paper_id).to_dict(),
+            }
+        )
 
     def _paper_service(self, workspace: str) -> tuple[PaperService, str]:
         root = self._workspace(workspace)

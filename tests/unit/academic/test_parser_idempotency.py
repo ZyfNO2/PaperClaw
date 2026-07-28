@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
 fitz = pytest.importorskip("fitz")
 
-from paperclaw.academic import AcademicRuntime
-from paperclaw.papers import PaperImportRequest, PaperService
-from paperclaw.projects import ProjectManifestStore
+from paperclaw.academic import AcademicRuntime  # noqa: E402
+from paperclaw.papers import PaperImportRequest, PaperService  # noqa: E402
+from paperclaw.projects import ProjectManifestStore  # noqa: E402
 
 
 def _make_pdf(tmp_path: Path, text: str = "Hello World") -> Path:
@@ -100,6 +102,12 @@ def test_markdown_parser_produces_sections_and_paragraphs(
     assert "section" in types
     assert "paragraph" in types
     assert "algorithm" in types
+    paragraphs = [item for item in result.objects if item.object_type == "paragraph"]
+    assert all(
+        item.locator.line_range is not None
+        and item.locator.line_range[1] >= item.locator.line_range[0]
+        for item in paragraphs
+    )
     assert result.status == "ready"
 
 
@@ -120,6 +128,7 @@ E = mc^2
 \begin{table}
 \caption{A table}
 \end{table}
+See \cite{ref1}.
 \bibitem{ref1} Author 2020
 \end{document}
 """,
@@ -133,6 +142,12 @@ E = mc^2
     assert "figure" in types
     assert "table" in types
     assert "reference" in types
+    assert "citation" in types
+    assert [item.reading_order for item in result.objects] == sorted(
+        item.reading_order for item in result.objects
+    )
+    equation = next(item for item in result.objects if item.object_type == "equation")
+    assert equation.locator.section_path == ("Introduction",)
     assert result.status == "ready"
 
 
@@ -145,3 +160,66 @@ def test_text_parser_produces_paragraphs(workspace: tuple) -> None:
     types = {o.object_type for o in result.objects}
     assert "paragraph" in types
     assert result.status == "ready"
+
+
+def test_docling_adapter_normalizes_items_and_keeps_page_assets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from paperclaw.academic.parsers.docling_parser import DoclingParser
+
+    pdf = _make_pdf(tmp_path)
+    content = pdf.read_bytes()
+
+    class FakeDocumentStream:
+        def __init__(self, **values):
+            self.values = values
+
+    class FakeBox:
+        l = 40.0  # noqa: E741 - mirrors Docling's bounding-box API
+        t = 40.0
+        r = 220.0
+        b = 80.0
+
+        def to_top_left_origin(self, *, page_height):
+            assert page_height == 300.0
+            return self
+
+    item = SimpleNamespace(
+        label="section_header",
+        text="Introduction",
+        prov=(SimpleNamespace(page_no=1, bbox=FakeBox()),),
+    )
+    fake_document = SimpleNamespace(
+        pages={1: SimpleNamespace(size=SimpleNamespace(height=300.0))},
+        iterate_items=lambda: iter(((item, 1),)),
+    )
+
+    class FakeConverter:
+        def convert(self, source):
+            assert source.values["name"] == "paper.pdf"
+            return SimpleNamespace(document=fake_document)
+
+    docling = ModuleType("docling")
+    datamodel = ModuleType("docling.datamodel")
+    base_models = ModuleType("docling.datamodel.base_models")
+    converter = ModuleType("docling.document_converter")
+    base_models.DocumentStream = FakeDocumentStream
+    converter.DocumentConverter = FakeConverter
+    monkeypatch.setitem(sys.modules, "docling", docling)
+    monkeypatch.setitem(sys.modules, "docling.datamodel", datamodel)
+    monkeypatch.setitem(sys.modules, "docling.datamodel.base_models", base_models)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", converter)
+
+    result = DoclingParser().parse(
+        content,
+        "pdf",
+        paper_id="paper-1",
+        version_id="version-1",
+        source_hash="a" * 64,
+        asset_dir=tmp_path / "assets",
+    )
+    section = next(value for value in result.objects if value.object_type == "section")
+    page = next(value for value in result.objects if value.object_type == "page")
+    assert section.locator.bounding_box is not None
+    assert section.locator.section_path == ("Introduction",)
+    assert page.assets and page.assets[0].kind == "page"

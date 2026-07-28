@@ -43,18 +43,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = ProjectManifestStore(workspace).load()
         service = PaperService.for_workspace(workspace, project_id=manifest.project_id)
         if args.command == "import":
-            payload = service.import_paper(
+            imported = service.import_paper(
                 PaperImportRequest(manifest.project_id, args.source, paper_id=args.paper_id)
-            ).to_public_dict()
+            )
+            payload = {
+                "paper": service.canonical_record(
+                    manifest.project_id, imported.paper.paper_id
+                ).to_dict(),
+                "created": imported.created,
+                "warnings": list(imported.warnings),
+            }
         elif args.command == "list":
             payload = {
                 "papers": [
-                    paper.to_public_dict()
+                    service.canonical_record(
+                        manifest.project_id, paper.paper_id
+                    ).to_dict()
                     for paper in service.list_papers(manifest.project_id, limit=args.limit)
                 ]
             }
         elif args.command == "show":
-            payload = service.get_paper(manifest.project_id, args.paper_id).to_public_dict()
+            payload = service.canonical_record(
+                manifest.project_id, args.paper_id
+            ).to_dict()
         elif args.command == "versions":
             payload = {
                 "versions": [
@@ -71,9 +82,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arxiv_id=args.arxiv_id,
                 language=args.language,
             )
-            payload = service.confirm_metadata(
+            updated = service.confirm_metadata(
                 manifest.project_id, args.paper_id, patch, args.expected_revision
-            ).to_public_dict()
+            )
+            payload = service.canonical_record(
+                manifest.project_id, updated.paper_id
+            ).to_dict()
     except (FileNotFoundError, ValueError, PaperNotFoundError, PaperConflictError) as exc:
         print(json.dumps({"ok": False, "error": type(exc).__name__, "message": str(exc)[:500]}))
         return 2

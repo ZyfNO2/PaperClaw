@@ -6,16 +6,16 @@ import pytest
 
 fitz = pytest.importorskip("fitz")
 
-from paperclaw.academic import (
+from paperclaw.academic import (  # noqa: E402
     AcademicQuery,
     AcademicRuntime,
     BoundingBox,
     RetrievalBudget,
     RetrievalRequest,
 )
-from paperclaw.papers import PaperImportRequest, PaperService
-from paperclaw.projects import ProjectManifestStore
-from paperclaw.academic.runtime import _safe_bbox
+from paperclaw.papers import PaperImportRequest, PaperService  # noqa: E402
+from paperclaw.projects import ProjectManifestStore  # noqa: E402
+from paperclaw.academic.runtime import _safe_bbox  # noqa: E402
 
 
 class _FakeVisualEncoder:
@@ -86,6 +86,22 @@ def test_parse_index_retrieve_resolve_and_evidence_bundle(tmp_path: Path) -> Non
     )
     runtime.remember("project", "Use page-level evidence for figure questions.")
     assert "page-level evidence" in runtime.memory_snapshot()["project"][0]
+
+
+def test_page_and_region_assets_are_content_addressed_and_resolvable(
+    tmp_path: Path,
+) -> None:
+    runtime, paper_id = _runtime(tmp_path)
+    parsed = runtime.parse_paper(paper_id)
+    page = next(item for item in parsed.objects if item.object_type == "page")
+    figure = next(item for item in parsed.objects if item.object_type == "figure")
+
+    assert [asset.kind for asset in page.assets] == ["page"]
+    assert {asset.kind for asset in figure.assets} == {"page", "region"}
+    assert all(asset.width_px and asset.height_px for asset in figure.assets)
+    assert runtime.resolve(figure.locator) == figure
+    for asset in figure.assets:
+        assert runtime.object_store.asset_path(asset.asset_hash).is_file()
 
 
 def test_parser_revision_and_index_generation_are_idempotent(tmp_path: Path) -> None:

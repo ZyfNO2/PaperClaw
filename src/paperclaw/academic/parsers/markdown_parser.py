@@ -63,6 +63,7 @@ class MarkdownParser:
             nonlocal order, paragraph_lines, paragraph_start
             if not paragraph_lines:
                 return
+            paragraph_line_count = len(paragraph_lines)
             body = "\n".join(paragraph_lines).strip()
             paragraph_lines = []
             if not body:
@@ -77,7 +78,10 @@ class MarkdownParser:
                 "paragraph",
                 source_hash,
                 tuple(headings),
-                line_range=(paragraph_start, paragraph_start + len(paragraph_lines)),
+                line_range=(
+                    paragraph_start,
+                    paragraph_start + paragraph_line_count - 1,
+                ),
             )
             objects.append(
                 AcademicObject(object_id, "paragraph", order, locator, text=body)
@@ -192,6 +196,7 @@ class MarkdownParser:
             f"parse-{fingerprint}",
             paper_id,
             version_id,
+            source_hash,
             _PARSER_NAME,
             _PARSER_VERSION,
             fingerprint,

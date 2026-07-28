@@ -26,6 +26,21 @@ git log -1 --format=%H -- docs/handoff/ACADEMIC_RAG_DUAL_REPO_HANDOFF.md
 若本文与旧 roadmap、SOP 或 handoff 冲突，以远端代码、最新可复算测试证据、
 当前 SOP hard Gate 和本文未完成项为准。
 
+### 2026-07-28 Academic v1 基础层收口
+
+- PaperClaw 冻结 `PaperRecord`、`AcademicObject`、`EvidenceLocator`、
+  `EvidenceBundle`、`MemorySnapshot`、`ArtifactRevision` 六项 canonical contract；
+- schema SHA-256：`62c3c6bbde000023a95025fdcae53c777fac479ddc9da02a63ea293b0855d2e0`；
+- golden SHA-256：`5f8b3b999de2139c6e328966086043663a3012a068636061971926b979ea647d`；
+- `AcademicLocator` 仅作为一个发布周期的 Python alias，wire 统一为
+  `EvidenceLocator`；
+- parse manifest、object、relation、asset reference 已进入规范化事务存储；
+  legacy 0.43 manifest 只在 identity 可验证时 backfill；
+- page/region asset 使用 SHA-256 content addressing，resolve 核验版本、完整 locator
+  与资产内容；
+- PaperAgent 通过 adapter 消费 canonical `EvidenceBundle` 并转换为自己的
+  `AcademicEvidenceLedger`，不读取 PaperClaw 内部存储。
+
 PaperClaw 是 `academic.v1`、论文版本、解析/索引、Evidence、Artifact 和 Desktop
 的事实源。PaperAgent 是 Query Planning、Evidence Ledger、跨论文推理、
 Academic Tailoring 和科学决策的事实源。PaperAgent 不得直接读取 PaperClaw SQLite、

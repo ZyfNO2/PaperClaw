@@ -42,4 +42,7 @@ def test_desktop_academic_parse_index_and_retrieve(tmp_path) -> None:
     assert parsed["parse"]["page_count"] == 1
     assert service.build_academic_index(str(tmp_path))["index"]["state"] == "ready"
     result = service.retrieve_academic(str(tmp_path), "crack width")
-    assert result["result"]["candidates"][0]["locator"]["paper_id"] == paper_id
+    locator = result["result"]["candidates"][0]["locator"]
+    assert locator["paper_id"] == paper_id
+    resolved = service.resolve_academic(str(tmp_path), locator)
+    assert resolved["result"]["object_id"] == locator["object_id"]

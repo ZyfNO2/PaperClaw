@@ -4,6 +4,7 @@ Import this module only when the optional ``service`` dependencies are installed
 """
 
 import asyncio
+from importlib.resources import files
 import json
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,7 @@ def create_app(
     paper_workspace_roots: list[str | Path] | tuple[str | Path, ...] = (),
 ) -> Any:
     try:
-        from fastapi import FastAPI, Header, HTTPException, Request
+        from fastapi import FastAPI, Header, HTTPException, Request, Response
         from fastapi.responses import StreamingResponse
         from pydantic import BaseModel, Field
     except ImportError as exc:  # pragma: no cover - depends on optional install
@@ -85,6 +86,13 @@ def create_app(
         paper_ids: list[str] = Field(default_factory=list, max_length=100)
         object_types: list[str] = Field(default_factory=list, max_length=20)
         max_candidates: int = Field(default=10, ge=1, le=100)
+
+    class AcademicResolveBody(BaseModel):
+        locator: dict[str, Any]
+
+    class AcademicAssetBody(BaseModel):
+        locator: dict[str, Any]
+        asset_hash: str = Field(min_length=64, max_length=64)
 
     app = FastAPI(title="PaperClaw Service API", version="0.19.0")
     app.state.paperclaw_service = service
@@ -191,9 +199,16 @@ def create_app(
 
         resolved = paper_service(project_id, body.source_path)
         try:
-            return resolved.import_paper(
+            imported = resolved.import_paper(
                 PaperImportRequest(project_id, body.source_path, paper_id=body.paper_id)
-            ).to_public_dict()
+            )
+            return {
+                "paper": resolved.canonical_record(
+                    project_id, imported.paper.paper_id
+                ).to_dict(),
+                "created": imported.created,
+                "warnings": list(imported.warnings),
+            }
         except Exception as exc:
             raise paper_error(exc) from exc
 
@@ -203,7 +218,7 @@ def create_app(
         try:
             return {
                 "papers": [
-                    item.to_public_dict()
+                    resolved.canonical_record(project_id, item.paper_id).to_dict()
                     for item in resolved.list_papers(project_id, cursor, limit)
                 ]
             }
@@ -214,7 +229,7 @@ def create_app(
     def get_paper(project_id: str, paper_id: str):
         resolved = paper_service(project_id)
         try:
-            return resolved.get_paper(project_id, paper_id).to_public_dict()
+            return resolved.canonical_record(project_id, paper_id).to_dict()
         except Exception as exc:
             raise paper_error(exc) from exc
 
@@ -237,7 +252,7 @@ def create_app(
 
         resolved = paper_service(project_id)
         try:
-            return resolved.confirm_metadata(
+            updated = resolved.confirm_metadata(
                 project_id,
                 paper_id,
                 MetadataPatch(
@@ -249,7 +264,8 @@ def create_app(
                     language=body.language,
                 ),
                 body.expected_revision,
-            ).to_public_dict()
+            )
+            return resolved.canonical_record(project_id, updated.paper_id).to_dict()
         except Exception as exc:
             raise paper_error(exc) from exc
 
@@ -262,16 +278,7 @@ def create_app(
             result = AcademicRuntime.for_workspace(
                 resolved.workspace, project_id
             ).parse_paper(paper_id)
-            return {
-                "manifest_id": result.manifest_id,
-                "status": result.status,
-                "paper_id": result.paper_id,
-                "version_id": result.version_id,
-                "page_count": result.page_count,
-                "object_count": len(result.objects),
-                "object_types": sorted({item.object_type for item in result.objects}),
-                "warnings": list(result.warnings),
-            }
+            return result.to_public_summary()
         except Exception as exc:
             raise paper_error(exc) from exc
 
@@ -313,14 +320,38 @@ def create_app(
                     RetrievalBudget(max_candidates=body.max_candidates),
                 ),
             )
-            return {
-                "query": result.query,
-                "sufficiency": result.sufficiency,
-                "should_abstain": result.should_abstain,
-                "reasons": list(result.reasons),
-                "trace": result.trace.to_dict() if result.trace else None,
-                "candidates": [item.to_dict() for item in result.candidates],
-            }
+            return runtime.evidence_bundle(result).to_dict()
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.post("/v1/projects/{project_id}/academic/resolve")
+    def resolve_academic_object(project_id: str, body: AcademicResolveBody):
+        from paperclaw.academic import AcademicRuntime, EvidenceLocator
+
+        resolved = paper_service(project_id)
+        try:
+            runtime = AcademicRuntime.for_workspace(resolved.workspace, project_id)
+            locator = EvidenceLocator.from_dict(body.locator)
+            return runtime.resolve(locator).to_dict()
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.post("/v1/projects/{project_id}/academic/asset")
+    def read_academic_asset(project_id: str, body: AcademicAssetBody):
+        from paperclaw.academic import AcademicRuntime, EvidenceLocator
+
+        resolved = paper_service(project_id)
+        try:
+            runtime = AcademicRuntime.for_workspace(resolved.workspace, project_id)
+            locator = EvidenceLocator.from_dict(body.locator)
+            return Response(
+                content=runtime.read_asset(locator, body.asset_hash),
+                media_type="image/png",
+                headers={
+                    "ETag": f'"{body.asset_hash}"',
+                    "Cache-Control": "private, immutable",
+                },
+            )
         except Exception as exc:
             raise paper_error(exc) from exc
 
@@ -594,5 +625,49 @@ def create_app(
                     "X-Accel-Buffering": "no",
                 },
             )
+
+    @app.get("/v1/contracts/academic.v1")
+    def get_academic_v1_contract():
+        return json.loads(
+            files("paperclaw.academic")
+            .joinpath("schemas/academic.v1.schema.json")
+            .read_text(encoding="utf-8")
+        )
+
+    default_openapi = app.openapi
+
+    def academic_openapi():
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = default_openapi()
+        schema["x-paperclaw-academic-contract"] = {
+            "schema_version": "academic.v1",
+            "schema_path": "/v1/contracts/academic.v1",
+            "owner": "PaperClaw",
+        }
+        contract = json.loads(
+            files("paperclaw.academic")
+            .joinpath("schemas/academic.v1.schema.json")
+            .read_text(encoding="utf-8")
+        )
+        schema.setdefault("components", {}).setdefault("schemas", {})[
+            "AcademicV1Contract"
+        ] = contract
+        response_refs = {
+            "/v1/projects/{project_id}/academic/retrieve": "evidence_bundle",
+            "/v1/projects/{project_id}/academic/resolve": "academic_object",
+        }
+        for path, definition in response_refs.items():
+            operation = schema["paths"][path]["post"]
+            operation["responses"]["200"]["content"]["application/json"]["schema"] = {
+                "$ref": (
+                    "#/components/schemas/AcademicV1Contract/"
+                    f"$defs/{definition}"
+                )
+            }
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = academic_openapi
 
     return app
