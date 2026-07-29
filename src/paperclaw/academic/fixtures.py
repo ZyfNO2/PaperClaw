@@ -20,6 +20,7 @@ _IDENTITY_KEYS = {
     "content_hash",
     "corpus_hash",
     "request_fingerprint",
+    "model_fingerprint",
 }
 
 

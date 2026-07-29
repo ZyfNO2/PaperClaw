@@ -60,7 +60,10 @@ def test_rest_import_query_and_metadata_conflict(tmp_path) -> None:
     assert body["paper"]["current_version"]["source_hash"]
     assert ".paperclaw" not in json.dumps(body)
 
-    assert client.get("/v1/projects/demo/papers").json()["papers"][0]["paper_id"] == paper_id
+    assert (
+        client.get("/v1/projects/demo/papers").json()["papers"][0]["paper_id"]
+        == paper_id
+    )
     confirmed = client.patch(
         f"/v1/projects/demo/papers/{paper_id}/metadata",
         json={"expected_revision": 1, "title": "Confirmed"},
@@ -86,8 +89,9 @@ def test_openapi_and_contract_endpoint_publish_academic_v1(tmp_path) -> None:
         "owner": "PaperClaw",
     }
     assert (
-        openapi["paths"]["/v1/projects/{project_id}/academic/retrieve"]["post"]
-        ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+        openapi["paths"]["/v1/projects/{project_id}/academic/retrieve"]["post"][
+            "responses"
+        ]["200"]["content"]["application/json"]["schema"]["$ref"]
         == "#/components/schemas/AcademicV1Contract/$defs/evidence_bundle"
     )
     assert (
@@ -95,26 +99,27 @@ def test_openapi_and_contract_endpoint_publish_academic_v1(tmp_path) -> None:
         == "#/components/schemas/AcademicV1Contract/$defs/evidence_bundle"
     )
     assert (
-        openapi["paths"]["/v1/projects/{project_id}/academic/search"]["post"]
-        ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+        openapi["paths"]["/v1/projects/{project_id}/academic/search"]["post"][
+            "responses"
+        ]["200"]["content"]["application/json"]["schema"]["$ref"]
         == "#/components/schemas/RetrievalResponseWire"
     )
     assert (
-        openapi["paths"]["/v1/projects/{project_id}/academic/resolve"]["post"]
-        ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+        openapi["paths"]["/v1/projects/{project_id}/academic/resolve"]["post"][
+            "responses"
+        ]["200"]["content"]["application/json"]["schema"]["$ref"]
         == "#/components/schemas/AcademicV1Contract/$defs/academic_object"
     )
     assert (
-        openapi["paths"]["/v1/projects/{project_id}/papers/{paper_id}"]["get"]
-        ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+        openapi["paths"]["/v1/projects/{project_id}/papers/{paper_id}"]["get"][
+            "responses"
+        ]["200"]["content"]["application/json"]["schema"]["$ref"]
         == "#/components/schemas/AcademicV1Contract/$defs/paper_record"
     )
     assert (
-        openapi["paths"][
-            "/v1/projects/{project_id}/papers/{paper_id}/metadata"
-        ]["patch"]["responses"]["200"]["content"]["application/json"]["schema"][
-            "$ref"
-        ]
+        openapi["paths"]["/v1/projects/{project_id}/papers/{paper_id}/metadata"][
+            "patch"
+        ]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
         == "#/components/schemas/AcademicV1Contract/$defs/paper_record"
     )
 
@@ -218,7 +223,13 @@ def test_rest_parse_resolve_and_asset_readback_use_canonical_locator(tmp_path) -
         },
     )
     assert fixture_response.status_code == 200
+    assert fixture_response.json()["index_metadata"]["schema_version"] == "academic.v1"
+    assert (
+        fixture_response.json()["index_metadata"]["generation_id"]
+        == fixture_response.json()["bundle"]["trace"]["index_generation_id"]
+    )
     actual_fixture = canonical_fixture_bytes(fixture_response.json())
+    assert b'"index_metadata"' in actual_fixture
     if os.getenv("PAPERCLAW_UPDATE_ACADEMIC_FIXTURES") == "1":
         fixture.parent.mkdir(parents=True, exist_ok=True)
         fixture.write_bytes(actual_fixture)
