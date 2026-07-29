@@ -12,6 +12,7 @@ from .errors import (
     AcademicFingerprintMismatchError,
     AcademicIndexNotReadyError,
     AcademicIntegrityError,
+    AcademicRetrievalError,
     AcademicStaleIndexError,
     AcademicStaleSchemaError,
 )
@@ -170,7 +171,12 @@ class AcademicObjectIndex:
         self._runtime = runtime
 
     def rebuild(self) -> AcademicIndexManifest:
-        self._runtime.build_index()
+        try:
+            self.snapshot()
+        except AcademicRetrievalError:
+            self._runtime.build_index(force_new_generation=True)
+        else:
+            self._runtime.build_index()
         return self.snapshot()
 
     def sync_version(self, paper_id: str, version_id: str) -> AcademicIndexManifest:
@@ -202,9 +208,7 @@ class AcademicObjectIndex:
                 """
             ).fetchone()
             if generation is None or generation["state"] != "ready":
-                raise AcademicIndexNotReadyError(
-                    "academic object index is not ready"
-                )
+                raise AcademicIndexNotReadyError("academic object index is not ready")
             locator_rows = db.execute(
                 """
                 SELECT locator_json FROM academic_index WHERE generation_id=?

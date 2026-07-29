@@ -14,6 +14,7 @@ from .contracts import (
     RetrievalResult,
 )
 from .runtime import AcademicRuntime
+from .index import ACADEMIC_INDEX_VERSION, ACADEMIC_SCHEMA_VERSION, AcademicObjectIndex
 from .errors import (
     AcademicIntegrityError,
     AcademicInvalidBudgetError,
@@ -48,6 +49,7 @@ class RetrievalResponse:
     assets_truncated: bool = False
     text_chars_used: int = 0
     text_truncated: bool = False
+    index_metadata: dict[str, str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,6 +59,7 @@ class RetrievalResponse:
             "assets_truncated": self.assets_truncated,
             "text_chars_used": self.text_chars_used,
             "text_truncated": self.text_truncated,
+            "index_metadata": self.index_metadata or {},
         }
 
 
@@ -99,6 +102,7 @@ class RetrievalService:
             max_asset_bytes=max_asset_bytes,
         )
         result = self._runtime.retrieve(request)
+        manifest = AcademicObjectIndex(self._runtime).snapshot()
         remaining_asset_bytes = max_asset_bytes
         assets_truncated = False
         hits: list[GroundedRetrievalHit] = []
@@ -133,10 +137,17 @@ class RetrievalService:
             assets_truncated,
             sum(len(candidate.text) for candidate in result.candidates),
             any(
-                "text truncated by retrieval character budget"
-                in candidate.explanation
+                "text truncated by retrieval character budget" in candidate.explanation
                 for candidate in result.candidates
             ),
+            {
+                "schema_version": ACADEMIC_SCHEMA_VERSION,
+                "index_version": ACADEMIC_INDEX_VERSION,
+                "generation_id": manifest.generation_id,
+                "corpus_hash": manifest.corpus_hash,
+                "model_fingerprint": manifest.model_fingerprint,
+                "content_hash": manifest.content_hash,
+            },
         )
 
     def resolve_locator(self, locator: EvidenceLocator) -> AcademicObject:

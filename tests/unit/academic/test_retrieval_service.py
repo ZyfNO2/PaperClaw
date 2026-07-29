@@ -190,6 +190,7 @@ def test_stale_manifest_digest_fails_closed_and_rebuild_recovers(
     tmp_path: Path,
 ) -> None:
     runtime, _ = _indexed_runtime(tmp_path)
+    damaged_generation = AcademicObjectIndex(runtime).snapshot().generation_id
     with sqlite3.connect(runtime.database) as db:
         db.execute(
             """
@@ -204,6 +205,7 @@ def test_stale_manifest_digest_fails_closed_and_rebuild_recovers(
         AcademicObjectIndex(runtime).snapshot()
 
     recovered = AcademicObjectIndex(runtime).rebuild()
+    assert recovered.generation_id != damaged_generation
     assert recovered.content_hash != "0" * 64
 
 
@@ -237,9 +239,7 @@ def test_failed_incremental_generation_keeps_previous_snapshot_visible(
         )
 
     with pytest.raises(sqlite3.IntegrityError, match="injected index failure"):
-        AcademicObjectIndex(runtime).sync_version(
-            paper_id, imported.version.version_id
-        )
+        AcademicObjectIndex(runtime).sync_version(paper_id, imported.version.version_id)
 
     assert AcademicObjectIndex(runtime).snapshot() == previous
 
@@ -248,6 +248,7 @@ def test_missing_persisted_row_rejects_search_and_explicit_rebuild_restores(
     tmp_path: Path,
 ) -> None:
     runtime, _ = _indexed_runtime(tmp_path)
+    damaged_generation = AcademicObjectIndex(runtime).snapshot().generation_id
     with sqlite3.connect(runtime.database) as db:
         db.execute(
             """
@@ -269,10 +270,13 @@ def test_missing_persisted_row_rejects_search_and_explicit_rebuild_restores(
         )
 
     recovered = AcademicObjectIndex(runtime).rebuild()
+    assert recovered.generation_id != damaged_generation
     assert recovered.entries
-    assert RetrievalService(runtime).search(
-        RetrievalRequest("dual encoder", channels=("lexical",))
-    ).hits
+    assert (
+        RetrievalService(runtime)
+        .search(RetrievalRequest("dual encoder", channels=("lexical",)))
+        .hits
+    )
 
 
 def test_failed_canonical_version_delete_restores_previous_index_snapshot(

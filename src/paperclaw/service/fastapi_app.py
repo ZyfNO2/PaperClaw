@@ -182,6 +182,7 @@ def create_app(
         assets_truncated: bool
         text_chars_used: int
         text_truncated: bool
+        index_metadata: dict[str, str]
 
     class AcademicIndexEntryWire(BaseModel):
         paper_id: str
@@ -825,6 +826,12 @@ def create_app(
         canonical_components["EvidenceBundleWire"] = {
             "$ref": "#/components/schemas/AcademicV1Contract/$defs/evidence_bundle"
         }
+        for body_name in ("AcademicResolveBody", "AcademicAssetBody"):
+            canonical_components[body_name]["properties"]["locator"] = {
+                "$ref": (
+                    "#/components/schemas/AcademicV1Contract/$defs/evidence_locator"
+                )
+            }
         response_refs = {
             "/v1/projects/{project_id}/academic/retrieve": "evidence_bundle",
             "/v1/projects/{project_id}/academic/resolve": "academic_object",
@@ -832,10 +839,7 @@ def create_app(
         for path, definition in response_refs.items():
             operation = schema["paths"][path]["post"]
             operation["responses"]["200"]["content"]["application/json"]["schema"] = {
-                "$ref": (
-                    "#/components/schemas/AcademicV1Contract/"
-                    f"$defs/{definition}"
-                )
+                "$ref": (f"#/components/schemas/AcademicV1Contract/$defs/{definition}")
             }
         paper_record_paths = (
             ("/v1/projects/{project_id}/papers/{paper_id}", "get"),
@@ -845,10 +849,7 @@ def create_app(
             schema["paths"][path][method]["responses"]["200"]["content"][
                 "application/json"
             ]["schema"] = {
-                "$ref": (
-                    "#/components/schemas/AcademicV1Contract/"
-                    "$defs/paper_record"
-                )
+                "$ref": ("#/components/schemas/AcademicV1Contract/$defs/paper_record")
             }
         app.openapi_schema = schema
         return schema

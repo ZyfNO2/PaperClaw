@@ -93,9 +93,11 @@ class AcademicRuntime:
         self.object_store = AcademicObjectStore(
             self.database,
             self.assets,
-            version_source_hash=lambda paper_id, version_id: self.papers.repository.get_version(
-                self.project_id, paper_id, version_id
-            ).sha256,
+            version_source_hash=lambda paper_id, version_id: (
+                self.papers.repository.get_version(
+                    self.project_id, paper_id, version_id
+                ).sha256
+            ),
         )
 
     def _register_parser(self, parser: PaperParser) -> None:
@@ -162,13 +164,17 @@ class AcademicRuntime:
             asset_dir=self.assets,
         )
         if result.source_hash != version.sha256:
-            raise ValueError("parser returned a source hash that does not match paper version")
+            raise ValueError(
+                "parser returned a source hash that does not match paper version"
+            )
         self.object_store.save(result, parse_fingerprint=fingerprint)
         return result
 
-    def build_index(self) -> IndexGeneration:
+    def build_index(self, *, force_new_generation: bool = False) -> IndexGeneration:
         parsed_objects = [
-            item for result in self.object_store.list_active() for item in result.objects
+            item
+            for result in self.object_store.list_active()
+            for item in result.objects
         ]
         objects = [
             item
@@ -200,9 +206,10 @@ class AcademicRuntime:
                 ]
             ).encode()
         ).hexdigest()
-        generation_id = hashlib.sha256(
-            f"{corpus_hash}:{model_fingerprint}".encode()
-        ).hexdigest()
+        generation_identity = f"{corpus_hash}:{model_fingerprint}"
+        if force_new_generation:
+            generation_identity = f"{generation_identity}:{uuid4().hex}"
+        generation_id = hashlib.sha256(generation_identity.encode()).hexdigest()
         with self._connect() as db:
             existing = db.execute(
                 "SELECT generation_id FROM index_generations WHERE generation_id=?",
@@ -327,9 +334,7 @@ class AcademicRuntime:
         self._seal_active_index()
         return generation
 
-    def sync_index_version(
-        self, paper_id: str, version_id: str
-    ) -> IndexGeneration:
+    def sync_index_version(self, paper_id: str, version_id: str) -> IndexGeneration:
         """Atomically upsert one parsed version into a copy-on-write generation."""
 
         parsed = self.object_store.get(paper_id, version_id)
@@ -434,9 +439,7 @@ class AcademicRuntime:
             text_rows, visual_rows, model_fingerprint=model_fingerprint
         )
 
-    def delete_index_version(
-        self, paper_id: str, version_id: str
-    ) -> IndexGeneration:
+    def delete_index_version(self, paper_id: str, version_id: str) -> IndexGeneration:
         """Converge the active index after canonical version deletion."""
 
         with self._connect() as db:
@@ -502,9 +505,8 @@ class AcademicRuntime:
                 separators=(",", ":"),
             ).encode()
         ).hexdigest()
-        generation_id = hashlib.sha256(
-            f"{corpus_hash}:{model_fingerprint}".encode()
-        ).hexdigest()
+        generation_identity = f"{corpus_hash}:{model_fingerprint}"
+        generation_id = hashlib.sha256(generation_identity.encode()).hexdigest()
         created = False
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -608,9 +610,7 @@ class AcademicRuntime:
         for row in rows:
             locator = EvidenceLocator.from_dict(json.loads(row["locator_json"]))
             item = self.resolve(locator)
-            objects[
-                (locator.paper_id, locator.version_id, locator.object_id)
-            ] = item
+            objects[(locator.paper_id, locator.version_id, locator.object_id)] = item
         entries = tuple(
             AcademicIndexEntry.from_object(item)
             for item in sorted(
@@ -905,9 +905,7 @@ class AcademicRuntime:
                 object_types=(),
                 budget=budget,
                 version_ids=(
-                    query.version_ids
-                    if isinstance(query, RetrievalRequest)
-                    else ()
+                    query.version_ids if isinstance(query, RetrievalRequest) else ()
                 ),
             )
             corrective_result = self._retrieve_single(relaxed, generation_id)
@@ -921,10 +919,12 @@ class AcademicRuntime:
                     if top >= 0.008
                     else "insufficient"
                 )
-                reasons = (
-                    "corrective round: relaxed filters produced matches",
+                reasons = ("corrective round: relaxed filters produced matches",)
+                degraded = (
+                    list(corrective_result.trace.degraded_channels)
+                    if corrective_result.trace
+                    else degraded
                 )
-                degraded = list(corrective_result.trace.degraded_channels) if corrective_result.trace else degraded
         per_channel_top = {
             ch: ranked[0][1] if ranked else 0.0
             for ch, ranked in channel_rankings.items()
@@ -1100,9 +1100,7 @@ class AcademicRuntime:
                     "project_id": self.project_id,
                     "query": result.query,
                     "trace_id": result.trace.trace_id,
-                    "locators": [
-                        item.locator.to_dict() for item in result.candidates
-                    ],
+                    "locators": [item.locator.to_dict() for item in result.candidates],
                 },
                 sort_keys=True,
             ).encode()
@@ -1217,9 +1215,7 @@ class AcademicRuntime:
         ).to_dict()
         # Deprecated convenience projections retained for the 0.43 Python
         # interface; REST/CLI/Desktop use the canonical entries collection.
-        canonical["project"] = [
-            entry.content for entry in snapshot.memory_entries
-        ]
+        canonical["project"] = [entry.content for entry in snapshot.memory_entries]
         canonical["user"] = [entry.content for entry in snapshot.user_entries]
         return canonical
 
