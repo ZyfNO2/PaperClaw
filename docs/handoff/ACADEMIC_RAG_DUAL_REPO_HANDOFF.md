@@ -536,3 +536,50 @@ P0 Release：NO-GO / PENDING
 下一 slice 只继续 Batch 5：增量版本同步、旧版本删除与幽灵结果测试、stale
 schema/index 拒绝、REST/OpenAPI 契约及跨仓 fixture；不提前进入 Query Planner、
 Relation Graph 或 Coding Worker。
+
+## 12. 2026-07-29 Batch 5 final closure
+
+This batch stops at the Step 1-4 foundation boundary. It does not enter Query
+Planner, Relation Graph, visual retrieval, real benchmark, or Coding Worker.
+
+| Repository | Validated implementation head | Final CI |
+|---|---|---|
+| PaperClaw | `10702d8a3a78a636df3918cb32c596ab1ed5659b` | [30427589118](https://github.com/ZyfNO2/PaperClaw/actions/runs/30427589118) success |
+| PaperAgent | `06b99107a913c9ab7d738c2223d7bc1e4fafca2d` | [30427589127](https://github.com/ZyfNO2/PaperAgent/actions/runs/30427589127) success |
+
+Final evidence:
+
+- PaperClaw local non-live regression: `1067 passed, 30 skipped, 15 deselected`.
+- PaperAgent local non-live regression: `769 passed, 11 skipped`.
+- Ruff, PaperAgent mypy, and both package builds passed.
+- PaperAgent CI passed Python 3.11/3.12 lint, format, mypy, offline tests, and
+  the 90% coverage gate.
+- PaperClaw CI passed Windows full pytest, Ubuntu academic-extra tests, and Ruff.
+- Canonical retrieval fixture SHA-256:
+  - success: `cd244b2346ffbcd6086286e3c97ec373d4f0a6fecb4f0fa8818e086c6b9e41e3`
+  - cases: `ef2d86e62a78705c4ac5368bf2ccc246ad90f57989886dc98d258bbb40769e24`
+
+Completed Batch 5 gates:
+
+- Incremental version upsert, explicit historical-version retrieval, canonical
+  version deletion, and ghost-result prevention.
+- Fail-closed stale schema/index/fingerprint/integrity checks. Explicit repair
+  of a damaged index creates a new generation with atomic visibility.
+- RetrievalService REST/OpenAPI, canonical locator refs, typed errors,
+  text/asset budgets, and schema/index/generation metadata.
+- PaperAgent REST validation of bundle, trace, index identity, object/page/type,
+  locator/source hash, and asset hash.
+- Offline real-minimal-PDF tracer: import -> parse -> incremental sync -> REST
+  search -> PaperAgent normalization -> resolve -> PNG hash readback -> restart
+  -> v2 upsert -> v1 delete/no ghost.
+
+Final status:
+
+```text
+Batch 5 engineering closure: COMPLETE
+P0 Release: NO-GO / PENDING
+```
+
+P0 still requires the real-paper benchmark, corpus license/source/status
+freeze, failed-input corpus, and human acceptance. This engineering closure
+must not be represented as P0 Release GO.
