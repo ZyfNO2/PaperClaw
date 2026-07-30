@@ -752,3 +752,22 @@ Local verification after remediation:
 ColQwen2 execution, 32 blinded human labels, two cross-paper human decisions,
 Native Windows click-through, and reviewer approval remain blocked. Scientific
 validity is not established; status remains `REVISE`, Draft PRs, P0 `NO-GO`.
+
+## 19. Review-remediation CI evidence
+
+- PaperClaw CI
+  [30544953035](https://github.com/ZyfNO2/PaperClaw/actions/runs/30544953035)
+  passed on `c49feca1fa61c411693e27e809fe82fd7bb7adbf`: Ubuntu Academic
+  extra, Windows pytest, and Ruff all succeeded.
+- PaperAgent CI
+  [30545605995](https://github.com/ZyfNO2/PaperAgent/actions/runs/30545605995)
+  passed on `7e3bbd7eb957d0747f301be2710aeff60b22190a`: Python 3.11 and
+  3.12 offline verification, full coverage, explicit raw coverage threshold,
+  Ruff, format, strict mypy, and the required no-skip PaperClaw academic
+  integration all succeeded.
+
+An earlier PaperAgent run failed because a test imported a repository-root
+`scripts` namespace unavailable on clean Linux runners. The assertions were
+moved into the installed `paperagent.ci_evidence` module, tested locally, and
+verified by the successful exact-head run above. These synchronized
+documentation-only commits follow the tested implementation heads.
