@@ -661,3 +661,20 @@ work that does not require the missing hardware/provider/human authority has bee
 completed. Remaining blockers are real GPU/model execution, real LLM credentials,
 human gold labels, Native Windows manual clicking/screenshots, and reviewer
 approval. Overall status remains `REVISE`; P0 Release remains `NO-GO`.
+
+## 15. Final-head CI dispatch evidence
+
+The branch-filtered workflows did not run automatically, so CI was explicitly
+dispatched against the exact documented branch heads:
+
+- PaperAgent CI run
+  [30537821013](https://github.com/ZyfNO2/PaperAgent/actions/runs/30537821013)
+  on `86fc2b543d91ba57e882073bab4973027e8650bc`: success; Python 3.11 and
+  Python 3.12 lint, format, strict mypy, offline tests, and coverage all passed.
+- PaperClaw CI run
+  [30537820415](https://github.com/ZyfNO2/PaperClaw/actions/runs/30537820415)
+  on `2ccc17dca957bf496acd9c3b9405462cda1f73c1`: success; Windows pytest,
+  Ubuntu Academic-extra tests, and Ruff all passed.
+
+These are real executed jobs, not skipped workflow records. A documentation-only
+commit containing this section follows those tested implementation heads.
