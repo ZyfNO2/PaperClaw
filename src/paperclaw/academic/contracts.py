@@ -450,6 +450,8 @@ class RetrievalTrace:
         data = asdict(self)
         data["channels"] = list(self.channels)
         data["degraded_channels"] = list(self.degraded_channels)
+        if not self.corrective_details:
+            data.pop("corrective_details")
         return data
 
 
