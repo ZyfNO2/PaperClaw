@@ -622,3 +622,42 @@ SentenceTransformer/ColQwen2 on the target GPU, 32 blinded human gold labels, tw
 cross-paper expected decisions, a real OpenAI-compatible LLM trace, Native Windows
 click-through, and human reviewer approval. No `P0 GO`, `release_accepted`, real
 end-to-end validation, or scientific-validity claim is made.
+
+## 14. 2026-07-30 automatic infrastructure completion
+
+Final implementation heads before this synchronized documentation commit:
+
+- PaperClaw: `1b06179a34b1c6327bf21206f8fb028c9acaa834`;
+- PaperAgent: `4ff781acd985ba1c96664b5b58f748a53c6ae527`;
+- `academic.v1` schema SHA-256:
+  `62c3c6bbde000023a95025fdcae53c777fac479ddc9da02a63ea293b0855d2e0`.
+
+New automated evidence:
+
+- PaperAgent Academic coverage gate: `66 passed`, total `90.39%`;
+- after adding the human-review runner: `69 passed`, total `90.24%`;
+- PaperAgent strict mypy: `164 source files / no issues`;
+- latest-source cross-repo PDF/REST/adapter integration: `7 passed`;
+- PaperClaw blinded-label infrastructure: `3 passed`, status
+  `blocked_by_human_labeling`;
+- the 32-question template has eight text, eight Figure, eight Table, and eight
+  Equation slots and does not fabricate gold locators;
+- the two H3 tailoring scenarios have a runnable package generator which exits `2`
+  with `blocked_by_human_review` until human fields are supplied.
+
+Package digests:
+
+- PaperClaw wheel:
+  `38d4df13050dd00b7a847d8eb6b4ed09614012c26eaa978a40ed3b57b8d63ac6`;
+- PaperClaw sdist:
+  `91cd1875de226ee0a02d2928f63f32d82e5e1c64f5eaba98534efcef13443f15`;
+- PaperAgent wheel:
+  `a49be2561ef8ad6811f2b01fe4363c5d2242d12656e9c4fad6cdbb742160e719`;
+- PaperAgent sdist:
+  `512fdaecd8b0a653dc5e299347c9937d276e241a32261b2be77bc93638c13ce8`.
+
+All code, schema, template, validator, scorer, runner, configuration, and checklist
+work that does not require the missing hardware/provider/human authority has been
+completed. Remaining blockers are real GPU/model execution, real LLM credentials,
+human gold labels, Native Windows manual clicking/screenshots, and reviewer
+approval. Overall status remains `REVISE`; P0 Release remains `NO-GO`.
