@@ -444,6 +444,7 @@ class RetrievalTrace:
     rounds_used: dict[str, int]
     degraded_channels: tuple[str, ...]
     stop_reason: str
+    corrective_details: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         data = asdict(self)
@@ -508,6 +509,7 @@ class EvidenceBundle:
             dict(raw["rounds_used"]),
             tuple(raw["degraded_channels"]),
             raw["stop_reason"],
+            dict(raw.get("corrective_details", {})),
         )
         return cls(
             str(value["bundle_id"]),

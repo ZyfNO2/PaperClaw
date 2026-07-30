@@ -121,6 +121,12 @@ def test_insufficient_query_abstains(tmp_path: Path) -> None:
     result = runtime.retrieve(AcademicQuery("quantum banana unobtainium"))
     assert result.sufficiency == "insufficient"
     assert result.should_abstain is True
+    assert result.trace is not None
+    details = result.trace.corrective_details
+    assert details["primary_reason"] == "no_candidates"
+    assert details["original_query"] == "quantum banana unobtainium"
+    assert details["rewritten_query"] != details["original_query"]
+    assert result.trace.rounds_used["corrective"] == 1
 
 
 def test_exact_identifier_channel_preserves_doi_identity(tmp_path: Path) -> None:
@@ -189,6 +195,8 @@ def test_visual_only_request_abstains_when_channel_is_unavailable(
     assert result.should_abstain
     assert result.trace is not None
     assert result.trace.degraded_channels == ("visual",)
+    assert result.trace.corrective_details["primary_reason"] == "channel_unavailable"
+    assert result.trace.corrective_details["channel_changes"]["after"] == ["lexical"]
 
 
 def test_retrieval_rejects_encoder_fingerprint_mismatch(tmp_path: Path) -> None:

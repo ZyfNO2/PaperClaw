@@ -892,24 +892,74 @@ class AcademicRuntime:
             sufficiency = "insufficient"
             reasons = ("visual channel unavailable",)
         corrective_used = 0
+        corrective_details: dict[str, object] = {}
         if (
             sufficiency == "insufficient"
             and budget.max_corrective_rounds > 0
-            and (query.paper_ids or query.object_types)
         ):
+            from .corrective import CorrectiveReason, plan_corrective_retrieval
+
             corrective_used = 1
-            relaxed = RetrievalRequest(
-                text=query.text,
-                channels=channels,
-                paper_ids=(),
-                object_types=(),
-                budget=budget,
-                version_ids=(
-                    query.version_ids if isinstance(query, RetrievalRequest) else ()
-                ),
+            original_request = (
+                query
+                if isinstance(query, RetrievalRequest)
+                else RetrievalRequest(
+                    query.text,
+                    channels,
+                    query.paper_ids,
+                    query.object_types,
+                    budget,
+                )
             )
-            corrective_result = self._retrieve_single(relaxed, generation_id)
-            if corrective_result.candidates:
+            if channels == ("visual",) and "visual" in degraded:
+                corrective_reason: CorrectiveReason = "channel_unavailable"
+            elif query.paper_ids or query.object_types:
+                corrective_reason = "filter_exhausted"
+            else:
+                corrective_reason = "no_candidates"
+            identity_constraints = tuple(
+                dict.fromkeys(_IDENTIFIERS.findall(query.text))
+            )
+            plan = plan_corrective_retrieval(
+                original_request,
+                reason=corrective_reason,
+                identity_constraints=identity_constraints,
+            )
+            corrected_request = plan.request()
+            corrective_result = self._retrieve_single(corrected_request, generation_id)
+            primary_ids = [item.locator.object_id for item in selected]
+            corrected_ids = [
+                item.locator.object_id for item in corrective_result.candidates
+            ]
+            corrective_details = {
+                "primary_reason": corrective_reason,
+                "original_query": query.text,
+                "rewritten_query": corrected_request.text,
+                "channel_changes": {
+                    "before": list(channels),
+                    "after": list(corrected_request.channels),
+                },
+                "filter_changes": {
+                    "paper_ids": list(corrected_request.paper_ids),
+                    "version_ids": list(corrected_request.version_ids),
+                    "object_types_before": list(query.object_types),
+                    "object_types_after": list(corrected_request.object_types),
+                },
+                "budget_changes": {
+                    "max_candidates": corrected_request.budget.max_candidates,
+                    "max_chars": corrected_request.budget.max_chars,
+                },
+                "candidate_changes": {
+                    "before": primary_ids,
+                    "after": corrected_ids,
+                },
+                "resolved_conflicts": [],
+                "unresolved_conflicts": [],
+            }
+            if (
+                corrective_result.candidates
+                and corrective_reason != "channel_unavailable"
+            ):
                 selected = corrective_result.candidates
                 top = selected[0].fused_score
                 sufficiency = (
@@ -958,6 +1008,7 @@ class AcademicRuntime:
             "corrective_relaxed_filters"
             if corrective_used
             else "budget_or_candidates_exhausted",
+            corrective_details,
         )
         return RetrievalResult(query.text, selected, sufficiency, reasons, trace)
 
