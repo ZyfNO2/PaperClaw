@@ -893,6 +893,7 @@ class AcademicRuntime:
             reasons = ("visual channel unavailable",)
         corrective_used = 0
         corrective_details: dict[str, object] = {}
+        final_stop_reason = "budget_or_candidates_exhausted"
         if (
             sufficiency == "insufficient"
             and budget.max_corrective_rounds > 0
@@ -954,7 +955,9 @@ class AcademicRuntime:
                     "after": corrected_ids,
                 },
                 "resolved_conflicts": [],
-                "unresolved_conflicts": [],
+                "unresolved_conflicts": (
+                    [] if corrected_ids else [corrective_reason]
+                ),
             }
             if (
                 corrective_result.candidates
@@ -975,6 +978,9 @@ class AcademicRuntime:
                     if corrective_result.trace
                     else degraded
                 )
+                final_stop_reason = "corrective_resolved"
+            else:
+                final_stop_reason = "corrective_unresolved"
         per_channel_top = {
             ch: ranked[0][1] if ranked else 0.0
             for ch, ranked in channel_rankings.items()
@@ -1005,9 +1011,7 @@ class AcademicRuntime:
             },
             {"corrective": corrective_used, "conflict": 0},
             tuple(degraded),
-            "corrective_relaxed_filters"
-            if corrective_used
-            else "budget_or_candidates_exhausted",
+            final_stop_reason,
             corrective_details,
         )
         return RetrievalResult(query.text, selected, sufficiency, reasons, trace)
