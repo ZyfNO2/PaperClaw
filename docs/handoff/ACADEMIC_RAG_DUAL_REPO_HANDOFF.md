@@ -583,3 +583,42 @@ P0 Release: NO-GO / PENDING
 P0 still requires the real-paper benchmark, corpus license/source/status
 freeze, failed-input corpus, and human acceptance. This engineering closure
 must not be represented as P0 Release GO.
+
+## 13. 2026-07-30 H2/H3 engineering continuation
+
+Overall verdict: `REVISE` (automated engineering progress; live/scientific/human
+acceptance remains blocked).
+
+PaperClaw `codex/academic-rag-h2-retrieval` implementation head before this
+handoff update: `e465277`. Added deterministic structured conflict detection,
+reason-aware bounded corrective planning, identity-preserving rewrites, corrective
+trace details, and a serializer-produced REST fixture. The detector does not read
+`stop_reason`, prompts, or free-text conflict keywords. Verification:
+
+- conflict/corrective targeted: `24 passed`;
+- Academic suite plus REST fixture: `64 passed`;
+- non-live repository regression: `1085 passed, 30 skipped, 15 deselected`;
+- Ruff passed; wheel and sdist built successfully;
+- bare whole-package mypy is not the repository CI gate and reported 168 historical
+  errors, including optional dependency stubs; new modules passed targeted mypy.
+
+PaperAgent `codex/academic-rag-h3-reasoning` implementation head before this
+handoff update: `c6f1ae91`. Added an optional PaperClaw factory with exact
+`academic.v1` and capability checks, a serializable structured query planner,
+accepted-only context manifests with locator/source identity revalidation, and
+deterministic claim/locator mismatch checks. Existing eight Artifact drafts remain
+append-only through the PaperClaw sink and cannot finalize before approval.
+Verification:
+
+- Academic suite: `58 passed`;
+- non-live repository regression: `797 passed, 1 skipped, 12 deselected`;
+- strict mypy: `163 source files / no issues`; Ruff passed;
+- wheel and sdist built successfully;
+- an additional Academic-only coverage diagnostic was `87.81%` and therefore did
+  not satisfy the repository's `90%` threshold; it is recorded as failed, not passed.
+
+Blocked acceptance and required user inputs remain unchanged: real
+SentenceTransformer/ColQwen2 on the target GPU, 32 blinded human gold labels, two
+cross-paper expected decisions, a real OpenAI-compatible LLM trace, Native Windows
+click-through, and human reviewer approval. No `P0 GO`, `release_accepted`, real
+end-to-end validation, or scientific-validity claim is made.
