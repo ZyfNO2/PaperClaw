@@ -81,11 +81,12 @@ def create_app(
     class AcademicQueryBody(BaseModel):
         query: str = Field(min_length=1, max_length=10_000)
         channels: list[str] = Field(
-            default_factory=lambda: ["lexical", "dense", "visual"], max_length=3
+            default_factory=lambda: ["lexical", "dense", "visual"], max_length=4
         )
         paper_ids: list[str] = Field(default_factory=list, max_length=100)
         version_ids: list[str] = Field(default_factory=list, max_length=100)
         object_types: list[str] = Field(default_factory=list, max_length=20)
+        section_scope: list[str] = Field(default_factory=list, max_length=50)
         max_candidates: int = Field(default=10, ge=1, le=100)
         max_chars: int = Field(default=12_000, ge=1, le=1_000_000)
         include_neighbors: bool = False
@@ -159,6 +160,7 @@ def create_app(
         rounds_used: dict[str, int]
         degraded_channels: list[str]
         stop_reason: str
+        corrective_details: dict[str, Any] | None = None
 
     class EvidenceBundleWire(BaseModel):
         schema_version: str
@@ -447,6 +449,7 @@ def create_app(
                         max_chars=body.max_chars,
                     ),
                     tuple(body.version_ids),
+                    tuple(body.section_scope),
                 ),
                 include_assets=body.include_assets,
                 include_neighbor_context=body.include_neighbors,

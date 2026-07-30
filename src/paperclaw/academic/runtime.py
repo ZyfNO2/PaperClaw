@@ -767,6 +767,12 @@ class AcademicRuntime:
                     return False
             if query.object_types and locator.object_type not in query.object_types:
                 return False
+            if isinstance(query, RetrievalRequest) and query.section_scope:
+                section = " / ".join(locator.section_path).casefold()
+                if not any(
+                    scope.casefold() in section for scope in query.section_scope
+                ):
+                    return False
             return True
 
         query_identifiers = {
@@ -892,10 +898,104 @@ class AcademicRuntime:
             sufficiency = "insufficient"
             reasons = ("visual channel unavailable",)
         corrective_used = 0
+        conflict_used = 0
         corrective_details: dict[str, object] = {}
         final_stop_reason = "budget_or_candidates_exhausted"
+        from .conflicts import detect_evidence_conflicts
+
+        primary_conflicts = detect_evidence_conflicts(
+            _structured_candidates(selected, query.text)
+        )
+        if primary_conflicts and budget.max_conflict_rounds > 0:
+            from .corrective import plan_corrective_retrieval
+
+            conflict_used = 1
+            original_request = (
+                query
+                if isinstance(query, RetrievalRequest)
+                else RetrievalRequest(
+                    query.text,
+                    channels,
+                    query.paper_ids,
+                    query.object_types,
+                    budget,
+                )
+            )
+            conflict_reason = _corrective_reason_for_conflict(
+                primary_conflicts[0].conflict_type
+            )
+            plan = plan_corrective_retrieval(
+                original_request,
+                reason=conflict_reason,
+                identity_constraints=tuple(
+                    dict.fromkeys(_IDENTIFIERS.findall(query.text))
+                ),
+                section_scope=(
+                    original_request.section_scope
+                    if isinstance(original_request, RetrievalRequest)
+                    else ()
+                ),
+            )
+            planned = plan.request()
+            conflict_request = replace(
+                planned,
+                budget=replace(
+                    planned.budget,
+                    max_corrective_rounds=0,
+                    max_conflict_rounds=0,
+                ),
+            )
+            conflict_result = self._retrieve_single(conflict_request, generation_id)
+            conflict_candidates = conflict_result.candidates
+            remaining_conflicts = detect_evidence_conflicts(
+                _structured_candidates(conflict_candidates, query.text)
+            )
+            if not conflict_candidates:
+                remaining_conflicts = primary_conflicts
+            before_ids = [item.locator.object_id for item in selected]
+            after_ids = [item.locator.object_id for item in conflict_candidates]
+            corrective_details = {
+                "primary_reason": conflict_reason,
+                "original_query": query.text,
+                "rewritten_query": conflict_request.text,
+                "strategy": primary_conflicts[0].recommended_corrective_strategy,
+                "channel_changes": {
+                    "before": list(channels),
+                    "after": list(conflict_request.channels),
+                },
+                "filter_changes": {
+                    "paper_ids": list(conflict_request.paper_ids),
+                    "version_ids": list(conflict_request.version_ids),
+                    "object_types_before": list(query.object_types),
+                    "object_types_after": list(conflict_request.object_types),
+                    "section_scope": list(conflict_request.section_scope),
+                },
+                "candidate_changes": {"before": before_ids, "after": after_ids},
+                "original_conflicts": [
+                    _conflict_dict(item) for item in primary_conflicts
+                ],
+                "resolved_conflicts": [
+                    _conflict_dict(item)
+                    for item in primary_conflicts
+                    if _conflict_identity(item)
+                    not in {_conflict_identity(other) for other in remaining_conflicts}
+                ],
+                "unresolved_conflicts": [
+                    _conflict_dict(item) for item in remaining_conflicts
+                ],
+            }
+            selected = conflict_candidates
+            if remaining_conflicts:
+                sufficiency = "insufficient"
+                reasons = ("structured evidence conflict remains unresolved",)
+                final_stop_reason = "conflict_unresolved"
+            elif selected:
+                sufficiency = conflict_result.sufficiency
+                reasons = ("conflict round resolved structured evidence conflicts",)
+                final_stop_reason = "conflict_resolved"
         if (
-            sufficiency == "insufficient"
+            not primary_conflicts
+            and sufficiency == "insufficient"
             and budget.max_corrective_rounds > 0
         ):
             from .corrective import CorrectiveReason, plan_corrective_retrieval
@@ -955,9 +1055,7 @@ class AcademicRuntime:
                     "after": corrected_ids,
                 },
                 "resolved_conflicts": [],
-                "unresolved_conflicts": (
-                    [] if corrected_ids else [corrective_reason]
-                ),
+                "unresolved_conflicts": ([] if corrected_ids else [corrective_reason]),
             }
             if (
                 corrective_result.candidates
@@ -1009,7 +1107,11 @@ class AcademicRuntime:
                 "generation": self._runtime_model_fingerprint(),
                 "per_channel_top": json.dumps(per_channel_top, sort_keys=True),
             },
-            {"corrective": corrective_used, "conflict": 0},
+            {
+                "primary": 1,
+                "corrective": corrective_used,
+                "conflict": conflict_used,
+            },
             tuple(degraded),
             final_stop_reason,
             corrective_details,
@@ -1353,3 +1455,97 @@ def _vector_json(text):
 
 def _cosine(left, right):
     return sum(float(a) * float(b) for a, b in zip(left, right))
+
+
+_METRIC_FACT = re.compile(
+    r"\b(?P<metric>[A-Za-z][A-Za-z0-9_. -]{0,30}?)\s*"
+    r"(?:=|:|\bis\b)\s*(?P<value>-?\d+(?:\.\d+)?)\s*"
+    r"(?P<unit>%|percent|ratio|mm|cm|m|ms|s|dB|fps)?\b",
+    re.IGNORECASE,
+)
+_LABELED_FACT = re.compile(
+    r"\b(?P<label>dataset|split)\s*(?:=|:|\bis\b)\s*"
+    r"(?P<value>[A-Za-z0-9_.-]+)",
+    re.IGNORECASE,
+)
+
+
+def _structured_candidates(
+    candidates: tuple[RetrievalCandidate, ...],
+    query_text: str,
+):
+    from .conflicts import StructuredEvidence
+
+    structured = []
+    for candidate in candidates:
+        metric_match = _METRIC_FACT.search(candidate.text)
+        labels = {
+            match.group("label").casefold(): match.group("value")
+            for match in _LABELED_FACT.finditer(candidate.text)
+        }
+        identifiers = _IDENTIFIERS.findall(candidate.text)
+        doi = next(
+            (value for value in identifiers if value.casefold().startswith("10.")),
+            None,
+        )
+        arxiv_id = next(
+            (value for value in identifiers if value.casefold().startswith("arxiv:")),
+            None,
+        )
+        metric = metric_match.group("metric").strip() if metric_match else None
+        claim_key = (
+            metric.casefold()
+            if metric
+            else hashlib.sha256(" ".join(_tokens(query_text)).encode()).hexdigest()
+        )
+        structured.append(
+            StructuredEvidence(
+                evidence_id=(
+                    f"{candidate.locator.paper_id}:"
+                    f"{candidate.locator.version_id}:"
+                    f"{candidate.locator.object_id}"
+                ),
+                claim_key=claim_key,
+                locator=candidate.locator,
+                doi=doi,
+                arxiv_id=arxiv_id,
+                metric=metric,
+                value=metric_match.group("value") if metric_match else None,
+                unit=metric_match.group("unit") if metric_match else None,
+                dataset=labels.get("dataset"),
+                split=labels.get("split"),
+            )
+        )
+    return tuple(structured)
+
+
+def _corrective_reason_for_conflict(conflict_type: str):
+    from .corrective import CorrectiveReason
+
+    mapping: dict[str, CorrectiveReason] = {
+        "identity": "identity_conflict",
+        "metric_value": "metric_conflict",
+        "unit": "unit_conflict",
+        "paper_version": "version_conflict",
+        "superseded_locator": "version_conflict",
+        "dataset": "metric_conflict",
+        "split": "metric_conflict",
+        "direction": "metric_conflict",
+        "method_configuration": "metric_conflict",
+    }
+    return mapping[conflict_type]
+
+
+def _conflict_identity(conflict) -> tuple[object, ...]:
+    return (conflict.conflict_type, conflict.evidence_ids, conflict.reason)
+
+
+def _conflict_dict(conflict) -> dict[str, object]:
+    return {
+        "conflict_type": conflict.conflict_type,
+        "evidence_ids": list(conflict.evidence_ids),
+        "locator_versions": list(conflict.locator_versions),
+        "reason": conflict.reason,
+        "severity": conflict.severity,
+        "recommended_corrective_strategy": conflict.recommended_corrective_strategy,
+    }

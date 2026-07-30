@@ -74,7 +74,10 @@ class EvidenceLocator:
                 raise ValueError("invalid line_range")
         if (self.table_row is None) != (self.table_column is None):
             raise ValueError("table coordinates must include both row and column")
-        if self.table_row is not None and min(self.table_row, self.table_column or 0) < 0:
+        if (
+            self.table_row is not None
+            and min(self.table_row, self.table_column or 0) < 0
+        ):
             raise ValueError("table coordinates must be non-negative")
 
     def to_dict(self) -> dict[str, object]:
@@ -85,7 +88,9 @@ class EvidenceLocator:
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> EvidenceLocator:
         _require_schema(str(value.get("schema_version", "")))
-        bbox = BoundingBox(**value["bounding_box"]) if value.get("bounding_box") else None
+        bbox = (
+            BoundingBox(**value["bounding_box"]) if value.get("bounding_box") else None
+        )
         line_range = tuple(value["line_range"]) if value.get("line_range") else None
         return cls(
             paper_id=str(value["paper_id"]),
@@ -355,7 +360,9 @@ class RetrievalBudget:
 
     def __post_init__(self) -> None:
         if not 1 <= self.max_candidates <= 100 or self.max_chars < 1:
-            raise ValueError("retrieval candidate and character budgets must be bounded")
+            raise ValueError(
+                "retrieval candidate and character budgets must be bounded"
+            )
         if self.max_primary_rounds != 1:
             raise ValueError("primary retrieval rounds must equal 1")
         if not 0 <= self.max_corrective_rounds <= 1:
@@ -372,6 +379,7 @@ class RetrievalRequest:
     object_types: tuple[str, ...] = ()
     budget: RetrievalBudget = field(default_factory=RetrievalBudget)
     version_ids: tuple[str, ...] = ()
+    section_scope: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.text.strip():
@@ -387,6 +395,7 @@ class RetrievalRequest:
             "paper_ids": list(self.paper_ids),
             "version_ids": list(self.version_ids),
             "object_types": list(self.object_types),
+            "section_scope": list(self.section_scope),
             "budget": asdict(self.budget),
         }
 
@@ -399,6 +408,7 @@ class RetrievalRequest:
             tuple(value.get("object_types", ())),
             RetrievalBudget(**value.get("budget", {})),
             tuple(value.get("version_ids", ())),
+            tuple(value.get("section_scope", ())),
         )
 
 
@@ -625,7 +635,9 @@ class ArtifactRevision:
             content_hash=str(value["content_hash"]),
             byte_length=int(value["byte_length"]),
             media_type=str(value["media_type"]),
-            evidence=tuple(EvidenceLocator.from_dict(item) for item in value["evidence"]),
+            evidence=tuple(
+                EvidenceLocator.from_dict(item) for item in value["evidence"]
+            ),
             created_at=str(value["created_at"]),
             schema_version=str(value["schema_version"]),
         )

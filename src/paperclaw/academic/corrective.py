@@ -47,7 +47,10 @@ class CorrectivePlan:
     def request(self) -> RetrievalRequest:
         if not self.changed:
             raise ValueError("corrective plan must materially change the request")
-        if any(value.casefold() not in self.rewritten_query.casefold() for value in self.identity_constraints):
+        if any(
+            value.casefold() not in self.rewritten_query.casefold()
+            for value in self.identity_constraints
+        ):
             raise ValueError("corrective rewrite lost a canonical identity constraint")
         return RetrievalRequest(
             self.rewritten_query,
@@ -56,6 +59,7 @@ class CorrectivePlan:
             self.object_type_scope,
             self.corrected_budget,
             self.corrected_filters["version_ids"],
+            self.section_scope,
         )
 
 
@@ -82,7 +86,11 @@ def plan_corrective_retrieval(
         channels = ["exact", "lexical"]
         rewrite_terms.append("canonical identity active version")
     elif reason in {"metric_conflict", "unit_conflict"}:
-        channels = [channel for channel in ("exact", "lexical", "dense") if channel in channels or channel == "exact"]
+        channels = [
+            channel
+            for channel in ("exact", "lexical", "dense")
+            if channel in channels or channel == "exact"
+        ]
         object_types = tuple(dict.fromkeys((*object_types, "table", "table_cell")))
         rewrite_terms.append("metric definition units dataset split")
     elif reason == "channel_unavailable":
@@ -102,8 +110,13 @@ def plan_corrective_retrieval(
             rewritten = f"{rewritten} {identity}".strip()
 
     corrected_budget = RetrievalBudget(
-        max_candidates=min(100, max(request.budget.max_candidates + 5, request.budget.max_candidates * 2)),
-        max_chars=min(50_000, max(request.budget.max_chars + 2_000, request.budget.max_chars * 2)),
+        max_candidates=min(
+            100,
+            max(request.budget.max_candidates + 5, request.budget.max_candidates * 2),
+        ),
+        max_chars=min(
+            50_000, max(request.budget.max_chars + 2_000, request.budget.max_chars * 2)
+        ),
         max_primary_rounds=1,
         max_corrective_rounds=0,
         max_conflict_rounds=request.budget.max_conflict_rounds,

@@ -18,7 +18,18 @@ def _request(**changes) -> RetrievalRequest:
     return RetrievalRequest(**values)
 
 
-@pytest.mark.parametrize("reason", ["identity_conflict", "metric_conflict", "unit_conflict", "version_conflict", "channel_unavailable", "filter_exhausted", "no_candidates"])
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "identity_conflict",
+        "metric_conflict",
+        "unit_conflict",
+        "version_conflict",
+        "channel_unavailable",
+        "filter_exhausted",
+        "no_candidates",
+    ],
+)
 def test_corrective_plans_are_material_bounded_and_preserve_identity(reason) -> None:
     plan = plan_corrective_retrieval(
         _request(), reason=reason, identity_constraints=("10.1234/example",)
@@ -33,9 +44,15 @@ def test_corrective_plans_are_material_bounded_and_preserve_identity(reason) -> 
 
 
 def test_metric_correction_adds_table_scope_and_exact_channel() -> None:
-    corrected = plan_corrective_retrieval(_request(), reason="metric_conflict").request()
+    corrected = plan_corrective_retrieval(
+        _request(),
+        reason="metric_conflict",
+        section_scope=("Results",),
+    ).request()
     assert {"table", "table_cell"} <= set(corrected.object_types)
     assert "exact" in corrected.channels
+    assert corrected.section_scope == ("Results",)
+    assert RetrievalRequest.from_dict(corrected.to_dict()).section_scope == ("Results",)
 
 
 def test_unavailable_visual_channel_is_removed() -> None:

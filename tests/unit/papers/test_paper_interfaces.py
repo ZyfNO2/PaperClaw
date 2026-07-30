@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from paperclaw.academic import AcademicRuntime
 from paperclaw.academic.fixtures import canonical_fixture_bytes
 from paperclaw.papers.cli import main
+from paperclaw.papers import PaperImportRequest, PaperService
 from paperclaw.projects import ProjectManifestStore
 from paperclaw.service.fastapi_app import create_app
 
@@ -305,3 +306,34 @@ def test_rest_parse_resolve_and_asset_readback_use_canonical_locator(tmp_path) -
     if os.getenv("PAPERCLAW_UPDATE_ACADEMIC_FIXTURES") == "1":
         cases_fixture.write_bytes(cases_bytes)
     assert cases_fixture.read_bytes() == cases_bytes
+
+
+def test_rest_exposes_conflict_driven_corrective_trace(tmp_path) -> None:
+    workspace = _workspace(tmp_path)
+    papers = PaperService.for_workspace(workspace, project_id="demo")
+    for name, text in (
+        ("a.txt", "Results\nF1 is 91.2 percent dataset: Crack500 split: test"),
+        ("b.txt", "Results\nF1 is 88.0 percent dataset: Crack500 split: test"),
+    ):
+        source = workspace / name
+        source.write_text(text, encoding="utf-8")
+        papers.import_paper(PaperImportRequest("demo", source))
+    runtime = AcademicRuntime.for_workspace(workspace, "demo")
+    for paper in papers.list_papers("demo"):
+        runtime.parse_paper(paper.paper_id)
+    runtime.build_index()
+    client = TestClient(create_app(EmptyService(), paper_workspace_roots=[tmp_path]))
+
+    response = client.post(
+        "/v1/projects/demo/academic/search",
+        json={"query": "F1", "channels": ["lexical"]},
+    )
+
+    assert response.status_code == 200
+    trace = response.json()["bundle"]["trace"]
+    assert trace["rounds_used"]["conflict"] == 1
+    assert trace["stop_reason"] == "conflict_unresolved"
+    assert (
+        trace["corrective_details"]["original_conflicts"][0]["conflict_type"]
+        == "metric_value"
+    )

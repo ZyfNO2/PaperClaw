@@ -11,6 +11,8 @@ def test_redaction_removes_provider_and_nested_secrets() -> None:
             "api_key": "secret-key",
             "access_token": "secret-token",
         },
+        "input_tokens": 123,
+        "output_tokens": 45,
     }
 
     redacted = _redact_event_payload(payload)
@@ -22,6 +24,8 @@ def test_redaction_removes_provider_and_nested_secrets() -> None:
             "api_key": "<redacted>",
             "access_token": "<redacted>",
         },
+        "input_tokens": 123,
+        "output_tokens": 45,
     }
 
 

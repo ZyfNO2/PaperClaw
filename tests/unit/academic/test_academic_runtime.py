@@ -208,3 +208,37 @@ def test_retrieval_rejects_encoder_fingerprint_mismatch(tmp_path: Path) -> None:
     )
     with pytest.raises(RuntimeError, match="model fingerprint is incompatible"):
         runtime_b.retrieve(RetrievalRequest("diagram", ("visual",)))
+
+
+def test_runtime_executes_conflict_driven_corrective_round(tmp_path: Path) -> None:
+    manifest = ProjectManifestStore(tmp_path).initialize("Conflict")
+    papers = PaperService.for_workspace(tmp_path, project_id=manifest.project_id)
+    for name, text in (
+        ("paper-a.txt", "Results\nF1 is 91.2 percent dataset: Crack500 split: test"),
+        ("paper-b.txt", "Results\nF1 is 88.0 percent dataset: Crack500 split: test"),
+    ):
+        source = tmp_path / name
+        source.write_text(text, encoding="utf-8")
+        papers.import_paper(PaperImportRequest(manifest.project_id, source))
+    runtime = AcademicRuntime.for_workspace(tmp_path, manifest.project_id)
+    for paper in papers.list_papers(manifest.project_id):
+        runtime.parse_paper(paper.paper_id)
+    runtime.build_index()
+
+    result = runtime.retrieve(
+        RetrievalRequest(
+            "F1",
+            ("lexical",),
+            budget=RetrievalBudget(max_candidates=10),
+        )
+    )
+
+    assert result.trace.rounds_used["conflict"] == 1
+    assert result.trace.stop_reason == "conflict_unresolved"
+    details = result.trace.corrective_details
+    assert details["primary_reason"] == "metric_conflict"
+    assert details["original_conflicts"][0]["conflict_type"] == "metric_value"
+    assert details["candidate_changes"]["before"]
+    assert details["candidate_changes"]["after"] == []
+    assert details["filter_changes"]["section_scope"] == []
+    assert details["unresolved_conflicts"]

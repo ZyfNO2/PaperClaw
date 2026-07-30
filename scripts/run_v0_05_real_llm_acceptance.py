@@ -93,13 +93,24 @@ def _require_env() -> dict[str, str]:
 
 def _redact_event_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Remove sensitive and provider-specific fields before archiving."""
-    sensitive_fragments = ("api_key", "authorization", "password", "secret", "token")
+    sensitive_fragments = (
+        "access_token",
+        "api_token",
+        "bearer_token",
+        "refresh_token",
+        "api_key",
+        "authorization",
+        "password",
+        "secret",
+    )
 
     def redact(value: Any, *, key: str = "") -> Any:
         normalized_key = key.casefold()
         if normalized_key == "request_id":
             return "<redacted>"
         if any(fragment in normalized_key for fragment in sensitive_fragments):
+            return "<redacted>"
+        if normalized_key == "token":
             return "<redacted>"
         if isinstance(value, dict):
             return {
