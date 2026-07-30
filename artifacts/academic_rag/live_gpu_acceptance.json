@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "timestamp_utc": "2026-07-30T11:52:50.3168739Z",
+  "timestamp_utc": "2026-07-30T12:53:43.8510037Z",
   "host": {
     "gpu": "NVIDIA GeForce RTX 4070 SUPER",
     "driver": "610.62",
@@ -15,18 +15,18 @@
     },
     "dense_embedding": {
       "status": "passed",
-      "execution_path": "transformers AutoModel with MiniLM mean pooling and L2 normalization",
+      "execution_path": "PaperClaw MiniLMEncoder -> AcademicRuntime.build_index -> AcademicRuntime.retrieve",
       "model": "sentence-transformers/all-MiniLM-L6-v2",
       "revision": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
       "device": "cuda:0",
-      "input_count": 2,
+      "indexed_object_count": 2,
+      "retrieved_candidate_count": 1,
       "dimension": 384,
-      "embedding_norms": [
-        1.0,
-        1.0
-      ],
-      "elapsed_seconds": 8.487,
-      "peak_memory_mib": 95.97
+      "top_dense_score": 0.8140138277020745,
+      "top_text": "Concrete crack detection uses a segmentation network and reports F1 on Crack500.",
+      "ranking_check": "passed",
+      "elapsed_seconds": 18.458,
+      "peak_memory_mib": 96.33
     },
     "visual_embedding": {
       "status": "blocked",
@@ -38,7 +38,7 @@
   },
   "notes": [
     "The project MiniLM model identity and pooling semantics were retained.",
-    "The direct Transformers path was used because the available Python 3.12 environment had CPU-only PyTorch and the CUDA Python 3.13 environment had an unrelated pyarrow binary import crash in sentence-transformers.",
+    "The production PaperClaw encoder, index generation, persisted vectors, dense query encoding, fusion, and ranking path were executed.",
     "No model weights, local paths, credentials, or raw provider traffic are included."
   ]
 }

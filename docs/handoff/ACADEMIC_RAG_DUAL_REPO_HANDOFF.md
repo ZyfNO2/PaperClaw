@@ -710,3 +710,45 @@ completed successfully on live-evidence head
 high-signal Ruff, and Windows pytest all passed. The Windows summary was
 `3649 passed, 0 failed, 0 errors, 21 skipped`. This synchronized
 documentation-only commit follows that tested head.
+
+## 18. Code-review remediation
+
+The REQUEST CHANGES engineering findings were addressed without changing the
+P0 NO-GO decision:
+
+- PaperClaw now converts retrieved candidates into deterministic structured
+  facts, executes conflict detection after primary retrieval, maps conflict types
+  to one bounded corrective round, re-detects conflicts, and records original,
+  resolved, and unresolved conflicts plus strategy and before/after object IDs.
+- `section_scope` is part of the canonical retrieval request, serialization,
+  corrective request, runtime filtering, REST request, and PaperAgent adapters.
+- REST responses expose `corrective_details`; Runtime and REST integration tests
+  cover a real numeric conflict and fail-closed `conflict_unresolved` result.
+- `MiniLMEncoder` now owns the pinned Transformers forward, masked mean pooling,
+  and L2 normalization path. A real RTX 4070 SUPER run executed
+  `MiniLMEncoder -> build_index -> retrieve`, indexed two objects, ranked the
+  crack document first with dense score `0.8140138277020745`, and used
+  `cuda:0`.
+- PaperAgent now executes `decompose_question`, every planned sub-query,
+  corrective/conflict rounds, Evidence Ledger construction, accepted-only
+  context, evidence-text claim generation, semantic/numeric citation validation,
+  and evidence-bound eight-artifact drafting through `AcademicRAGWorkflow`.
+- Context token budget is enforced with a conservative UTF-8 upper bound in
+  addition to the character budget.
+- PaperAgent CI now checks raw JSON coverage without rounding and includes a
+  required PaperClaw academic-extra PDF/REST integration job that fails on skip.
+- The real-LLM trace keeps numeric token usage while redacting request IDs and
+  actual credential/token fields. The rerun remained `completed_verified`.
+
+Local verification after remediation:
+
+- PaperClaw targeted Academic/REST/redaction: `74 passed`;
+- PaperClaw non-live full regression: `1093 passed, 34 skipped, 8 deselected`;
+- PaperAgent Academic/CI assertions: `74 passed`;
+- PaperAgent full regression: `812 passed, 11 skipped`;
+- PaperAgent raw branch coverage: `90.175488054126%`;
+- PaperAgent Ruff, format, and strict mypy (`164` source files): passed.
+
+ColQwen2 execution, 32 blinded human labels, two cross-paper human decisions,
+Native Windows click-through, and reviewer approval remain blocked. Scientific
+validity is not established; status remains `REVISE`, Draft PRs, P0 `NO-GO`.

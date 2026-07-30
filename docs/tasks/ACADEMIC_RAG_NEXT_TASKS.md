@@ -218,3 +218,9 @@ Planner 必须结构化输出：
 - Mock/Fake/离线/真实 GPU/真实 LLM/人工验收的明确区分；
 - 未验证能力、已知限制和 stop condition；
 - 下一位开发者的准确接手步骤。
+> 2026-07-30 review remediation update: H2 conflict detection is now integrated
+> into `AcademicRuntime`; H3 planner/context/claims are integrated into
+> `AcademicRAGWorkflow`; production MiniLM CUDA indexing/retrieval passed; raw
+> coverage and required cross-repo CI gates are implemented. P0 remains NO-GO
+> because ColQwen2, blinded human labels, Native Windows acceptance, cross-paper
+> human decisions, and reviewer approval remain blocked.
