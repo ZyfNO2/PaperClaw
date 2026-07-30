@@ -33,6 +33,7 @@ from .retrieval_service import (
     RetrievalService,
 )
 from .visual import ColQwen2Encoder, VisualEncoder, late_interaction_score
+from .conflicts import EvidenceConflict, StructuredEvidence, detect_evidence_conflicts
 
 __all__ = [
     "AcademicLocator",
@@ -66,4 +67,7 @@ __all__ = [
     "ColQwen2Encoder",
     "VisualEncoder",
     "late_interaction_score",
+    "EvidenceConflict",
+    "StructuredEvidence",
+    "detect_evidence_conflicts",
 ]
