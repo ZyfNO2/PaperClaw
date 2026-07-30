@@ -678,3 +678,25 @@ dispatched against the exact documented branch heads:
 
 These are real executed jobs, not skipped workflow records. A documentation-only
 commit containing this section follows those tested implementation heads.
+
+## 16. 2026-07-30 live provider and GPU evidence
+
+The previously blocked real-provider and dense-GPU checks were executed locally
+with secrets loaded only into the process environment:
+
+- OpenAI-compatible provider: `agnes-2.0-flash`;
+- fixed real-LLM acceptance: `completed_verified`, three model calls, two tool
+  calls, generated file content and execution both verified;
+- the event redactor was hardened to mask provider request IDs and recursively
+  mask credential-bearing fields; its two focused tests pass;
+- post-run scanning found no secret values or absolute Windows paths in modified
+  evidence files;
+- RTX 4070 SUPER / CUDA 12.6 dense embedding passed with pinned
+  `sentence-transformers/all-MiniLM-L6-v2` revision, two 384-dimensional vectors,
+  both L2 norms `1.0`, and `cuda:0` execution.
+
+The fixed-revision `vidore/colqwen2-base` download did not complete within the
+bounded acceptance window. No visual-model execution claim is made. The exact
+outcomes are recorded in `artifacts/academic_rag/live_gpu_acceptance.json`.
+Human labels, cross-paper human decisions, Native Windows click-through, and
+reviewer approval remain blocked; overall status is still `REVISE` / P0 `NO-GO`.

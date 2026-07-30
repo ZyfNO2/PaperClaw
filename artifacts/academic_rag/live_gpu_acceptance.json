@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "timestamp_utc": "2026-07-30T11:52:50.3168739Z",
+  "host": {
+    "gpu": "NVIDIA GeForce RTX 4070 SUPER",
+    "driver": "610.62",
+    "total_memory_mib": 12282,
+    "torch": "2.9.1+cu126",
+    "cuda_runtime": "12.6"
+  },
+  "checks": {
+    "cuda_tensor": {
+      "status": "passed",
+      "device": "cuda:0"
+    },
+    "dense_embedding": {
+      "status": "passed",
+      "execution_path": "transformers AutoModel with MiniLM mean pooling and L2 normalization",
+      "model": "sentence-transformers/all-MiniLM-L6-v2",
+      "revision": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+      "device": "cuda:0",
+      "input_count": 2,
+      "dimension": 384,
+      "embedding_norms": [
+        1.0,
+        1.0
+      ],
+      "elapsed_seconds": 8.487,
+      "peak_memory_mib": 95.97
+    },
+    "visual_embedding": {
+      "status": "blocked",
+      "model": "vidore/colqwen2-base",
+      "revision": "9fe8a713422a7cb4ef79ca77a09b381ee2243101",
+      "reason": "fixed-revision model download did not complete within the bounded acceptance window",
+      "claim": "No ColQwen2 execution or CUDA-residency claim is made."
+    }
+  },
+  "notes": [
+    "The project MiniLM model identity and pooling semantics were retained.",
+    "The direct Transformers path was used because the available Python 3.12 environment had CPU-only PyTorch and the CUDA Python 3.13 environment had an unrelated pyarrow binary import crash in sentence-transformers.",
+    "No model weights, local paths, credentials, or raw provider traffic are included."
+  ]
+}

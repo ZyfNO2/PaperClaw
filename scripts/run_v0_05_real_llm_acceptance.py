@@ -37,8 +37,8 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from paperclaw.harness import AgentRuntimeExecutor, QueryEngine, RunLimits
-from paperclaw.models.adapters import OpenAICompatibleModel
+from paperclaw.harness import AgentRuntimeExecutor, QueryEngine, RunLimits  # noqa: E402
+from paperclaw.models.adapters import OpenAICompatibleModel  # noqa: E402
 
 
 TASK = (
@@ -92,15 +92,29 @@ def _require_env() -> dict[str, str]:
 
 
 def _redact_event_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Remove or mask sensitive fields from an event payload before archiving."""
-    redacted = dict(payload)
-    # Drop any absolute workspace paths that may appear in tool metadata.
-    for key in ("cwd", "path"):
-        if key in redacted and isinstance(redacted[key], str):
-            value = Path(redacted[key])
-            if value.is_absolute():
-                redacted[key] = f"<workspace>/{value.name}"
-    return redacted
+    """Remove sensitive and provider-specific fields before archiving."""
+    sensitive_fragments = ("api_key", "authorization", "password", "secret", "token")
+
+    def redact(value: Any, *, key: str = "") -> Any:
+        normalized_key = key.casefold()
+        if normalized_key == "request_id":
+            return "<redacted>"
+        if any(fragment in normalized_key for fragment in sensitive_fragments):
+            return "<redacted>"
+        if isinstance(value, dict):
+            return {
+                nested_key: redact(nested_value, key=str(nested_key))
+                for nested_key, nested_value in value.items()
+            }
+        if isinstance(value, list):
+            return [redact(item) for item in value]
+        if key in {"cwd", "path"} and isinstance(value, str):
+            path = Path(value)
+            if path.is_absolute():
+                return f"<workspace>/{path.name}"
+        return value
+
+    return redact(payload)
 
 
 def _build_environment_report(env: dict[str, str]) -> dict[str, Any]:
