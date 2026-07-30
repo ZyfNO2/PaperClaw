@@ -700,3 +700,13 @@ bounded acceptance window. No visual-model execution claim is made. The exact
 outcomes are recorded in `artifacts/academic_rag/live_gpu_acceptance.json`.
 Human labels, cross-paper human decisions, Native Windows click-through, and
 reviewer approval remain blocked; overall status is still `REVISE` / P0 `NO-GO`.
+
+## 17. Live-evidence head CI
+
+PaperClaw CI run
+[30540562592](https://github.com/ZyfNO2/PaperClaw/actions/runs/30540562592)
+completed successfully on live-evidence head
+`9251f7ac77077a5320a4043ffc967e34afb36a33`. Ubuntu Academic-extra tests,
+high-signal Ruff, and Windows pytest all passed. The Windows summary was
+`3649 passed, 0 failed, 0 errors, 21 skipped`. This synchronized
+documentation-only commit follows that tested head.
