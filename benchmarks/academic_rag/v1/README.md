@@ -68,3 +68,12 @@ it is bound to the reported `index_generation_id` and is not a gold dataset.
 - UTF-8, no BOM, LF line endings, fixed JSON key order, sorted by entry_id.
 - This manifest is a corpus integrity record, not a scientific validation result.
 - The 32 blinded questions and gold labels belong to H5 and are NOT included here.
+## 32-question human-label template
+
+`eval/questions.template.jsonl` contains exactly 32 blinded authoring slots: eight
+each for text, Figure, Table, and Equation retrieval. Every row is deliberately
+`pending_human_labeling`; `gold_locator`, bbox/table-cell targets, abstention target,
+paper identity, and fingerprint must be filled from human review of the frozen
+corpus. `validate_blinded_question_file` returns `blocked_by_human_labeling` until
+all rows are marked `human_verified` with a gold locator. Automated generation must
+not convert this template into purported human gold.
