@@ -815,3 +815,26 @@ Verification on the implementation heads:
 Scientific validity, ColQwen2 execution, blinded human labels, cross-paper human
 judgments, Native Windows manual acceptance, and reviewer approval remain
 unverified. Overall decision remains `REVISE`; P0 Release remains `NO-GO`.
+
+## 21. Frontend exact-head CI evidence
+
+- PaperClaw CI run
+  [30638342203](https://github.com/ZyfNO2/PaperClaw/actions/runs/30638342203)
+  succeeded on implementation/documentation head
+  `c43b2c9a1751d8ee0328f9a459037649ce19bbef`: high-signal Ruff, Ubuntu
+  academic extra, and Windows pytest all passed. Windows summary:
+  `3668 passed, 0 failed, 0 errors, 21 skipped`.
+- PaperAgent CI run
+  [30638710395](https://github.com/ZyfNO2/PaperAgent/actions/runs/30638710395)
+  succeeded on final implementation head
+  `ffa75979ee6e85a6024556f8c83535f28a023653`: Python 3.11/3.12 lint,
+  format, strict mypy, offline tests, and raw coverage gate passed; required
+  PaperClaw PDF/REST integration and Playwright browser E2E both passed with
+  no skips.
+
+An earlier PaperAgent run exposed missing `browser` extra installation and a
+Linux branch-coverage regression. The workflow now installs `.[dev,browser]`,
+and focused failure-boundary tests restore the raw coverage gate without
+lowering the 90% threshold. This synchronized documentation-only commit follows
+the tested heads above. Both PRs remain Draft; scientific status remains
+`REVISE` and P0 remains `NO-GO`.
