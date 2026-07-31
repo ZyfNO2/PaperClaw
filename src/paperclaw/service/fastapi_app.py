@@ -7,6 +7,7 @@ import asyncio
 from importlib.resources import files
 import json
 from pathlib import Path
+import secrets
 from typing import Any
 
 from paperclaw.harness import RunLimits
@@ -68,6 +69,20 @@ def create_app(
     class PaperImportBody(BaseModel):
         source_path: str = Field(min_length=1, max_length=4_096)
         paper_id: str | None = Field(default=None, max_length=200)
+
+    class ProjectCreateBody(BaseModel):
+        name: str = Field(min_length=1, max_length=200)
+
+    class AcademicArtifactCreateBody(BaseModel):
+        idempotency_key: str = Field(min_length=1, max_length=500)
+        artifact_type: str = Field(min_length=1, max_length=100)
+        title: str = Field(min_length=1, max_length=500)
+        draft: dict[str, Any]
+
+    class AcademicArtifactReviewBody(BaseModel):
+        idempotency_key: str = Field(min_length=1, max_length=500)
+        decision: str = Field(pattern="^(approved|rejected|revise)$")
+        note: str = Field(min_length=1, max_length=2_000)
 
     class PaperMetadataBody(BaseModel):
         expected_revision: int = Field(ge=1)
@@ -274,6 +289,7 @@ def create_app(
 
     def paper_error(exc: Exception) -> HTTPException:
         from paperclaw.academic.errors import AcademicRetrievalError
+        from paperclaw.artifacts import ArtifactError, ArtifactNotFoundError
         from paperclaw.papers import (
             PaperCapacityError,
             PaperConflictError,
@@ -283,6 +299,16 @@ def create_app(
         if isinstance(exc, AcademicRetrievalError):
             return HTTPException(
                 exc.status_code,
+                detail={"code": exc.code, "message": str(exc)[:500]},
+            )
+        if isinstance(exc, ArtifactNotFoundError):
+            return HTTPException(
+                404,
+                detail={"code": exc.code, "message": "Artifact was not found."},
+            )
+        if isinstance(exc, ArtifactError):
+            return HTTPException(
+                409,
                 detail={"code": exc.code, "message": str(exc)[:500]},
             )
         if isinstance(exc, PaperNotFoundError):
@@ -314,6 +340,178 @@ def create_app(
                 "message": "Paper operation failed.",
             },
         )
+
+    def project_manifests() -> list[tuple[Path, Any]]:
+        from paperclaw.projects import ProjectManifestStore
+
+        projects: list[tuple[Path, Any]] = []
+        seen: set[Path] = set()
+        for root in app.state.paper_workspace_roots:
+            candidates = [root]
+            candidates.extend(
+                path.parent.parent for path in root.glob("**/.paperclaw/project.json")
+            )
+            for workspace in candidates:
+                if workspace in seen:
+                    continue
+                seen.add(workspace)
+                try:
+                    manifest = ProjectManifestStore(workspace).load()
+                except (FileNotFoundError, OSError, ValueError):
+                    continue
+                projects.append((workspace, manifest))
+        projects.sort(key=lambda item: (item[1].name.casefold(), item[1].project_id))
+        return projects
+
+    def artifact_store(project_id: str):
+        from paperclaw.artifacts import FileArtifactStore
+
+        resolved = paper_service(project_id)
+        return FileArtifactStore(
+            resolved.workspace / ".paperclaw" / "artifacts",
+            confinement_root=resolved.workspace,
+        )
+
+    def artifact_payload(store: Any, artifact_id: str) -> dict[str, Any]:
+        bundle = store.get_bundle(artifact_id, max_revisions=100)
+        revisions: list[dict[str, Any]] = []
+        for revision in bundle.revisions:
+            raw = store.read_revision(artifact_id, revision.revision_number)
+            try:
+                content = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ValueError("academic artifact revision is not UTF-8 JSON") from exc
+            revisions.append({**revision.to_dict(), "content": content})
+        return {"artifact": bundle.artifact.to_dict(), "revisions": revisions}
+
+    @app.get("/v1/projects")
+    def list_projects():
+        projects = project_manifests()
+        return {
+            "projects": [manifest.to_dict() for _, manifest in projects],
+            "count": len(projects),
+        }
+
+    @app.post("/v1/projects", status_code=201)
+    def create_project(body: ProjectCreateBody):
+        from paperclaw.projects import ProjectManifestStore
+
+        if not app.state.paper_workspace_roots:
+            raise HTTPException(
+                503,
+                detail={
+                    "code": "project_root_unavailable",
+                    "message": "No writable PaperClaw project root is configured.",
+                },
+            )
+        root = app.state.paper_workspace_roots[0]
+        workspace = root / f"project-{secrets.token_hex(8)}"
+        try:
+            workspace.mkdir(parents=False, exist_ok=False)
+            manifest = ProjectManifestStore(workspace).initialize(body.name)
+        except (FileExistsError, OSError, ValueError) as exc:
+            raise HTTPException(
+                422,
+                detail={"code": "project_create_failed", "message": str(exc)[:500]},
+            ) from exc
+        return {"project": manifest.to_dict()}
+
+    @app.get("/v1/projects/{project_id}")
+    def get_project(project_id: str):
+        resolved = paper_service(project_id)
+        from paperclaw.projects import ProjectManifestStore
+
+        return {"project": ProjectManifestStore(resolved.workspace).load().to_dict()}
+
+    @app.get("/v1/projects/{project_id}/artifacts")
+    def list_academic_artifacts(project_id: str, limit: int = 50):
+        if not 1 <= limit <= 100:
+            raise HTTPException(422, detail={"code": "artifact_invalid_limit"})
+        try:
+            store = artifact_store(project_id)
+            values = store.list_artifacts(project_id=project_id, limit=limit)
+            return {
+                "artifacts": [item.to_dict() for item in values],
+                "count": len(values),
+            }
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.post("/v1/projects/{project_id}/artifacts", status_code=201)
+    def create_academic_artifact(project_id: str, body: AcademicArtifactCreateBody):
+        from paperclaw.artifacts import ArtifactSourceLinks
+
+        draft = dict(body.draft)
+        if draft.get("project_id") != project_id or draft.get("state") != "draft":
+            raise HTTPException(
+                422,
+                detail={
+                    "code": "artifact_validation_error",
+                    "message": "Academic artifact must be a draft for the route project.",
+                },
+            )
+        try:
+            store = artifact_store(project_id)
+            record, revision, created = store.create_artifact(
+                idempotency_key=body.idempotency_key,
+                artifact_type=body.artifact_type,
+                title=body.title,
+                media_type="application/json",
+                content=json.dumps(
+                    draft, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8"),
+                source=ArtifactSourceLinks(project_id=project_id),
+                metadata={"academic_state": "draft"},
+                revision_message="academic draft",
+            )
+            return {
+                "artifact": record.to_dict(),
+                "revision": revision.to_dict(),
+                "created": created,
+            }
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.get("/v1/projects/{project_id}/artifacts/{artifact_id}")
+    def get_academic_artifact(project_id: str, artifact_id: str):
+        try:
+            return artifact_payload(artifact_store(project_id), artifact_id)
+        except Exception as exc:
+            raise paper_error(exc) from exc
+
+    @app.post("/v1/projects/{project_id}/artifacts/{artifact_id}/review")
+    def review_academic_artifact(
+        project_id: str,
+        artifact_id: str,
+        body: AcademicArtifactReviewBody,
+    ):
+        try:
+            store = artifact_store(project_id)
+            current = json.loads(store.read_revision(artifact_id).decode("utf-8"))
+            if not isinstance(current, dict) or current.get("state") == "final":
+                raise ValueError("final or malformed artifact cannot be reviewed")
+            requested_state = "draft" if body.decision == "revise" else body.decision
+            replay = (
+                current.get("state") == requested_state
+                and current.get("review_note") == body.note
+            )
+            if current.get("state") != "draft" and not replay:
+                raise ValueError("only a draft artifact can be reviewed")
+            next_state = requested_state
+            current.update({"state": next_state, "review_note": body.note})
+            revision, created = store.add_revision(
+                artifact_id,
+                idempotency_key=body.idempotency_key,
+                media_type="application/json",
+                content=json.dumps(
+                    current, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8"),
+                message=f"academic review: {body.decision}",
+                metadata={"academic_state": next_state, "decision": body.decision},
+            )
+            return {"revision": revision.to_dict(), "created": created}
+        except Exception as exc:
+            raise paper_error(exc) from exc
 
     @app.post("/v1/projects/{project_id}/papers/import", status_code=201)
     def import_paper(project_id: str, body: PaperImportBody):

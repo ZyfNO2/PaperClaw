@@ -337,3 +337,108 @@ def test_rest_exposes_conflict_driven_corrective_trace(tmp_path) -> None:
         trace["corrective_details"]["original_conflicts"][0]["conflict_type"]
         == "metric_value"
     )
+
+
+def test_rest_project_and_academic_artifact_revisions_are_public_and_append_only(
+    tmp_path,
+) -> None:
+    client = TestClient(create_app(EmptyService(), paper_workspace_roots=[tmp_path]))
+
+    created_project = client.post("/v1/projects", json={"name": "Academic Demo"})
+    assert created_project.status_code == 201
+    project = created_project.json()["project"]
+    project_id = project["project_id"]
+    assert client.get("/v1/projects").json()["projects"] == [project]
+    assert client.get(f"/v1/projects/{project_id}").json()["project"] == project
+
+    draft = {
+        "artifact_type": "baseline_card",
+        "title": "Baseline",
+        "project_id": project_id,
+        "summary": "Generated-PDF engineering fixture only.",
+        "evidence_ids": ["paper:v1:paragraph-1"],
+        "claims": [
+            {
+                "text": "Fixture claim.",
+                "evidence_ids": ["paper:v1:paragraph-1"],
+                "limitations": ["Not scientific validation."],
+            }
+        ],
+        "state": "draft",
+        "review_note": None,
+    }
+    created = client.post(
+        f"/v1/projects/{project_id}/artifacts",
+        json={
+            "idempotency_key": "artifact-create-1",
+            "artifact_type": "baseline_card",
+            "title": "Baseline",
+            "draft": draft,
+        },
+    )
+    assert created.status_code == 201
+    artifact_id = created.json()["artifact"]["artifact_id"]
+    assert client.get(f"/v1/projects/{project_id}/artifacts").json()["count"] == 1
+
+    revised = client.post(
+        f"/v1/projects/{project_id}/artifacts/{artifact_id}/review",
+        json={
+            "idempotency_key": "artifact-review-1",
+            "decision": "revise",
+            "note": "Clarify the dataset split.",
+        },
+    )
+    assert revised.status_code == 200
+    assert revised.json()["revision"]["revision_number"] == 2
+    detail = client.get(
+        f"/v1/projects/{project_id}/artifacts/{artifact_id}"
+    ).json()
+    assert [item["revision_number"] for item in detail["revisions"]] == [1, 2]
+    assert detail["revisions"][0]["content"]["review_note"] is None
+    assert detail["revisions"][1]["content"]["review_note"] == (
+        "Clarify the dataset split."
+    )
+
+
+def test_rest_academic_artifact_review_fails_closed_for_non_draft(tmp_path) -> None:
+    workspace = _workspace(tmp_path)
+    client = TestClient(create_app(EmptyService(), paper_workspace_roots=[tmp_path]))
+    draft = {
+        "artifact_type": "review_report",
+        "title": "Review",
+        "project_id": "demo",
+        "summary": "Needs human review.",
+        "evidence_ids": ["e1"],
+        "claims": [{"text": "Claim", "evidence_ids": ["e1"], "limitations": []}],
+        "state": "draft",
+        "review_note": None,
+    }
+    created = client.post(
+        "/v1/projects/demo/artifacts",
+        json={
+            "idempotency_key": "create-review",
+            "artifact_type": "review_report",
+            "title": "Review",
+            "draft": draft,
+        },
+    ).json()
+    artifact_id = created["artifact"]["artifact_id"]
+    assert workspace.exists()
+    approved = client.post(
+        f"/v1/projects/demo/artifacts/{artifact_id}/review",
+        json={
+            "idempotency_key": "approve-review",
+            "decision": "approved",
+            "note": "Human checked.",
+        },
+    )
+    assert approved.status_code == 200
+    repeated = client.post(
+        f"/v1/projects/demo/artifacts/{artifact_id}/review",
+        json={
+            "idempotency_key": "reject-approved",
+            "decision": "rejected",
+            "note": "Too late.",
+        },
+    )
+    assert repeated.status_code == 422
