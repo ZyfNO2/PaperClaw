@@ -4,6 +4,44 @@ PaperClaw 是一个面向 Coding、Research 与多 Agent 工作流的可审计 A
 
 当前开发版本：**0.38.0**。
 
+## Runtime Evaluation Harness
+
+PaperClaw 现在可以把版本化 Evaluation Case、现有 Runtime/recorded execution、durable
+Trace 与已有评估器编排成一份统一报告：
+
+```text
+Evaluation Case v1
+  -> offline recording / existing durable Trace
+  -> workflow + Tool/policy + reliability + HumanGate + Trace rules
+  -> existing aggregate / research / retrieval evaluators
+  -> manifest.json + summary.json + report.md + per-case evidence
+```
+
+确定性离线示例：
+
+```powershell
+paperclaw-eval-run `
+  --dataset examples/evaluation/runtime-cases.jsonl `
+  --workspace . `
+  --mode offline `
+  --output artifacts/evaluations/offline-demo
+```
+
+默认 `offline` 只运行 recorded control-flow evaluation，不调用付费 Provider、Redis、
+PostgreSQL 或外部副作用 Tool。非离线模式只读取已经存在的 durable Trace：
+
+```powershell
+paperclaw-eval-run `
+  --dataset path/to/local-cases.jsonl `
+  --mode local `
+  --trace-database .paperclaw/context.sqlite3 `
+  --output artifacts/evaluations/local-run
+```
+
+HumanGate 只作为安全边界评估：正确进入 `WAITING_APPROVAL` 不算普通失败，Runner 不会
+自动批准或继续执行受保护动作。Token/pricing 不可用时报告为 `unknown`/`null`，不会伪装
+为 0。Delivery 仍是 at-least-once 语义。
+
 ```text
 Team Plan
   -> SQLite / Redis Streams Message Bus

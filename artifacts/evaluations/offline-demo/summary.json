@@ -1,0 +1,165 @@
+{
+  "case_totals": {
+    "PASS": 14,
+    "WAITING_APPROVAL": 1,
+    "total": 15
+  },
+  "citation_metrics": {
+    "status": "NOT_VERIFIED without curated claim-support labels"
+  },
+  "cost": {
+    "estimated_cost": null,
+    "known_cost_subtotal": null,
+    "status": "unknown",
+    "token_count": null,
+    "unpriced_model_calls": 0
+  },
+  "failure_distribution": {},
+  "gate_metrics": {
+    "expected_gate_triggered": {
+      "false": 0,
+      "true": 15
+    },
+    "final_state_waiting_approval": {
+      "false": 14,
+      "true": 1
+    },
+    "gate_action_match": {
+      "false": 0,
+      "true": 15
+    },
+    "gate_reason_match": {
+      "false": 0,
+      "true": 15
+    },
+    "gate_trigger_count": 0.066667,
+    "gate_triggered": {
+      "false": 14,
+      "true": 1
+    },
+    "missing_gate": {
+      "false": 15,
+      "true": 0
+    },
+    "protected_action_executed_after_waiting": {
+      "false": 15,
+      "true": 0
+    },
+    "protected_action_executed_before_approval": {
+      "false": 15,
+      "true": 0
+    },
+    "unexpected_gate": {
+      "false": 15,
+      "true": 0
+    }
+  },
+  "reliability_metrics": {
+    "ack_consistency": {
+      "false": 0,
+      "true": 15
+    },
+    "cancelled_work_after_cancel_count": 0.0,
+    "dlq_count": 0.0,
+    "duplicate_attempt_count": 0.0,
+    "duplicate_side_effect_risk": 0.0,
+    "max_retries_exceeded": {
+      "false": 15,
+      "true": 0
+    },
+    "outbox_created": 0.0,
+    "outbox_delivered": 0.0,
+    "recovered_claim_count": 0.0,
+    "repeated_error_loop_detected": {
+      "false": 15,
+      "true": 0
+    },
+    "retry_count": 0.133333,
+    "retry_exhausted_count": 0.0,
+    "retry_success_rate": 1.0,
+    "terminal_state_consistency": {
+      "false": 0,
+      "true": 15
+    },
+    "timeout_count": 0.0
+  },
+  "research_metrics": {
+    "implementation": "paperclaw.research_eval",
+    "status": "NOT_SUPPLIED"
+  },
+  "retrieval_metrics": {
+    "implementation": "paperclaw.retrieval.quality_eval",
+    "status": "NOT_SUPPLIED"
+  },
+  "tool_metrics": {
+    "duplicate_tool_call_count": 0.0,
+    "extension_policy_recheck_count": 0.133333,
+    "forbidden_tool_call_count": 0.0,
+    "invalid_argument_count": 0.0,
+    "permission_bypass_count": 0.0,
+    "permission_denial_count": 0.133333,
+    "required_tool_coverage": 1.0,
+    "tool_call_count": 1.0,
+    "tool_failure_count": 0.133333,
+    "tool_recovery_rate": 1.0,
+    "tool_schema_validation_rate": 1.0,
+    "tool_timeout_count": 0.0,
+    "unexpected_tool_call_count": 0.0,
+    "unnecessary_tool_call_count": 0.0
+  },
+  "workflow_metrics": {
+    "completion_without_required_review": {
+      "false": 15,
+      "true": 0
+    },
+    "coordinator_assignment_valid": {
+      "false": 0,
+      "true": 15
+    },
+    "orphan_task_count": 0.0,
+    "plan_task_coverage": 1.0,
+    "required_output_coverage": 1.0,
+    "required_role_coverage": 1.0,
+    "review_loop_detected": {
+      "false": 15,
+      "true": 0
+    },
+    "review_rework_count": 0.066667,
+    "reviewer_acceptance_followed_by_completion": {
+      "false": 0,
+      "true": 15
+    },
+    "reviewer_decision_present": {
+      "false": 0,
+      "true": 15
+    },
+    "reviewer_decision_valid": {
+      "false": 0,
+      "true": 15
+    },
+    "reviewer_invoked_when_required": {
+      "false": 0,
+      "true": 15
+    },
+    "reviewer_rejection_followed_by_rework": {
+      "false": 0,
+      "true": 15
+    },
+    "step_limit_exceeded": {
+      "false": 15,
+      "true": 0
+    },
+    "terminal_state_match": {
+      "false": 0,
+      "true": 15
+    },
+    "unexpected_role_count": 0.0,
+    "unfinished_task_count": 0.0,
+    "worker_completion_rate": 1.0,
+    "workflow_success": {
+      "false": 0,
+      "true": 15
+    }
+  },
+  "workflow_success_rate": 1.0
+}

@@ -1,0 +1,24 @@
+{
+  "commit_sha": "5891d87ec2a68f434fe8f728ba9be0999932c325",
+  "dataset": "examples\\evaluation\\runtime-cases.jsonl",
+  "dataset_digest": "d3721ff9945c205a8506d264e56be855cb5863ea52fbf0c0bd047358cd88301f",
+  "enabled_evaluators": [
+    "workflow",
+    "tools",
+    "reliability",
+    "gate",
+    "trace",
+    "aggregate"
+  ],
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.5"
+  },
+  "evaluation_schema_version": "1",
+  "finished_at": "2026-07-31T16:54:24.762102+00:00",
+  "mode": "offline",
+  "paperclaw_version": "0.0.1",
+  "pricing_digest": null,
+  "provider": "fake/recorded",
+  "started_at": "2026-07-31T16:54:24.762102+00:00"
+}

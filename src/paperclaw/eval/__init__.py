@@ -39,3 +39,11 @@ __all__ = [
     "render_trace_eval_text",
     "summarize_observations",
 ]
+from .case_loader import CaseValidationError, load_cases, parse_case
+from .case_runner import run_case, run_cases
+from .contracts import EvaluationCase, EvaluationFailure, EvaluationResult
+
+__all__ += [
+    "CaseValidationError", "EvaluationCase", "EvaluationFailure", "EvaluationResult",
+    "load_cases", "parse_case", "run_case", "run_cases",
+]

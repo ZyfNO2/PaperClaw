@@ -1,0 +1,176 @@
+{
+  "human_gate_external_write_001": {
+    "event_ids": [
+      "hg-1",
+      "hg-2",
+      "hg-3"
+    ],
+    "run_id": "human-gate"
+  },
+  "human_gate_read_no_false_positive_001": {
+    "event_ids": [
+      "wf-1",
+      "wf-2",
+      "wf-3",
+      "wf-4",
+      "wf-5",
+      "wf-6",
+      "wf-7"
+    ],
+    "run_id": "workflow-success"
+  },
+  "reliability_retry_success_001": {
+    "event_ids": [
+      "rt-1",
+      "rt-2",
+      "rt-3",
+      "rt-4",
+      "rt-5",
+      "rt-6",
+      "rt-7",
+      "rt-8",
+      "rt-9"
+    ],
+    "run_id": "retry-success"
+  },
+  "reliability_terminal_consistency_001": {
+    "event_ids": [
+      "rt-1",
+      "rt-2",
+      "rt-3",
+      "rt-4",
+      "rt-5",
+      "rt-6",
+      "rt-7",
+      "rt-8",
+      "rt-9"
+    ],
+    "run_id": "retry-success"
+  },
+  "research_citation_provenance_001": {
+    "event_ids": [
+      "wf-1",
+      "wf-2",
+      "wf-3",
+      "wf-4",
+      "wf-5",
+      "wf-6",
+      "wf-7"
+    ],
+    "run_id": "workflow-success"
+  },
+  "tool_extension_policy_recheck_001": {
+    "event_ids": [
+      "pd-1",
+      "pd-2",
+      "pd-3",
+      "pd-4"
+    ],
+    "run_id": "permission-denied"
+  },
+  "tool_permission_denial_001": {
+    "event_ids": [
+      "pd-1",
+      "pd-2",
+      "pd-3",
+      "pd-4"
+    ],
+    "run_id": "permission-denied"
+  },
+  "tool_required_search_001": {
+    "event_ids": [
+      "wf-1",
+      "wf-2",
+      "wf-3",
+      "wf-4",
+      "wf-5",
+      "wf-6",
+      "wf-7"
+    ],
+    "run_id": "workflow-success"
+  },
+  "tool_schema_valid_001": {
+    "event_ids": [
+      "wf-1",
+      "wf-2",
+      "wf-3",
+      "wf-4",
+      "wf-5",
+      "wf-6",
+      "wf-7"
+    ],
+    "run_id": "workflow-success"
+  },
+  "trace_complete_001": {
+    "event_ids": [
+      "wf-1",
+      "wf-2",
+      "wf-3",
+      "wf-4",
+      "wf-5",
+      "wf-6",
+      "wf-7"
+    ],
+    "run_id": "workflow-success"
+  },
+  "trace_secret_redaction_001": {
+    "event_ids": [
+      "wf-1",
+      "wf-2",
+      "wf-3",
+      "wf-4",
+      "wf-5",
+      "wf-6",
+      "wf-7"
+    ],
+    "run_id": "workflow-success"
+  },
+  "workflow_coordinator_split_001": {
+    "event_ids": [
+      "wf-1",
+      "wf-2",
+      "wf-3",
+      "wf-4",
+      "wf-5",
+      "wf-6",
+      "wf-7"
+    ],
+    "run_id": "workflow-success"
+  },
+  "workflow_reviewer_accept_001": {
+    "event_ids": [
+      "wf-1",
+      "wf-2",
+      "wf-3",
+      "wf-4",
+      "wf-5",
+      "wf-6",
+      "wf-7"
+    ],
+    "run_id": "workflow-success"
+  },
+  "workflow_reviewer_rework_001": {
+    "event_ids": [
+      "rw-1",
+      "rw-2",
+      "rw-3",
+      "rw-4",
+      "rw-5",
+      "rw-6",
+      "rw-7"
+    ],
+    "run_id": "review-rework"
+  },
+  "workflow_worker_complete_001": {
+    "event_ids": [
+      "wf-1",
+      "wf-2",
+      "wf-3",
+      "wf-4",
+      "wf-5",
+      "wf-6",
+      "wf-7"
+    ],
+    "run_id": "workflow-success"
+  }
+}
