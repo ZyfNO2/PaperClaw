@@ -838,3 +838,52 @@ and focused failure-boundary tests restore the raw coverage gate without
 lowering the 90% threshold. This synchronized documentation-only commit follows
 the tested heads above. Both PRs remain Draft; scientific status remains
 `REVISE` and P0 remains `NO-GO`.
+
+## 22. Acceptance-request remediation (2026-07-31)
+
+Implementation heads before this synchronized documentation commit:
+
+- PaperClaw: `454ab4b2b2e2b5e9b408aca2267e47fdb89ef023`
+  (`fix(api): enforce academic artifact boundary`)
+- PaperAgent: `5157acb4567bb0d0ff87037d1f780aeaf7c5ca05`
+  (`test(browser): await complete artifact workflow`)
+
+The blocking review findings were remediated as follows:
+
+- project switching is an asynchronous atomic boundary load. Navigation is disabled
+  while Papers and Artifacts are fetched; Evidence, lastEvidence, and Runs are
+  cleared, then project-scoped run IDs are restored. New projects use the same path.
+- PaperClaw creation uses a Pydantic discriminated union for the eight permitted
+  `academic.v1` draft types, validates evidence-bound claims and required fields,
+  and requires route/project/type/title consistency.
+- Artifact list/get/review validate type, project, schema and the complete common
+  draft structure. Non-academic and malformed records are hidden and cannot be
+  reviewed.
+- Runs now creates durable PaperAgent tasks, polls status, supports cancellation,
+  displays task/trace identity, and restores up to 50 task IDs per project from
+  browser-local state.
+- Literature is truthfully labelled `Server-local PDF path import`; browser upload
+  is not claimed or implemented.
+- Playwright now covers two-project isolation and a real in-process PaperClaw loop:
+  two generated PDFs are imported, parsed and indexed; a real PNG page asset is
+  fetched through the browser; Evidence is queried; all eight drafts are generated;
+  a revision is requested and verified as history `[1, 2]`; and a clean second
+  project is verified.
+
+Local verification:
+
+- PaperClaw focused REST: `11 passed`; non-live regression: `1098 passed, 38 skipped`;
+  Ruff and wheel/sdist build passed.
+- PaperAgent full suite including four Playwright cases: `832 passed, 10 skipped`;
+  Ruff, format, JavaScript syntax, strict mypy (`167` files), and wheel/sdist passed.
+- PaperClaw exact-head CI
+  [30642210850](https://github.com/ZyfNO2/PaperClaw/actions/runs/30642210850)
+  passed Windows pytest, Ubuntu academic-extra tests, and Ruff.
+- PaperAgent exact-head CI
+  [30642858819](https://github.com/ZyfNO2/PaperAgent/actions/runs/30642858819)
+  passed Python 3.11/3.12 verification, required PaperClaw PDF/REST integration,
+  and Playwright Chromium E2E without skips.
+
+Generated PDFs and the real in-process storage/API/browser path verify engineering
+control flow only. They do not establish scientific quality. Overall decision stays
+`REVISE`; P0 Release stays `NO-GO`; both PRs stay Draft.
