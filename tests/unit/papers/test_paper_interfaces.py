@@ -442,3 +442,38 @@ def test_rest_academic_artifact_review_fails_closed_for_non_draft(tmp_path) -> N
         },
     )
     assert repeated.status_code == 422
+
+
+def test_rest_academic_artifact_rejects_unbounded_or_mismatched_type(tmp_path) -> None:
+    client = TestClient(create_app(EmptyService(), paper_workspace_roots=[tmp_path]))
+    project_id = client.post("/v1/projects", json={"name": "bounded"}).json()[
+        "project"
+    ]["project_id"]
+    draft = {
+        "artifact_type": "review_report",
+        "project_id": project_id,
+        "state": "draft",
+    }
+
+    unbounded = client.post(
+        f"/v1/projects/{project_id}/artifacts",
+        json={
+            "idempotency_key": "unbounded",
+            "artifact_type": "free_form_answer",
+            "title": "No",
+            "draft": {**draft, "artifact_type": "free_form_answer"},
+        },
+    )
+    mismatched = client.post(
+        f"/v1/projects/{project_id}/artifacts",
+        json={
+            "idempotency_key": "mismatched",
+            "artifact_type": "baseline_card",
+            "title": "No",
+            "draft": draft,
+        },
+    )
+
+    assert unbounded.status_code == 422
+    assert mismatched.status_code == 422
+    assert unbounded.json()["detail"]["code"] == "artifact_validation_error"

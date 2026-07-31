@@ -25,6 +25,18 @@ def create_app(
     *,
     paper_workspace_roots: list[str | Path] | tuple[str | Path, ...] = (),
 ) -> Any:
+    academic_artifact_types = frozenset(
+        {
+            "evidence_bundle",
+            "paper_comparison",
+            "baseline_card",
+            "module_card",
+            "compatibility_matrix",
+            "experiment_matrix",
+            "method_draft",
+            "review_report",
+        }
+    )
     try:
         from fastapi import FastAPI, Header, HTTPException, Request, Response
         from fastapi.responses import StreamingResponse
@@ -442,12 +454,20 @@ def create_app(
         from paperclaw.artifacts import ArtifactSourceLinks
 
         draft = dict(body.draft)
-        if draft.get("project_id") != project_id or draft.get("state") != "draft":
+        if (
+            body.artifact_type not in academic_artifact_types
+            or draft.get("artifact_type") != body.artifact_type
+            or draft.get("project_id") != project_id
+            or draft.get("state") != "draft"
+        ):
             raise HTTPException(
                 422,
                 detail={
                     "code": "artifact_validation_error",
-                    "message": "Academic artifact must be a draft for the route project.",
+                    "message": (
+                        "Academic artifact type and draft must match the route project "
+                        "and the bounded academic.v1 artifact contract."
+                    ),
                 },
             )
         try:
