@@ -24,7 +24,7 @@ def test_extended_provider_controls_are_packaged() -> None:
 
 def test_extended_provider_controls_do_not_persist_credentials() -> None:
     combined = "\n".join(
-        (_asset("index.html"), _asset("provider-config.js"))
+        (_asset("index.html"), _asset("provider-config.js"), _asset("transport.js"))
     ).lower()
     for forbidden in (
         "localstorage",

@@ -1,8 +1,6 @@
 (() => {
   "use strict";
 
-  const bootstrapToken = readBootstrapToken();
-  const httpApi = bootstrapToken ? createHttpApi(bootstrapToken) : null;
   const ui = {};
   let initialized = false;
   let connecting = false;
@@ -41,8 +39,7 @@
   }
 
   function backendApi() {
-    if (window.pywebview && window.pywebview.api) return window.pywebview.api;
-    return httpApi;
+    return window.PaperClawBackend ? window.PaperClawBackend.api : null;
   }
 
   async function maybeLoadDefaults() {
@@ -303,36 +300,6 @@
   function setStatus(message, state) {
     ui.providerConnectStatus.textContent = message;
     ui.providerConnectStatus.dataset.state = state;
-  }
-
-  function readBootstrapToken() {
-    if (!window.location.hash) return "";
-    try {
-      return new URLSearchParams(window.location.hash.slice(1)).get("token") || "";
-    } catch (_error) {
-      return "";
-    }
-  }
-
-  function createHttpApi(token) {
-    async function invoke(method, args) {
-      const response = await window.fetch(`/api/${method}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-PaperClaw-Token": token
-        },
-        body: JSON.stringify({args})
-      });
-      return response.json();
-    }
-    return {
-      get_defaults: () => invoke("get_defaults", []),
-      connect_provider: (request) => invoke("connect_provider", [request]),
-      select_provider_model: (model, allowUnlisted = false) => invoke("select_provider_model", [model, allowUnlisted]),
-      clear_provider_config: () => invoke("clear_provider_config", []),
-      clear_manual_provider: () => invoke("clear_manual_provider", [])
-    };
   }
 
   function text(value, fallback) {

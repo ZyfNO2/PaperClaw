@@ -2,7 +2,7 @@
   "use strict";
   const root = () => document.getElementById("papers-root");
   const workspace = () => (document.getElementById("workspace-path")?.textContent || "").trim();
-  const api = () => window.pywebview?.api || null;
+  const api = () => window.PaperClawBackend?.api || null;
   const node = (tag, cls, text) => {
     const item = document.createElement(tag);
     if (cls) item.className = cls;

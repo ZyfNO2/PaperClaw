@@ -1,51 +1,13 @@
 (() => {
   "use strict";
 
-  const browserToken = readBrowserToken();
-  const httpApi = browserToken ? createHttpApi(browserToken) : null;
   const ui = {};
   let ready = false;
   let activeTab = "overview";
   let currentArtifact = null;
 
-  function readBrowserToken() {
-    try {
-      if (!window.location.hash) return "";
-      return new URLSearchParams(window.location.hash.slice(1)).get("token") || "";
-    } catch (_error) {
-      return "";
-    }
-  }
-
-  function createHttpApi(token) {
-    async function invoke(method, args) {
-      const response = await window.fetch(`/api/${method}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-PaperClaw-Token": token
-        },
-        body: JSON.stringify({args})
-      });
-      const value = await response.json();
-      if (!value || typeof value !== "object") throw new Error("Invalid product response");
-      return value;
-    }
-    return {
-      get_product_overview: (workspace) => invoke("get_product_overview", [workspace]),
-      get_capabilities: (maturity, surface) => invoke("get_capabilities", [maturity, surface]),
-      get_project_status: (workspace) => invoke("get_project_status", [workspace]),
-      refresh_project_index: (workspace) => invoke("refresh_project_index", [workspace]),
-      list_artifacts: (workspace, filters) => invoke("list_artifacts", [workspace, filters]),
-      get_artifact: (workspace, artifactId) => invoke("get_artifact", [workspace, artifactId]),
-      export_artifact: (workspace, artifactId, relativePath, revisionNumber, overwrite) =>
-        invoke("export_artifact", [workspace, artifactId, relativePath, revisionNumber, overwrite])
-    };
-  }
-
   function backend() {
-    if (window.pywebview && window.pywebview.api) return window.pywebview.api;
-    return httpApi;
+    return window.PaperClawBackend ? window.PaperClawBackend.api : null;
   }
 
   function bind() {

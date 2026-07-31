@@ -9,9 +9,8 @@
     ["dark", "Dark"],
     ["light", "Light"]
   ]);
-  const bootstrap = readBrowserBootstrap();
+  const bootstrap = window.PaperClawBackend ? window.PaperClawBackend.bootstrap : {token: "", theme: ""};
   const bridgeClientId = createClientId();
-  const httpApi = bootstrap.token ? createHttpApi(bootstrap.token) : null;
   const ui = {};
   const trace = [];
   let domReady = false;
@@ -77,7 +76,7 @@
     bindNavigation();
     bindToolChips();
     ui.themeSelect.value = currentTheme;
-    if (httpApi) {
+    if (backendMode() === "browser") {
       bridgeReady = true;
       ui.openBrowser.disabled = true;
       ui.openBrowser.textContent = "◎ BROWSER MODE";
@@ -92,12 +91,11 @@
   }
 
   function backendApi() {
-    if (window.pywebview && window.pywebview.api) return window.pywebview.api;
-    return httpApi;
+    return window.PaperClawBackend ? window.PaperClawBackend.api : null;
   }
 
   function backendMode() {
-    return httpApi && !(window.pywebview && window.pywebview.api) ? "browser" : "desktop";
+    return window.PaperClawBackend ? window.PaperClawBackend.mode() : "desktop";
   }
 
   function markBridgeReady() {
@@ -331,22 +329,6 @@
     return "dark";
   }
 
-  function readBrowserBootstrap() {
-    const result = {token: "", theme: ""};
-    if (!window.location.hash) return result;
-    try {
-      const values = new URLSearchParams(window.location.hash.slice(1));
-      result.token = values.get("token") || "";
-      result.theme = values.get("theme") || "";
-      if (result.token || result.theme) {
-        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-      }
-    } catch (_error) {
-      return {token: "", theme: ""};
-    }
-    return result;
-  }
-
   function createClientId() {
     try {
       if (window.crypto && typeof window.crypto.randomUUID === "function") {
@@ -356,36 +338,6 @@
       // Fall back to a per-document identifier below.
     }
     return `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  }
-
-  function createHttpApi(token) {
-    async function invoke(method, args) {
-      const response = await window.fetch(`/api/${method}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-PaperClaw-Token": token
-        },
-        body: JSON.stringify({args})
-      });
-      let payload = null;
-      try {
-        payload = await response.json();
-      } catch (_error) {
-        payload = null;
-      }
-      if (!payload) throw new Error("PaperClaw browser bridge returned invalid JSON.");
-      return payload;
-    }
-    return {
-      get_defaults: () => invoke("get_defaults", []),
-      get_state: () => invoke("get_state", []),
-      start_run: (request) => invoke("start_run", [request]),
-      cancel_run: () => invoke("cancel_run", []),
-      poll_events: (limit, clientId) => invoke("poll_events", [limit, clientId]),
-      select_workspace: () => invoke("select_workspace", []),
-      set_theme: (theme) => invoke("set_theme", [theme])
-    };
   }
 
   function renderWorkspace(value) {

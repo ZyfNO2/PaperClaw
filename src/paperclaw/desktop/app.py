@@ -41,6 +41,7 @@ _BROWSER_ASSETS = {
     "/styles/pages.css": ("styles/pages.css", "text/css; charset=utf-8"),
     "/styles/responsive.css": ("styles/responsive.css", "text/css; charset=utf-8"),
     "/js/mock-data.js": ("js/mock-data.js", "text/javascript; charset=utf-8"),
+    "/transport.js": ("transport.js", "text/javascript; charset=utf-8"),
     "/js/shell.js": ("js/shell.js", "text/javascript; charset=utf-8"),
     "/js/pages.js": ("js/pages.js", "text/javascript; charset=utf-8"),
     "/papers.js": ("papers.js", "text/javascript; charset=utf-8"),
@@ -51,7 +52,7 @@ _BROWSER_API_ARITY: dict[str, tuple[int, int]] = {
     "get_state": (0, 0),
     "start_run": (1, 1),
     "cancel_run": (0, 0),
-    "poll_events": (1, 2),
+    "poll_events": (0, 2),
     "select_workspace": (0, 0),
     "select_paper_source": (0, 0),
     "set_theme": (1, 1),
@@ -74,6 +75,7 @@ class DesktopAPI:
             maxlen=_EVENT_HISTORY_LIMIT
         )
         self._event_serial = 0
+        self._event_generation = 0
         self._client_cursors: OrderedDict[str, int] = OrderedDict()
 
     def bind_window(self, window: Any) -> None:
@@ -84,8 +86,11 @@ class DesktopAPI:
             hydrated = _hydrate_environment_provider(request)
         except DesktopPublicError as exc:
             return exc.to_public_dict()
-        self._reset_event_fanout()
-        return self._controller.start_run(hydrated)
+        with self._poll_lock:
+            response = self._controller.start_run(hydrated)
+            if response.get("ok") and response.get("accepted"):
+                self._reset_event_fanout()
+        return response
 
     def cancel_run(self) -> dict[str, object]:
         return self._controller.cancel_run()
@@ -151,6 +156,7 @@ class DesktopAPI:
                 "ok": True,
                 "items": selected,
                 "dropped_count": dropped_count,
+                "generation": self._event_generation,
             }
 
     def get_state(self) -> dict[str, object]:
@@ -297,6 +303,7 @@ class DesktopAPI:
             self._event_history.clear()
             self._client_cursors.clear()
             self._event_serial = 0
+            self._event_generation += 1
 
     def _remember_client_cursor(self, client_id: str, cursor: int) -> None:
         self._client_cursors.pop(client_id, None)
@@ -417,6 +424,17 @@ class _BrowserHost:
                     )
                     return
 
+                content_type = self.headers.get("Content-Type", "").split(";", 1)[0]
+                if content_type.strip().lower() != "application/json":
+                    self._send_json(
+                        HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                        DesktopPublicError(
+                            "validation_error",
+                            "Browser API requests must use application/json.",
+                        ).to_public_dict(),
+                    )
+                    return
+
                 path = urlsplit(self.path).path
                 method_name = (
                     path.removeprefix("/api/") if path.startswith("/api/") else ""
@@ -509,6 +527,12 @@ class _BrowserHost:
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Referrer-Policy", "no-referrer")
                 self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+                self.send_header(
+                    "Content-Security-Policy",
+                    "default-src 'self'; script-src 'self'; style-src 'self'; "
+                    "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+                    "base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+                )
                 self.send_header("Connection", "close")
                 self.end_headers()
                 if data:

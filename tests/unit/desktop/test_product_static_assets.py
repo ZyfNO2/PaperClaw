@@ -33,7 +33,7 @@ def test_product_javascript_uses_text_content_and_allowlisted_methods() -> None:
         assert method in script
     assert ".innerHTML" not in script
     assert "textContent" in script
-    assert "X-PaperClaw-Token" in script
+    assert "X-PaperClaw-Token" in _text("transport.js")
 
 
 def test_product_styles_are_responsive_and_theme_token_based() -> None:

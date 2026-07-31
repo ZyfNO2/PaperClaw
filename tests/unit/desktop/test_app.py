@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 import sys
 from urllib.error import HTTPError
@@ -183,7 +184,12 @@ def test_desktop_api_exposes_controller_operations_and_workspace_picker(
     _set_provider_env(monkeypatch)
     api = app.DesktopAPI(FakeController())
     assert api.cancel_run() == {"ok": True, "accepted": True}
-    assert api.poll_events(7) == {"ok": True, "items": [], "dropped_count": 0}
+    assert api.poll_events(7) == {
+        "ok": True,
+        "items": [],
+        "dropped_count": 0,
+        "generation": 0,
+    }
     assert api.get_state()["state"]["status"] == "idle"
 
     fake_webview = SimpleNamespace(FOLDER_DIALOG="folder")
@@ -203,6 +209,102 @@ def test_poll_events_fans_out_to_desktop_and_browser_clients() -> None:
     assert api.poll_events(10, "browser-1")["items"] == items
     assert api.poll_events(10, "desktop")["items"] == []
     assert api.poll_events(10, "browser-1")["items"] == []
+
+
+def test_start_run_resets_fanout_only_after_backend_accepts(tmp_path) -> None:
+    class RejectingController(QueueController):
+        def start_run(self, request):
+            return DesktopPublicError(
+                "run_already_active", "A run is already active."
+            ).to_public_dict()
+
+    item = {"kind": "event", "event": {"sequence": 1, "event_type": "run.started"}}
+    api = app.DesktopAPI(RejectingController([item]))
+
+    rejected = api.start_run(
+        {
+            "task": "ignored",
+            "workspace": str(tmp_path),
+            "base_url": "https://example.invalid/v1",
+            "api_key": "secret",
+            "model": "model",
+        }
+    )
+
+    assert rejected["error_code"] == "run_already_active"
+    observed = api.poll_events(10, "browser-tab")
+    assert observed["items"] == [item]
+    assert observed["generation"] == 0
+
+
+def test_event_history_reports_overflow_independently_per_client(monkeypatch) -> None:
+    monkeypatch.setattr(app, "_EVENT_HISTORY_LIMIT", 2)
+    events = [
+        {"kind": "event", "event": {"sequence": index, "event_type": "tool.completed"}}
+        for index in range(1, 5)
+    ]
+    controller = QueueController([])
+    api = app.DesktopAPI(controller)
+    assert api.poll_events(10, "slow")["items"] == []
+    controller.items.extend(events)
+
+    first = api.poll_events(1, "fast")
+    slow = api.poll_events(10, "slow")
+    fast = api.poll_events(10, "fast")
+
+    assert [row["event"]["sequence"] for row in first["items"]] == [3]
+    assert [row["event"]["sequence"] for row in slow["items"]] == [3, 4]
+    assert [row["event"]["sequence"] for row in fast["items"]] == [4]
+    assert slow["dropped_count"] == 2
+
+
+def test_concurrent_poll_for_same_client_never_duplicates_events() -> None:
+    events = [
+        {"kind": "event", "event": {"sequence": index, "event_type": "tool.completed"}}
+        for index in range(1, 21)
+    ]
+    api = app.DesktopAPI(QueueController(events))
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        responses = list(pool.map(lambda _index: api.poll_events(5, "shared"), range(4)))
+
+    sequences = [
+        row["event"]["sequence"]
+        for response in responses
+        for row in response["items"]
+    ]
+    assert sorted(sequences) == list(range(1, 21))
+    assert len(sequences) == len(set(sequences))
+
+
+def test_new_run_advances_generation_and_restarts_each_client_cursor(tmp_path) -> None:
+    class AcceptingQueueController(QueueController):
+        def start_run(self, request):
+            return {"ok": True, "accepted": True, "status": "starting"}
+
+    old = {"kind": "event", "event": {"sequence": 9, "event_type": "run.completed"}}
+    new = {"kind": "event", "event": {"sequence": 1, "event_type": "run.started"}}
+    controller = AcceptingQueueController([old])
+    api = app.DesktopAPI(controller)
+    assert api.poll_events(10, "desktop")["items"] == [old]
+    assert api.poll_events(10, "browser")["items"] == [old]
+
+    accepted = api.start_run(
+        {
+            "task": "next",
+            "workspace": str(tmp_path),
+            "base_url": "https://example.invalid/v1",
+            "api_key": "secret",
+            "model": "model",
+        }
+    )
+    controller.items.append(new)
+
+    assert accepted["accepted"] is True
+    desktop = api.poll_events(10, "desktop")
+    browser = api.poll_events(10, "browser")
+    assert desktop["generation"] == browser["generation"] == 1
+    assert desktop["items"] == browser["items"] == [new]
 
 
 def test_browser_host_serves_assets_and_requires_fragment_token(
@@ -230,7 +332,14 @@ def test_browser_host_serves_assets_and_requires_fragment_token(
 
         with urlopen(response["origin"] + "/", timeout=3) as page:
             assert page.status == 200
+            assert page.headers["Content-Type"] == "text/html; charset=utf-8"
+            assert "default-src 'self'" in page.headers["Content-Security-Policy"]
+            assert page.headers["Referrer-Policy"] == "no-referrer"
             assert b"PaperClaw Workbench" in page.read()
+
+        with urlopen(response["origin"] + "/transport.js", timeout=3) as asset:
+            assert asset.headers["Content-Type"] == "text/javascript; charset=utf-8"
+            assert b"PaperClawBackend" in asset.read()
 
         unauthorized = Request(
             response["origin"] + "/api/get_defaults",
@@ -241,6 +350,29 @@ def test_browser_host_serves_assets_and_requires_fragment_token(
         with pytest.raises(HTTPError) as denied:
             urlopen(unauthorized, timeout=3)
         assert denied.value.code == 403
+
+        wrong_content_type = Request(
+            response["origin"] + "/api/get_defaults",
+            data=b'{"args":[]}',
+            headers={"X-PaperClaw-Token": token, "Content-Type": "text/plain"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as rejected_type:
+            urlopen(wrong_content_type, timeout=3)
+        assert rejected_type.value.code == 415
+
+        unknown = Request(
+            response["origin"] + "/api/not_registered",
+            data=b'{"args":[]}',
+            headers={
+                "X-PaperClaw-Token": token,
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as rejected_method:
+            urlopen(unknown, timeout=3)
+        assert rejected_method.value.code == 404
 
         authorized = Request(
             response["origin"] + "/api/get_defaults",

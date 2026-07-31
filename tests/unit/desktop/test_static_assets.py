@@ -257,14 +257,17 @@ def test_workbench_theme_set_and_dark_default_are_preserved() -> None:
 
 def test_browser_transport_is_loopback_token_aware_and_provider_secret_safe() -> None:
     javascript = _asset("app.js")
+    transport_javascript = _asset("transport.js")
     provider_javascript = _asset("provider-config.js")
-    assert '"X-PaperClaw-Token"' in javascript
-    assert "window.fetch(`/api/${method}`" in javascript
+    papers_javascript = _asset("papers.js")
+    assert '"X-PaperClaw-Token"' in transport_javascript
+    assert "window.fetch(`/api/${method}`" in transport_javascript
     assert "open_in_browser(currentTheme)" in javascript
     assert "api_key" not in javascript.lower()
-    assert '"X-PaperClaw-Token"' in provider_javascript
-    assert 'invoke("connect_provider"' in provider_javascript
-    assert 'invoke("select_provider_model"' in provider_javascript
+    assert "PaperClawBackend.api" in provider_javascript
+    assert "PaperClawBackend?.api" in papers_javascript
+    assert 'connect_provider: (request) => invoke("connect_provider"' in transport_javascript
+    assert 'select_provider_model: (model, allowUnlisted)' in transport_javascript
     assert "localstorage" not in provider_javascript.lower()
 
 
