@@ -771,3 +771,47 @@ An earlier PaperAgent run failed because a test imported a repository-root
 moved into the installed `paperagent.ci_evidence` module, tested locally, and
 verified by the successful exact-head run above. These synchronized
 documentation-only commits follow the tested implementation heads.
+
+## 20. Frontend integration implementation evidence (2026-07-31)
+
+Implementation heads before this synchronized documentation commit:
+
+- PaperClaw `codex/academic-rag-h2-retrieval`: `400bcce`
+- PaperAgent `codex/academic-rag-h3-reasoning`: `232534f8`
+- Draft PRs remain #76 and #66 respectively; neither PR is ready or merged.
+- `academic.v1` schema SHA-256 remains
+  `62c3c6bbde000023a95025fdcae53c777fac479ddc9da02a63ea293b0855d2e0`;
+  golden fixture SHA-256 remains
+  `5f8b3b999de2139c6e328966086043663a3012a068636061971926b979ea647d`.
+
+The production PWA no longer silently reads demo data. Demo mode is explicit via
+`?demo=1`; a missing PaperClaw endpoint produces a structured fail-closed error.
+The implementation reuses PaperClaw project, paper, retrieval, locator, asset,
+and append-only artifact stores through public REST contracts.
+
+| Page | PaperAgent API/domain | PaperClaw public contract |
+|---|---|---|
+| Projects | project projection | `GET/POST /v1/projects` |
+| Literature | import, parse, index orchestration | paper import/parse/index endpoints |
+| Evidence | `AcademicRAGWorkflow`, accepted-only ledger | query, corrective trace, canonical locator resolve/asset |
+| Artifacts | eight bounded drafts and human review actions | artifact create/list/detail/review with append-only revisions |
+| Runs | bounded task create/poll/cancel client | existing task service; no fabricated run history |
+
+Verification on the implementation heads:
+
+- PaperClaw focused REST suite: `10 passed`; non-live regression excluding the
+  credential-gated `tests/real_llm`: `1097 passed, 38 skipped`; wheel and sdist build passed.
+- PaperAgent focused API/web/generated-two-PDF tracer: `9 passed`; offline suite
+  excluding browser: `817 passed, 10 skipped`; Playwright Chromium: `3 passed`;
+  Ruff, format, strict mypy (`167` source files), JavaScript syntax, wheel and sdist passed.
+- The dual-repository tracer imports two generated PDFs, parses and indexes them,
+  asserts accepted-only evidence, resolves a canonical locator, creates all eight
+  bounded draft types, requests revision, and observes revision history `[1, 2]`.
+- The generated PDFs verify engineering control flow only. They are not real-paper,
+  model-quality, or scientific validation evidence.
+- The previously recorded real LLM and RTX 4070 SUPER MiniLM evidence remains valid
+  at its recorded exact heads; this frontend batch did not rerun or broaden those claims.
+
+Scientific validity, ColQwen2 execution, blinded human labels, cross-paper human
+judgments, Native Windows manual acceptance, and reviewer approval remain
+unverified. Overall decision remains `REVISE`; P0 Release remains `NO-GO`.

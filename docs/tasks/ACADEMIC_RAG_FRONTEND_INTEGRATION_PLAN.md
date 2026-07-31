@@ -410,3 +410,16 @@ docs(handoff): record frontend integration evidence
 - Mock、generated PDF、真实论文、真实模型、真实 LLM、Native Windows、人工验收的区分；
 - 未验证能力、已知限制和 stop condition；
 - 用户需要执行的真实验收步骤、预期结果和需返回的日志/截图。
+
+## 11. Execution record (2026-07-31)
+
+All implementation work packages in this plan are implemented on the Draft PR
+branches. Production Projects, Literature, Evidence, Artifacts, and Runs paths use
+bounded APIs; demo data requires `?demo=1`; canonical locator resolution and asset
+readback, accepted-only evidence, eight artifact drafts, and append-only human
+review revisions are covered by API, generated-two-PDF integration, and Playwright
+tests. Exact heads and verification counts are recorded in
+`docs/handoff/ACADEMIC_RAG_DUAL_REPO_HANDOFF.md` section 20.
+
+This is an engineering implementation completion record, not scientific GO
+evidence. P0 remains `NO-GO` and both PRs remain Draft.
