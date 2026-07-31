@@ -1,0 +1,20 @@
+{
+  "schema_version": "academic-rag-p0-artifact-manifest.v1",
+  "status": "BLOCKED_BY_HUMAN_REVIEW",
+  "required_artifact_types": [
+    "evidence_bundle",
+    "paper_comparison",
+    "baseline_card",
+    "module_card",
+    "compatibility_matrix",
+    "experiment_matrix",
+    "method_draft",
+    "review_report"
+  ],
+  "entries": [],
+  "reviewer_pack": "reviewer_form.md",
+  "notes": [
+    "Entries are created only from a real run and must retain append-only revisions.",
+    "The generating LLM cannot be the sole reviewer."
+  ]
+}

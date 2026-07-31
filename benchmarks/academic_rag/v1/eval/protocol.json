@@ -1,0 +1,95 @@
+{
+  "protocol_version": "academic-rag-p0-scientific-acceptance.v1",
+  "status": "FROZEN_FOR_IMPLEMENTATION; NOT_READY_FOR_SCIENTIFIC_RUN",
+  "starting_commit_pair": {
+    "paperagent": "8aca0c14e21107bd02b802254a24bb8618efab29",
+    "paperclaw": "84c431da9d1dafecb9a8dfa27b3698d609f9542f"
+  },
+  "schema_digest": "62c3c6bbde000023a95025fdcae53c777fac479ddc9da02a63ea293b0855d2e0",
+  "golden_fixture_digest": "5f8b3b999de2139c6e328966086043663a3012a068636061971926b979ea647d",
+  "corpus": {
+    "owner": "PaperClaw",
+    "manifest": "benchmarks/academic_rag/v1/corpus_manifest.jsonl",
+    "manifest_sha256": "389be651cc8ca001f0d8cf2a5be3343ba7764407bc0f4669d620b37c5135ea20",
+    "frozen_set_id": "academic-rag-h0-v1",
+    "real_paper_count": 12,
+    "tracked_files": "metadata_hash_license_only",
+    "local_pdf_status": "BLOCKED_UNTIL_LICENSE_AND_CONTROLLED_PATHS_ARE_VERIFIED"
+  },
+  "questions": {
+    "owner": "PaperClaw",
+    "blinded_file": "benchmarks/academic_rag/v1/eval/questions.blinded.jsonl",
+    "blinded_sha256": "fbdd29881729e95f75994cb225eaf07ba46b1a0664893452cec778893238051e",
+    "question_manifest": "benchmarks/academic_rag/v1/eval/question_manifest.json",
+    "question_manifest_sha256": "0938c390e6ab90993a9b1bff6e5085253ec2a8c96d3035eae3582ae4b3041e5c",
+    "count": 32,
+    "distribution": {"text": 8, "figure": 8, "table": 8, "equation": 8},
+    "gold_file": "benchmarks/academic_rag/v1/eval/gold_labels.private.jsonl",
+    "gold_status": "BLOCKED_BY_HUMAN_LABELS"
+  },
+  "artifact_manifest": {
+    "path": "benchmarks/academic_rag/v1/eval/artifact_manifest.json",
+    "sha256": "74d94283730cc36fdac84d59d48ca53296f6cc776e3aa35fa97bf4a605ecd620"
+  },
+  "gold_label_schema": {
+    "schema_version": "academic-rag-p0-gold-label.v1",
+    "required_human_fields": [
+      "accepted_answers", "supporting_paper_ids", "evidence_locators",
+      "allowable_inference", "forbidden_overclaim", "should_abstain",
+      "severe_error_conditions", "annotator_id", "reviewer_id",
+      "annotated_at", "disagreement_resolution"
+    ],
+    "stale_locator_policy": "FAIL_CLOSED"
+  },
+  "scoring": {
+    "severity_levels": ["critical", "major", "minor", "informational"],
+    "critical_rules": [
+      "unsupported claim presented as verified",
+      "wrong paper, page, object, or locator citation",
+      "rejected or conflicted evidence in generation context",
+      "fabricated result or citation",
+      "unreplayable locator with a definite conclusion"
+    ],
+    "required_zero_metrics": [
+      "critical_unsupported_claims",
+      "critical_citation_mismatches",
+      "false_go"
+    ],
+    "denominator_policy": "EXACT_FROZEN_32; MISSING_OR_CHANGED_DENOMINATOR_BLOCKS"
+  },
+  "model_environment": {
+    "minilm": {
+      "model": "sentence-transformers/all-MiniLM-L6-v2",
+      "revision": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+      "runtime_status": "RECORDED_REAL_GPU_EVIDENCE"
+    },
+    "colqwen2": {
+      "model": "vidore/colqwen2-base",
+      "revision": "9fe8a713422a7cb4ef79ca77a09b381ee2243101",
+      "runtime_status": "BLOCKED_BY_REAL_COLQWEN2_RUNTIME"
+    },
+    "academic_llm": {"runtime_status": "BLOCKED_BY_REAL_ACADEMIC_LLM_TRACE"},
+    "native_windows": {"runtime_status": "BLOCKED_BY_MANUAL_ACCEPTANCE"}
+  },
+  "conclusions": {
+    "go": "ONLY_IF_ALL_REQUIRED_GATES_PASS_AND_REQUIRED_ZERO_METRICS_ARE_ZERO",
+    "revise": "USE_FOR_REPAIRABLE_MAJOR_OR_HUMAN_REVIEW_FINDINGS",
+    "no_go": "USE_FOR_CRITICAL_FAILURE_OR_MISSING_TRUSTWORTHY_EVIDENCE",
+    "current_required_conclusion": "REVISE / P0 NO-GO"
+  },
+  "stop_conditions": [
+    "no legal real-paper corpus",
+    "no human gold labels",
+    "no independent reviewer",
+    "no target GPU or fixed model revision",
+    "no real academic LLM configuration",
+    "Native Windows manual click-through required"
+  ],
+  "private_inputs_never_committed": [
+    "gold_labels.private.jsonl",
+    "private PDFs",
+    "model weights and caches",
+    "vector indexes and databases",
+    "API keys, authorization headers, raw private provider payloads"
+  ]
+}

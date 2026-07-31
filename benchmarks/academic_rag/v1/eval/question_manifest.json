@@ -1,0 +1,14 @@
+{
+  "schema_version": "academic-rag-p0-question-manifest.v1",
+  "question_file": "questions.blinded.jsonl",
+  "question_count": 32,
+  "distribution": {"text": 8, "figure": 8, "table": 8, "equation": 8},
+  "status": "BLOCKED_BY_HUMAN_QUESTION_AUTHORING",
+  "gold_file": "gold_labels.private.jsonl",
+  "gold_file_is_not_committed": true,
+  "notes": [
+    "The 32 IDs are frozen, but HUMAN_AUTHOR_REQUIRED is not a scientific question.",
+    "A human must replace the placeholders and re-freeze the protocol digest.",
+    "No generated question or model-produced gold is eligible for P0 scoring."
+  ]
+}
