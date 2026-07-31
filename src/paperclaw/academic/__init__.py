@@ -35,6 +35,18 @@ from .retrieval_service import (
 from .visual import ColQwen2Encoder, VisualEncoder, late_interaction_score
 from .conflicts import EvidenceConflict, StructuredEvidence, detect_evidence_conflicts
 from .corrective import CorrectivePlan, plan_corrective_retrieval
+from .benchmark_labels import (
+    GoldLabelValidation,
+    load_blinded_questions,
+    run_blinded_questions,
+    validate_gold_label_file,
+)
+from .real_models import (
+    RealModelBlocked,
+    RealModelStatus,
+    check_real_model_environment,
+    require_real_encoder,
+)
 
 __all__ = [
     "AcademicLocator",
@@ -65,6 +77,8 @@ __all__ = [
     "GroundedRetrievalHit",
     "RetrievalResponse",
     "RetrievalService",
+    "RealModelBlocked",
+    "RealModelStatus",
     "ColQwen2Encoder",
     "VisualEncoder",
     "late_interaction_score",
@@ -72,5 +86,11 @@ __all__ = [
     "StructuredEvidence",
     "detect_evidence_conflicts",
     "CorrectivePlan",
+    "GoldLabelValidation",
     "plan_corrective_retrieval",
+    "load_blinded_questions",
+    "run_blinded_questions",
+    "validate_gold_label_file",
+    "check_real_model_environment",
+    "require_real_encoder",
 ]

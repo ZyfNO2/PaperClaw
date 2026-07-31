@@ -33,4 +33,6 @@ Thumbs.db
 *.log
 tmp/
 temp/
+benchmarks/academic_rag/v1/eval/gold_labels.private.jsonl
+benchmarks/academic_rag/v1/eval/run_outputs/
 .claude/hooks/_sop_completion_state.json
