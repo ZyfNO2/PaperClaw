@@ -3,6 +3,8 @@
   const root = () => document.getElementById("papers-root");
   const workspace = () => (document.getElementById("workspace-path")?.textContent || "").trim();
   const api = () => window.PaperClawBackend?.api || null;
+  let loadGeneration = 0;
+  let importing = false;
   const node = (tag, cls, text) => {
     const item = document.createElement(tag);
     if (cls) item.className = cls;
@@ -11,6 +13,8 @@
   };
 
   async function load() {
+    const generation = ++loadGeneration;
+    const selectedWorkspace = workspace();
     const target = root();
     if (!target) return;
     target.replaceChildren();
@@ -23,13 +27,17 @@
     button.addEventListener("click", importPaper);
     head.append(title, button);
     target.append(head);
-    if (!workspace() || !api()) {
+    if (!selectedWorkspace || !api()) {
       target.append(node("div", "state-block", "Select a PaperClaw workspace to manage papers."));
       return;
     }
-    const response = await api().list_papers(workspace(), 100);
-    if (!response.ok) {
-      target.append(node("div", "state-block", response.message || "Paper library could not be loaded."));
+    const loading = node("div", "state-block", "Loading papers…");
+    target.append(loading);
+    const response = await api().list_papers(selectedWorkspace, 100);
+    if (generation !== loadGeneration || selectedWorkspace !== workspace()) return;
+    loading.remove();
+    if (!response || !response.ok) {
+      renderError(target, response, load);
       return;
     }
     const badge = document.getElementById("papers-nav-badge");
@@ -51,22 +59,42 @@
   }
 
   async function importPaper() {
-    if (!api() || !workspace()) return;
+    if (importing || !api() || !workspace()) return;
+    importing = true;
+    const selectedWorkspace = workspace();
+    try {
     const picked = await api().select_paper_source();
-    if (!picked.ok || !picked.source_path) return;
-    const response = await api().import_paper(workspace(), picked.source_path, null);
-    if (!response.ok) return;
+    if (!picked || !picked.ok) {
+      renderError(root(), picked, importPaper);
+      return;
+    }
+    if (!picked.source_path) return;
+    const response = await api().import_paper(selectedWorkspace, picked.source_path, null);
+    if (!response || !response.ok) {
+      renderError(root(), response, importPaper);
+      return;
+    }
+    if (selectedWorkspace !== workspace()) return;
     await load();
     await showPaper(response.result.paper.paper_id);
+    } finally {
+      importing = false;
+    }
   }
 
   async function showPaper(paperId) {
     const target = root();
+    const selectedWorkspace = workspace();
+    const generation = ++loadGeneration;
     const [paperResponse, versionsResponse] = await Promise.all([
-      api().get_paper(workspace(), paperId),
-      api().list_paper_versions(workspace(), paperId)
+      api().get_paper(selectedWorkspace, paperId),
+      api().list_paper_versions(selectedWorkspace, paperId)
     ]);
-    if (!paperResponse.ok || !versionsResponse.ok) return;
+    if (generation !== loadGeneration || selectedWorkspace !== workspace()) return;
+    if (!paperResponse.ok || !versionsResponse.ok) {
+      renderError(target, !paperResponse.ok ? paperResponse : versionsResponse, load);
+      return;
+    }
     const paper = paperResponse.paper;
     target.replaceChildren();
     const back = node("button", "btn subtle", "← PAPERS");
@@ -121,6 +149,21 @@
       versions.append(node("p", "mono", `v${version.version_number} · ${version.format} · ${version.byte_length} bytes · ${version.sha256.slice(0, 12)}`));
     }
     target.append(meta, form, versions);
+  }
+
+  function renderError(target, response, retry) {
+    if (!target) return;
+    const state = node(
+      "div",
+      "state-block",
+      `${response?.error_code || "runtime_error"}: ${response?.error_message || "Paper operation failed."}`
+    );
+    state.setAttribute("role", "alert");
+    const button = node("button", "btn subtle", "RETRY");
+    button.type = "button";
+    button.addEventListener("click", retry);
+    state.append(button);
+    target.append(state);
   }
 
   const pages = window.PaperClawPages;

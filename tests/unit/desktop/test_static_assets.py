@@ -163,7 +163,8 @@ def test_html_has_expected_controls_and_security_policy() -> None:
     assert html.index('src="js/mock-data.js"') < html.index('src="app.js"')
     assert html.index('src="js/shell.js"') < html.index('src="app.js"')
     assert "Enable verification &amp; reflection gate" in html
-    assert "v0.30" in html
+    assert 'id="brand-version">version loading' in html
+    assert "package_version" in _asset("app.js")
 
 
 def test_frontend_persists_only_non_secret_theme_state_and_avoids_unsafe_execution() -> (

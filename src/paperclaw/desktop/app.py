@@ -19,6 +19,8 @@ from typing import Any, Mapping
 from urllib.parse import quote, urlsplit
 import webbrowser
 
+from paperclaw import __version__
+
 from .contracts import DesktopPublicError
 from .controller import DesktopController
 from .diagnostics import record_exception
@@ -180,6 +182,7 @@ class DesktopAPI:
             "configured": not missing,
             "missing": missing,
             "theme": _load_theme_preference(),
+            "package_version": __version__,
         }
 
     def set_theme(self, theme: str) -> dict[str, object]:
@@ -201,8 +204,8 @@ class DesktopAPI:
         window = self._window
         if window is None:
             return DesktopPublicError(
-                "runtime_error",
-                "Desktop window is not ready.",
+                "native_window_required",
+                "Workspace selection requires an active PaperClaw Desktop window.",
             ).to_public_dict()
         try:
             import webview
@@ -233,7 +236,8 @@ class DesktopAPI:
     def select_paper_source(self) -> dict[str, object]:
         if self._window is None:
             return DesktopPublicError(
-                "runtime_error", "Desktop window is not ready."
+                "native_window_required",
+                "Paper selection requires an active PaperClaw Desktop window.",
             ).to_public_dict()
         try:
             import webview
@@ -536,7 +540,12 @@ class _BrowserHost:
                 self.send_header("Connection", "close")
                 self.end_headers()
                 if data:
-                    self.wfile.write(data)
+                    try:
+                        self.wfile.write(data)
+                    except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                        # Browser navigation/close can abandon an in-flight poll.
+                        # The request has no side effect beyond its completed API call.
+                        pass
                 self.close_connection = True
 
             def log_message(self, _format: str, *_args: object) -> None:

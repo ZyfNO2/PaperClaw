@@ -98,6 +98,7 @@ def test_environment_defaults_never_expose_api_key(tmp_path, monkeypatch) -> Non
         "configured": True,
         "missing": [],
         "theme": "dark",
+        "package_version": "0.38.0",
     }
     assert "secret-value" not in repr(defaults)
     assert "api_key" not in defaults

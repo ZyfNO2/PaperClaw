@@ -16,6 +16,8 @@ import socket
 from typing import Any, Mapping
 import urllib.error
 import urllib.request
+
+from paperclaw import __version__
 from urllib.parse import urlsplit
 
 from .contracts import DesktopPublicError
@@ -389,7 +391,7 @@ def _discover_models(
             "Authorization": f"Bearer {api_key}",
             "Accept": "application/json",
             "User-Agent": (
-                f"PaperClaw/0.0.1 ({platform.system()} {platform.release()})"
+                f"PaperClaw/{__version__} ({platform.system()} {platform.release()})"
             ),
         },
         method="GET",

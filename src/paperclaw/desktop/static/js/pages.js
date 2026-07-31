@@ -152,7 +152,12 @@
 
       const stats = el("div", "stat-grid");
       stats.append(
-        statCard(t("ov.runtime"), runtimeStatus.toUpperCase(), `v0.30 · sqlite`, runtimeStatus.toLowerCase() === "running" ? "running" : "idle"),
+        statCard(
+          t("ov.runtime"),
+          runtimeStatus.toUpperCase(),
+          `${(document.getElementById("brand-version") || {}).textContent || "version unknown"} · sqlite`,
+          runtimeStatus.toLowerCase() === "running" ? "running" : "idle"
+        ),
         statCard(t("ov.agent"), running ? "ACTIVE" : "IDLE", running ? running.currentStep : "—", running ? "running" : "idle"),
         statCard(t("ov.providers"), `${online} / ${data.providers.length}`, t("ov.providers.online"), online === data.providers.length ? "ready" : "degraded"),
         statCard(t("ov.capabilities"), String(data.capabilities.filter((c) => c.enabled).length), `${data.capabilities.length} ${t("ov.capabilities.total")}`, "ready")

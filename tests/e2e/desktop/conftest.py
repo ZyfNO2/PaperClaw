@@ -113,7 +113,8 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             configured: true,
             model_verified: true,
             model_source: 'environment',
-            missing: []
+            missing: [],
+            package_version: '0.38.0'
           }};
           const autoComplete = {str(auto_complete).lower()};
           const clone = value => JSON.parse(JSON.stringify(value));
@@ -130,6 +131,7 @@ def install_bridge(page: Page, *, auto_complete: bool = True) -> None:
             model_verified: true,
             model_source: 'environment',
             missing: [],
+            package_version: '0.38.0',
             manual_provider_cleared: true
           }});
           window.__bridgeCalls = calls;

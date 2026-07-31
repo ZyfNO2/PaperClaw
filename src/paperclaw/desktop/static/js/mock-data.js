@@ -196,7 +196,7 @@
   ];
 
   const runtimeLogs = [
-    { at: minutesAgo(15), level: "info", message: "runtime started · v0.30 · sqlite store attached" },
+    { at: minutesAgo(15), level: "info", message: "runtime started · package version projected by backend · sqlite store attached" },
     { at: minutesAgo(14), level: "info", message: "provider check: openai-compatible online (env source)" },
     { at: minutesAgo(14), level: "info", message: "mission msn-0847 queued → running" },
     { at: minutesAgo(8), level: "warn", message: "verification coverage 0.71 below target 0.8 — supplementary search planned" },

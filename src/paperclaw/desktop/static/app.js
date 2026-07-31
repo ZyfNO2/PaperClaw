@@ -3,13 +3,18 @@
 
   const ACTIVE_STATUSES = new Set(["starting", "running", "stopping"]);
   const MAX_TIMELINE_ROWS = 300;
-  const POLL_INTERVAL_MS = 250;
+  const ACTIVE_POLL_MS = 250;
+  const IDLE_POLL_MS = 1500;
+  const HIDDEN_POLL_MS = 4000;
+  const MAX_BACKOFF_MS = 8000;
+  const MAX_MISSION_ROWS = 300;
   const THEME_STORAGE_KEY = "paperclaw.theme.v1";
   const THEMES = new Map([
     ["dark", "Dark"],
     ["light", "Light"]
   ]);
   const bootstrap = window.PaperClawBackend ? window.PaperClawBackend.bootstrap : {token: "", theme: ""};
+  const debugEnabled = new URLSearchParams(window.location.search).get("debug") === "1";
   const bridgeClientId = createClientId();
   const ui = {};
   const trace = [];
@@ -17,6 +22,19 @@
   let bridgeReady = false;
   let pollTimer = null;
   let pollInFlight = false;
+  let initializePromise = null;
+  let initialized = false;
+  let initializeAttempts = 0;
+  let pollFailures = 0;
+  let requestGeneration = 0;
+  let eventGeneration = null;
+  let lastAppliedSequence = 0;
+  let lastSuccessfulPoll = null;
+  let backendConnected = false;
+  let lastPublicErrorCode = null;
+  let cancelSubmitting = false;
+  let backendActive = false;
+  const renderedEvents = new Set();
   let frontendSubmitting = false;
   let workspace = "";
   let currentStatus = "idle";
@@ -44,7 +62,7 @@
       "settings-panel", "close-settings", "config-provider", "config-base-url", "config-model",
       "config-credential", "max-steps", "max-model-calls", "max-tool-calls",
       "verification-enabled", "theme-select", "open-browser", "toast", "toast-message",
-      "close-toast"
+      "close-toast", "brand-version", "frontend-diagnostics"
     ]) ui[toCamel(id)] = byId(id);
 
     ui.sidebarToggle.addEventListener("click", toggleSidebar);
@@ -69,6 +87,11 @@
       }
     });
     document.addEventListener("keydown", onGlobalKeydown);
+    document.addEventListener("visibilitychange", () => {
+      schedulePoll(0);
+      updateDiagnostics();
+    });
+    window.addEventListener("beforeunload", stopPolling, {once:true});
     ui.closeSettings.addEventListener("click", closeSettings);
     ui.closeToast.addEventListener("click", hideToast);
     bindFilterGroup(ui.missionFilters, "data-log-filter", applyMissionFilter);
@@ -83,6 +106,7 @@
       ui.openBrowser.title = "当前已在系统浏览器中运行";
     }
     updateTaskInput();
+    ui.frontendDiagnostics.hidden = !debugEnabled;
     maybeInitialize();
   }
 
@@ -107,22 +131,40 @@
     if (!domReady) return;
     if (!bridgeReady && backendApi()) bridgeReady = true;
     if (!bridgeReady) return;
-    await loadDefaults();
-    await refreshState();
-    if (pollTimer === null) pollTimer = window.setInterval(pollBackend, POLL_INTERVAL_MS);
+    if (initialized) return;
+    if (initializePromise) return initializePromise;
+    initializeAttempts += 1;
+    ui.envBadge.textContent = "INIT";
+    initializePromise = (async () => {
+      const generation = requestGeneration;
+      const defaultsLoaded = await loadDefaults(generation);
+      const stateLoaded = await refreshState(generation);
+      if (!defaultsLoaded || !stateLoaded) {
+        if (initializeAttempts < 3) {
+          window.setTimeout(maybeInitialize, 250 * initializeAttempts);
+        }
+        return;
+      }
+      initialized = true;
+      backendConnected = true;
+      clearError();
+      schedulePoll(0);
+    })().finally(() => { initializePromise = null; });
+    return initializePromise;
   }
 
-  async function loadDefaults() {
+  async function loadDefaults(generation = requestGeneration) {
     const api = backendApi();
     if (!api || typeof api.get_defaults !== "function") {
       showError("gui_dependency_missing", "PaperClaw bridge does not expose environment defaults.");
-      return;
+      return false;
     }
     try {
       const response = await api.get_defaults();
+      if (generation !== requestGeneration) return false;
       if (!response || !response.ok) {
         renderBackendError(response);
-        return;
+        return false;
       }
       workspace = stringValue(response.workspace, "");
       renderWorkspace(workspace);
@@ -131,6 +173,7 @@
       setText(ui.configModel, stringValue(response.model, "not configured"));
       setText(ui.configCredential, response.configured ? "Configured (hidden)" : `Missing: ${(response.missing || []).join(", ")}`);
       setText(ui.modelLabel, stringValue(response.model, "ENV"));
+      setText(ui.brandVersion, `v${stringValue(response.package_version, "unknown")} · workbench`);
       setText(ui.providerSummary, response.configured
         ? `LLM · ENV · ${stringValue(response.provider, "openai-compatible")} / ${stringValue(response.model, "model")}`
         : `LLM · ENV INCOMPLETE · ${(response.missing || []).join(", ")}`);
@@ -139,20 +182,29 @@
       if (!THEMES.has(bootstrap.theme) && response.theme && THEMES.has(response.theme)) {
         applyTheme(response.theme, false);
       }
+      document.dispatchEvent(new CustomEvent("paperclaw:defaults", {detail: response}));
+      return true;
     } catch (_error) {
       showError("runtime_error", "Environment defaults could not be loaded.");
+      return false;
     }
   }
 
-  async function refreshState() {
+  async function refreshState(generation = requestGeneration) {
     const api = backendApi();
-    if (!api) return;
+    if (!api) return false;
     try {
       const response = await api.get_state();
-      if (response && response.ok && response.state) renderSnapshot(response.state);
-      else renderBackendError(response);
+      if (generation !== requestGeneration) return false;
+      if (response && response.ok && response.state) {
+        renderSnapshot(response.state);
+        return true;
+      }
+      renderBackendError(response);
+      return false;
     } catch (_error) {
       showError("runtime_error", "Desktop state could not be loaded.");
+      return false;
     }
   }
 
@@ -160,23 +212,64 @@
     if (pollInFlight) return;
     const api = backendApi();
     if (!api) return;
+    const generation = requestGeneration;
     pollInFlight = true;
     try {
       const response = await api.poll_events(200, bridgeClientId);
+      if (generation !== requestGeneration) return;
       if (!response || !response.ok) {
         renderBackendError(response);
+        pollFailures += 1;
+        backendConnected = false;
         return;
       }
+      if (eventGeneration !== null && response.generation !== eventGeneration) {
+        renderedEvents.clear();
+        lastAppliedSequence = 0;
+      }
+      eventGeneration = response.generation;
       for (const item of response.items || []) {
-        if (item.kind === "event" && item.event) appendTimelineRow(item.event);
+        if (item.kind === "event" && item.event) appendTimelineRow(item.event, eventGeneration);
         else if (item.kind === "snapshot" && item.snapshot) renderSnapshot(item.snapshot);
       }
       setText(ui.eventMeta, `${numberValue(response.dropped_count)} dropped`);
+      pollFailures = 0;
+      backendConnected = true;
+      lastSuccessfulPoll = new Date().toISOString();
+      if (["connection_error", "timeout", "invalid_response"].includes(lastPublicErrorCode)) clearError();
+      updateDiagnostics();
+      if (!ACTIVE_STATUSES.has(currentStatus)) await refreshState(generation);
     } catch (_error) {
       showError("runtime_error", "Desktop event polling failed.");
+      pollFailures += 1;
+      backendConnected = false;
     } finally {
       pollInFlight = false;
+      schedulePoll(nextPollDelay());
+      updateDiagnostics();
     }
+  }
+
+  function nextPollDelay() {
+    const base = document.hidden
+      ? HIDDEN_POLL_MS
+      : ACTIVE_STATUSES.has(currentStatus) ? ACTIVE_POLL_MS : IDLE_POLL_MS;
+    return Math.min(MAX_BACKOFF_MS, base * Math.max(1, 2 ** pollFailures));
+  }
+
+  function schedulePoll(delay) {
+    if (!initialized && delay !== 0) return;
+    if (pollTimer !== null) window.clearTimeout(pollTimer);
+    pollTimer = window.setTimeout(() => {
+      pollTimer = null;
+      pollBackend();
+    }, delay);
+  }
+
+  function stopPolling() {
+    requestGeneration += 1;
+    if (pollTimer !== null) window.clearTimeout(pollTimer);
+    pollTimer = null;
   }
 
   async function startRun() {
@@ -195,6 +288,8 @@
       return;
     }
     clearError();
+    const previousStatus = currentStatus;
+    const generation = ++requestGeneration;
     frontendSubmitting = true;
     updateControls("starting");
     appendMissionMessage("user", "YOU", task);
@@ -210,22 +305,23 @@
       const api = backendApi();
       if (!api) {
         showError("gui_dependency_missing", "PaperClaw bridge is not available.");
-        updateControls("idle");
+        updateControls(previousStatus);
         return;
       }
       const response = await api.start_run(payload);
       if (!response || !response.ok) {
         renderBackendError(response);
-        updateControls("idle");
+        await refreshState(generation);
         return;
       }
       ui.task.value = "";
       updateTaskInput();
       appendMissionMessage("system", "SYSTEM", "Run accepted. Model configuration will be resolved from environment variables in Python.");
       updateControls(response.status || "starting");
+      schedulePoll(0);
     } catch (_error) {
       showError("runtime_error", "Run could not be started.");
-      updateControls("idle");
+      await refreshState(generation);
     } finally {
       frontendSubmitting = false;
       updateControls(currentStatus);
@@ -233,26 +329,36 @@
   }
 
   async function cancelRun() {
+    if (cancelSubmitting) return;
     const api = backendApi();
     if (!api) {
       showError("gui_dependency_missing", "PaperClaw bridge is not available.");
       return;
     }
-    ui.cancelButton.disabled = true;
+    const generation = ++requestGeneration;
+    cancelSubmitting = true;
+    updateControls("stopping");
     try {
       const response = await api.cancel_run();
       if (!response || !response.ok) {
         renderBackendError(response);
+        await refreshState(generation);
         return;
       }
       appendMissionMessage("system", "SYSTEM", "Cancellation requested.");
       updateControls(response.status || "stopping");
+      schedulePoll(0);
     } catch (_error) {
       showError("runtime_error", "Cancel request could not be sent.");
+      await refreshState(generation);
+    } finally {
+      cancelSubmitting = false;
+      updateControls(currentStatus);
     }
   }
 
   async function selectWorkspace() {
+    if (backendActive || ACTIVE_STATUSES.has(currentStatus)) return;
     const api = backendApi();
     if (!api) {
       showError("gui_dependency_missing", "PaperClaw bridge is not available.");
@@ -348,9 +454,19 @@
   }
 
   function renderSnapshot(snapshot) {
+    const incomingRunId = snapshot.run_id || null;
+    const incomingSequence = numberValue(snapshot.last_sequence);
+    if (incomingRunId && currentRunId === incomingRunId && incomingSequence < lastAppliedSequence) return;
+    if (incomingRunId && incomingRunId !== currentRunId) {
+      lastFinalResult = "";
+      lastAppliedSequence = 0;
+      renderedEvents.clear();
+    }
     const previousStatus = currentStatus;
     currentStatus = stringValue(snapshot.status, "idle").toLowerCase();
     currentRunId = snapshot.run_id || currentRunId;
+    backendActive = Boolean(snapshot.active) || ACTIVE_STATUSES.has(currentStatus);
+    lastAppliedSequence = Math.max(lastAppliedSequence, incomingSequence);
     setStatus(ui.runStatus, currentStatus);
     setStatus(ui.summaryStatus, currentStatus);
     setText(ui.runSubtitle, `Agent runtime monitor · run=${stringValue(currentRunId, "not-started")}`);
@@ -370,14 +486,19 @@
       const message = stringValue(snapshot.error_message, "PaperClaw runtime failed.");
       showError(code, message);
       if (previousStatus !== "failed" || currentStatus === "failed") appendMissionMessage("error", "ERROR", `${code}: ${message}`);
-    } else if (!ACTIVE_STATUSES.has(currentStatus)) {
-      clearError();
     }
     updateControls(currentStatus);
+    updateDiagnostics();
   }
 
-  function appendTimelineRow(row) {
+  function appendTimelineRow(row, generation) {
     const eventType = stringValue(row.event_type, "unknown.event");
+    const eventKey = `${generation}:${numberValue(row.sequence)}:${eventType}`;
+    if (renderedEvents.has(eventKey)) return;
+    renderedEvents.add(eventKey);
+    while (renderedEvents.size > MAX_TIMELINE_ROWS * 2) {
+      renderedEvents.delete(renderedEvents.values().next().value);
+    }
     const category = eventCategory(eventType);
     const item = document.createElement("div");
     item.className = "event-row";
@@ -435,6 +556,7 @@
     messageBody.textContent = stringValue(body, "");
     article.append(head, messageBody);
     ui.missionLog.append(article);
+    while (ui.missionLog.children.length > MAX_MISSION_ROWS) ui.missionLog.firstElementChild.remove();
     ui.missionLog.scrollTop = ui.missionLog.scrollHeight;
     applyMissionFilter();
     applyMissionSearch();
@@ -442,12 +564,43 @@
 
   function updateControls(status) {
     currentStatus = stringValue(status, currentStatus).toLowerCase();
-    const active = ACTIVE_STATUSES.has(currentStatus) || frontendSubmitting;
+    const active = backendActive || ACTIVE_STATUSES.has(currentStatus) || frontendSubmitting;
     ui.runButton.disabled = active;
     ui.sendButton.disabled = active;
-    ui.cancelButton.disabled = !active || currentStatus === "stopping";
+    ui.cancelButton.disabled = !active || currentStatus === "stopping" || cancelSubmitting;
     ui.selectWorkspace.disabled = active;
     ui.workspaceCard.disabled = active;
+    ui.newRunButton.disabled = active;
+    ui.task.disabled = active;
+    ui.verificationEnabled.disabled = active;
+    ui.maxSteps.disabled = active;
+    ui.maxModelCalls.disabled = active;
+    ui.maxToolCalls.disabled = active;
+    for (const id of [
+      "provider-connect", "provider-model", "provider-reset",
+      "use-manual-model", "disconnect-provider"
+    ]) {
+      const control = byId(id);
+      if (control) control.disabled = active;
+    }
+  }
+
+  function updateDiagnostics() {
+    if (!debugEnabled || !ui.frontendDiagnostics) return;
+    const transport = window.PaperClawBackend ? window.PaperClawBackend.diagnostics() : {};
+    ui.frontendDiagnostics.textContent = JSON.stringify({
+      mode: backendMode(),
+      run_id: currentRunId,
+      connected: backendConnected,
+      last_successful_poll: lastSuccessfulPoll,
+      last_sequence: lastAppliedSequence,
+      event_generation: eventGeneration,
+      dropped: numberValue((ui.eventMeta.textContent || "").split(" ")[0]),
+      last_public_error_code: lastPublicErrorCode || transport.lastErrorCode || null,
+      active_requests: numberValue(transport.activeRequests),
+      polling_interval_ms: nextPollDelay(),
+      document_hidden: document.hidden
+    }, null, 2);
   }
 
   function updateProgress(status, terminal) {
@@ -620,11 +773,13 @@
   }
 
   function showError(code, message) {
+    lastPublicErrorCode = stringValue(code, "runtime_error");
     ui.publicError.hidden = false;
     ui.publicError.textContent = `${stringValue(code, "runtime_error")}: ${stringValue(message, "Desktop operation failed.")}`;
   }
 
   function clearError() {
+    lastPublicErrorCode = null;
     ui.publicError.hidden = true;
     ui.publicError.textContent = "";
   }

@@ -7,4 +7,4 @@ def test_pocketflow_is_importable() -> None:
 def test_paperclaw_version() -> None:
     import paperclaw
 
-    assert paperclaw.__version__ == "0.0.1"
+    assert paperclaw.__version__ == "0.38.0"

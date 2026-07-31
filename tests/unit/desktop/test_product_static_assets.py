@@ -16,7 +16,7 @@ def test_index_loads_product_assets_without_inline_script() -> None:
     assert 'id="refresh-project-index"' in html
     assert 'id="artifact-list"' in html
     assert "<script>" not in html
-    assert "v0.30" in html
+    assert 'id="brand-version">version loading' in html
 
 
 def test_product_javascript_uses_text_content_and_allowlisted_methods() -> None:

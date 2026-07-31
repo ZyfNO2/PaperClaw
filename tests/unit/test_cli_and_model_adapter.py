@@ -46,7 +46,7 @@ def test_openai_compatible_model_sends_user_agent(monkeypatch) -> None:
     assert turn.content == "ok"
     assert turn.reasoning == "think"
     headers = {key.lower(): value for key, value in captured["headers"].items()}
-    assert headers["user-agent"].startswith("PaperClaw/0.0.1")
+    assert headers["user-agent"].startswith("PaperClaw/0.38.0")
     assert headers["accept"] == "application/json"
 
 

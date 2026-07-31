@@ -11,6 +11,8 @@ from typing import Any
 import urllib.error
 import urllib.request
 
+from paperclaw import __version__
+
 from paperclaw.models.base import ModelTurn
 from paperclaw.models.reliability import (
     ProviderError,
@@ -152,7 +154,7 @@ class OpenAICompatibleModel:
                 # Some compatible gateways reject stdlib urllib traffic unless
                 # a normal User-Agent is present.
                 "User-Agent": (
-                    f"PaperClaw/0.0.1 "
+                    f"PaperClaw/{__version__} "
                     f"({platform.system()} {platform.release()})"
                 ),
             },

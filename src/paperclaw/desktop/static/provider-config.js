@@ -31,7 +31,9 @@
     ui.disconnectProvider.addEventListener("click", disconnectProvider);
     ui.verificationEnabled.addEventListener("change", renderGateMode);
     renderGateMode();
-    maybeLoadDefaults();
+    document.addEventListener("paperclaw:defaults", (event) => {
+      if (event.detail && event.detail.ok) renderProviderState(event.detail);
+    });
   }
 
   function toCamel(value) {
@@ -40,18 +42,6 @@
 
   function backendApi() {
     return window.PaperClawBackend ? window.PaperClawBackend.api : null;
-  }
-
-  async function maybeLoadDefaults() {
-    if (!initialized) return;
-    const api = backendApi();
-    if (!api || typeof api.get_defaults !== "function") return;
-    try {
-      const response = await api.get_defaults();
-      if (response && response.ok) renderProviderState(response);
-    } catch (_error) {
-      setStatus("Provider defaults could not be loaded.", "error");
-    }
   }
 
   async function connectProvider() {
@@ -308,5 +298,4 @@
   }
 
   document.addEventListener("DOMContentLoaded", bind, {once:true});
-  window.addEventListener("pywebviewready", maybeLoadDefaults);
 })();

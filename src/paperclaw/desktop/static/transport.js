@@ -53,7 +53,10 @@
         return publicError("invalid_response", "Browser bridge response is incomplete.");
       }
       if (!payload.ok) diagnostics.lastErrorCode = payload.error_code || "runtime_error";
-      else diagnostics.lastSuccessAt = new Date().toISOString();
+      else {
+        diagnostics.lastErrorCode = null;
+        diagnostics.lastSuccessAt = new Date().toISOString();
+      }
       return payload;
     } catch (error) {
       const timedOut = error && error.name === "AbortError";
