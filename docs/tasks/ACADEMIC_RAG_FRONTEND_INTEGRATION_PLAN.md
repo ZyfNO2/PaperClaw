@@ -338,7 +338,7 @@ PaperAgent：
 - generated-PDF 双仓 E2E 通过；
 - 四个真实页面不依赖 Mock；
 - Claim locator 可回放；
--审批产生新的 append-only revision；
+- 审批产生新的 append-only revision；
 - 定向、全量、CI、build 通过；
 - 没有 Secret、PDF、模型权重、缓存、数据库或原始日志进入 Git。
 
