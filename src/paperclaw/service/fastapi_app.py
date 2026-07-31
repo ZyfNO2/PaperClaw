@@ -8,7 +8,7 @@ from importlib.resources import files
 import json
 from pathlib import Path
 import secrets
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from paperclaw.harness import RunLimits
 from paperclaw.tasks.contracts import (
@@ -40,7 +40,7 @@ def create_app(
     try:
         from fastapi import FastAPI, Header, HTTPException, Request, Response
         from fastapi.responses import StreamingResponse
-        from pydantic import BaseModel, Field
+        from pydantic import BaseModel, Field, model_validator
     except ImportError as exc:  # pragma: no cover - depends on optional install
         raise RuntimeError(
             'FastAPI service dependencies are missing; install "paperclaw[service]"'
@@ -85,11 +85,69 @@ def create_app(
     class ProjectCreateBody(BaseModel):
         name: str = Field(min_length=1, max_length=200)
 
+    class EvidenceBoundClaimBody(BaseModel):
+        text: str = Field(min_length=1)
+        evidence_ids: list[str] = Field(min_length=1)
+        limitations: list[str] = Field(default_factory=list)
+
+    class AcademicDraftBody(BaseModel):
+        schema_version: Literal["academic.v1"] = "academic.v1"
+        title: str = Field(min_length=1, max_length=500)
+        project_id: str = Field(min_length=1, max_length=200)
+        summary: str = Field(min_length=1)
+        evidence_ids: list[str] = Field(min_length=1)
+        claims: list[EvidenceBoundClaimBody] = Field(min_length=1)
+        state: Literal["draft"] = "draft"
+        review_note: None = None
+
+        @model_validator(mode="after")
+        def validate_claim_bindings(self):
+            allowed = set(self.evidence_ids)
+            if any(not set(claim.evidence_ids) <= allowed for claim in self.claims):
+                raise ValueError("artifact claim references undeclared evidence")
+            return self
+
+    class EvidenceBundleDraft(AcademicDraftBody):
+        artifact_type: Literal["evidence_bundle"]
+
+    class PaperComparisonDraft(AcademicDraftBody):
+        artifact_type: Literal["paper_comparison"]
+
+    class BaselineCardDraft(AcademicDraftBody):
+        artifact_type: Literal["baseline_card"]
+
+    class ModuleCardDraft(AcademicDraftBody):
+        artifact_type: Literal["module_card"]
+
+    class CompatibilityMatrixDraft(AcademicDraftBody):
+        artifact_type: Literal["compatibility_matrix"]
+
+    class ExperimentMatrixDraft(AcademicDraftBody):
+        artifact_type: Literal["experiment_matrix"]
+
+    class MethodDraft(AcademicDraftBody):
+        artifact_type: Literal["method_draft"]
+
+    class ReviewReportDraft(AcademicDraftBody):
+        artifact_type: Literal["review_report"]
+
+    AcademicDraft = Annotated[
+        EvidenceBundleDraft
+        | PaperComparisonDraft
+        | BaselineCardDraft
+        | ModuleCardDraft
+        | CompatibilityMatrixDraft
+        | ExperimentMatrixDraft
+        | MethodDraft
+        | ReviewReportDraft,
+        Field(discriminator="artifact_type"),
+    ]
+
     class AcademicArtifactCreateBody(BaseModel):
         idempotency_key: str = Field(min_length=1, max_length=500)
         artifact_type: str = Field(min_length=1, max_length=100)
         title: str = Field(min_length=1, max_length=500)
-        draft: dict[str, Any]
+        draft: AcademicDraft
 
     class AcademicArtifactReviewBody(BaseModel):
         idempotency_key: str = Field(min_length=1, max_length=500)
@@ -396,6 +454,42 @@ def create_app(
             revisions.append({**revision.to_dict(), "content": content})
         return {"artifact": bundle.artifact.to_dict(), "revisions": revisions}
 
+    def academic_artifact_payload(
+        store: Any, project_id: str, artifact_id: str
+    ) -> dict[str, Any]:
+        payload = artifact_payload(store, artifact_id)
+        artifact = payload["artifact"]
+        revisions = payload["revisions"]
+        latest = revisions[-1]["content"] if revisions else {}
+        try:
+            AcademicDraftBody.model_validate(
+                {**latest, "state": "draft", "review_note": None}
+                if isinstance(latest, dict)
+                else latest
+            )
+        except (TypeError, ValueError):
+            latest = {}
+        if (
+            artifact.get("artifact_type") not in academic_artifact_types
+            or not isinstance(latest, dict)
+            or latest.get("project_id") != project_id
+            or latest.get("artifact_type") != artifact.get("artifact_type")
+            or latest.get("schema_version") != "academic.v1"
+            or latest.get("state") not in {"draft", "approved", "rejected", "final"}
+            or not (
+                latest.get("review_note") is None
+                or isinstance(latest.get("review_note"), str)
+            )
+        ):
+            raise HTTPException(
+                404,
+                detail={
+                    "code": "academic_artifact_not_found",
+                    "message": "Artifact is outside the bounded academic.v1 collection.",
+                },
+            )
+        return payload
+
     @app.get("/v1/projects")
     def list_projects():
         projects = project_manifests()
@@ -441,7 +535,15 @@ def create_app(
             raise HTTPException(422, detail={"code": "artifact_invalid_limit"})
         try:
             store = artifact_store(project_id)
-            values = store.list_artifacts(project_id=project_id, limit=limit)
+            values = []
+            for item in store.list_artifacts(project_id=project_id, limit=100):
+                try:
+                    academic_artifact_payload(store, project_id, item.artifact_id)
+                except HTTPException:
+                    continue
+                values.append(item)
+                if len(values) == limit:
+                    break
             return {
                 "artifacts": [item.to_dict() for item in values],
                 "count": len(values),
@@ -453,10 +555,11 @@ def create_app(
     def create_academic_artifact(project_id: str, body: AcademicArtifactCreateBody):
         from paperclaw.artifacts import ArtifactSourceLinks
 
-        draft = dict(body.draft)
+        draft = body.draft.model_dump(mode="json")
         if (
             body.artifact_type not in academic_artifact_types
             or draft.get("artifact_type") != body.artifact_type
+            or draft.get("title") != body.title
             or draft.get("project_id") != project_id
             or draft.get("state") != "draft"
         ):
@@ -495,7 +598,9 @@ def create_app(
     @app.get("/v1/projects/{project_id}/artifacts/{artifact_id}")
     def get_academic_artifact(project_id: str, artifact_id: str):
         try:
-            return artifact_payload(artifact_store(project_id), artifact_id)
+            return academic_artifact_payload(artifact_store(project_id), project_id, artifact_id)
+        except HTTPException:
+            raise
         except Exception as exc:
             raise paper_error(exc) from exc
 
@@ -507,7 +612,8 @@ def create_app(
     ):
         try:
             store = artifact_store(project_id)
-            current = json.loads(store.read_revision(artifact_id).decode("utf-8"))
+            payload = academic_artifact_payload(store, project_id, artifact_id)
+            current = payload["revisions"][-1]["content"]
             if not isinstance(current, dict) or current.get("state") == "final":
                 raise ValueError("final or malformed artifact cannot be reviewed")
             requested_state = "draft" if body.decision == "revise" else body.decision
@@ -530,6 +636,8 @@ def create_app(
                 metadata={"academic_state": next_state, "decision": body.decision},
             )
             return {"revision": revision.to_dict(), "created": created}
+        except HTTPException:
+            raise
         except Exception as exc:
             raise paper_error(exc) from exc
 

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from paperclaw.academic import AcademicRuntime
 from paperclaw.academic.fixtures import canonical_fixture_bytes
+from paperclaw.artifacts import ArtifactSourceLinks, FileArtifactStore
 from paperclaw.papers.cli import main
 from paperclaw.papers import PaperImportRequest, PaperService
 from paperclaw.projects import ProjectManifestStore
@@ -476,4 +477,44 @@ def test_rest_academic_artifact_rejects_unbounded_or_mismatched_type(tmp_path) -
 
     assert unbounded.status_code == 422
     assert mismatched.status_code == 422
-    assert unbounded.json()["detail"]["code"] == "artifact_validation_error"
+    assert isinstance(unbounded.json()["detail"], list)
+
+
+def test_rest_academic_artifact_routes_hide_nonacademic_and_malformed_records(tmp_path) -> None:
+    workspace = _workspace(tmp_path)
+    store = FileArtifactStore(
+        workspace / ".paperclaw" / "artifacts", confinement_root=workspace
+    )
+    source = ArtifactSourceLinks(project_id="demo")
+    ordinary, _, _ = store.create_artifact(
+        idempotency_key="ordinary",
+        artifact_type="generic_report",
+        title="Ordinary",
+        media_type="application/json",
+        content=b'{"state":"draft"}',
+        source=source,
+    )
+    malformed, _, _ = store.create_artifact(
+        idempotency_key="malformed",
+        artifact_type="baseline_card",
+        title="Malformed",
+        media_type="application/json",
+        content=b'{"artifact_type":"baseline_card","project_id":"demo","state":"draft"}',
+        source=source,
+    )
+    client = TestClient(create_app(EmptyService(), paper_workspace_roots=[tmp_path]))
+
+    listed = client.get("/v1/projects/demo/artifacts")
+    assert listed.status_code == 200
+    assert listed.json() == {"artifacts": [], "count": 0}
+    for artifact_id in (ordinary.artifact_id, malformed.artifact_id):
+        assert client.get(f"/v1/projects/demo/artifacts/{artifact_id}").status_code == 404
+        reviewed = client.post(
+            f"/v1/projects/demo/artifacts/{artifact_id}/review",
+            json={
+                "idempotency_key": f"review-{artifact_id}",
+                "decision": "revise",
+                "note": "Must remain invisible.",
+            },
+        )
+        assert reviewed.status_code == 404
