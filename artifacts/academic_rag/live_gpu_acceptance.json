@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "timestamp_utc": "2026-07-30T12:53:43.8510037Z",
+  "host": {
+    "gpu": "NVIDIA GeForce RTX 4070 SUPER",
+    "driver": "610.62",
+    "total_memory_mib": 12282,
+    "torch": "2.9.1+cu126",
+    "cuda_runtime": "12.6"
+  },
+  "checks": {
+    "cuda_tensor": {
+      "status": "passed",
+      "device": "cuda:0"
+    },
+    "dense_embedding": {
+      "status": "passed",
+      "execution_path": "PaperClaw MiniLMEncoder -> AcademicRuntime.build_index -> AcademicRuntime.retrieve",
+      "model": "sentence-transformers/all-MiniLM-L6-v2",
+      "revision": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+      "device": "cuda:0",
+      "indexed_object_count": 2,
+      "retrieved_candidate_count": 1,
+      "dimension": 384,
+      "top_dense_score": 0.8140138277020745,
+      "top_text": "Concrete crack detection uses a segmentation network and reports F1 on Crack500.",
+      "ranking_check": "passed",
+      "elapsed_seconds": 18.458,
+      "peak_memory_mib": 96.33
+    },
+    "visual_embedding": {
+      "status": "blocked",
+      "model": "vidore/colqwen2-base",
+      "revision": "9fe8a713422a7cb4ef79ca77a09b381ee2243101",
+      "reason": "fixed-revision model download did not complete within the bounded acceptance window",
+      "claim": "No ColQwen2 execution or CUDA-residency claim is made."
+    }
+  },
+  "notes": [
+    "The project MiniLM model identity and pooling semantics were retained.",
+    "The production PaperClaw encoder, index generation, persisted vectors, dense query encoding, fusion, and ranking path were executed.",
+    "No model weights, local paths, credentials, or raw provider traffic are included."
+  ]
+}

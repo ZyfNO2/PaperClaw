@@ -3,9 +3,15 @@ from .contracts import (
     AcademicLocator,
     AcademicObject,
     AcademicQuery,
+    ArtifactRevision,
+    AssetReference,
     BoundingBox,
     EvidenceBundle,
+    EvidenceLocator,
     IndexGeneration,
+    MemorySnapshot,
+    PaperRecord,
+    PaperVersion,
     ParseResult,
     RetrievalBudget,
     RetrievalCandidate,
@@ -14,14 +20,33 @@ from .contracts import (
     RetrievalTrace,
 )
 from .parser import PaperParser
+from .index import (
+    ACADEMIC_INDEX_VERSION,
+    AcademicIndexEntry,
+    AcademicIndexManifest,
+    AcademicObjectIndex,
+)
 from .runtime import AcademicRuntime
+from .retrieval_service import (
+    GroundedRetrievalHit,
+    RetrievalResponse,
+    RetrievalService,
+)
 from .visual import ColQwen2Encoder, VisualEncoder, late_interaction_score
+from .conflicts import EvidenceConflict, StructuredEvidence, detect_evidence_conflicts
+from .corrective import CorrectivePlan, plan_corrective_retrieval
 
 __all__ = [
     "AcademicLocator",
+    "ACADEMIC_INDEX_VERSION",
+    "AcademicIndexEntry",
+    "AcademicIndexManifest",
+    "AcademicObjectIndex",
     "AcademicObject",
     "AcademicQuery",
     "AcademicRuntime",
+    "ArtifactRevision",
+    "AssetReference",
     "BoundingBox",
     "IndexGeneration",
     "PaperParser",
@@ -31,9 +56,21 @@ __all__ = [
     "RetrievalResult",
     "ACADEMIC_SCHEMA_VERSION",
     "EvidenceBundle",
+    "EvidenceLocator",
+    "MemorySnapshot",
+    "PaperRecord",
+    "PaperVersion",
     "RetrievalRequest",
     "RetrievalTrace",
+    "GroundedRetrievalHit",
+    "RetrievalResponse",
+    "RetrievalService",
     "ColQwen2Encoder",
     "VisualEncoder",
     "late_interaction_score",
+    "EvidenceConflict",
+    "StructuredEvidence",
+    "detect_evidence_conflicts",
+    "CorrectivePlan",
+    "plan_corrective_retrieval",
 ]

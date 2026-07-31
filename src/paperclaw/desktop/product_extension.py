@@ -129,6 +129,9 @@ def install_product_extension(app_module: Any) -> None:
     def retrieve_academic(self, workspace, query):
         return invoke(self, "retrieve_academic", workspace, query)
 
+    def resolve_academic(self, workspace, locator):
+        return invoke(self, "resolve_academic", workspace, locator)
+
     api_type.__init__ = product_init
     api_type.get_product_overview = get_product_overview
     api_type.get_capabilities = get_capabilities
@@ -145,6 +148,7 @@ def install_product_extension(app_module: Any) -> None:
     api_type.parse_academic_paper = parse_academic_paper
     api_type.build_academic_index = build_academic_index
     api_type.retrieve_academic = retrieve_academic
+    api_type.resolve_academic = resolve_academic
     setattr(app_module, _MARKER, True)
 
 

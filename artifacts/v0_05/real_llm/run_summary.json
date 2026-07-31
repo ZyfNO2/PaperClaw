@@ -1,8 +1,8 @@
 {
   "provider": "openai-compatible",
-  "model": "deepseek-v4-flash",
+  "model": "agnes-2.0-flash",
   "status": "completed",
-  "stop_reason": "done",
+  "stop_reason": "completed_verified",
   "model_calls": 3,
   "tool_calls": 2,
   "max_steps": 10,

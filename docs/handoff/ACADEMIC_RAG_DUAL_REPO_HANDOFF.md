@@ -26,6 +26,35 @@ git log -1 --format=%H -- docs/handoff/ACADEMIC_RAG_DUAL_REPO_HANDOFF.md
 若本文与旧 roadmap、SOP 或 handoff 冲突，以远端代码、最新可复算测试证据、
 当前 SOP hard Gate 和本文未完成项为准。
 
+### 2026-07-28 Academic v1 基础层收口
+
+- PaperClaw 冻结 `PaperRecord`、`AcademicObject`、`EvidenceLocator`、
+  `EvidenceBundle`、`MemorySnapshot`、`ArtifactRevision` 六项 canonical contract；
+- schema SHA-256：`62c3c6bbde000023a95025fdcae53c777fac479ddc9da02a63ea293b0855d2e0`；
+- golden SHA-256：`5f8b3b999de2139c6e328966086043663a3012a068636061971926b979ea647d`；
+- `AcademicLocator` 仅作为一个发布周期的 Python alias，wire 统一为
+  `EvidenceLocator`；
+- parse manifest、object、relation、asset reference 已进入规范化事务存储；
+  legacy 0.43 manifest 只在 identity 可验证时 backfill；
+- page/region asset 使用 SHA-256 content addressing，resolve 核验版本、完整 locator
+  与资产内容；
+- PaperAgent 通过 adapter 消费 canonical `EvidenceBundle` 并转换为自己的
+  `AcademicEvidenceLedger`，不读取 PaperClaw 内部存储。
+
+本批次可复算实施证据：
+
+- PaperClaw 实现提交：`9932953e23ce8f565cc886a88a88868cd2ea6dbd`
+  （基础提交：`bff2df6687173b07ec1388ca348d61ba244384a8`）；
+- PaperAgent 消费提交：`f2e8a72295a6fe6690fd23da93d0b83a69c3fa42`
+  （基础提交：`8ba1313f64de3e9e5b325d68d534e4c21b6eb626`）；
+- PaperClaw offline regression：`1064 passed, 27 skipped, 11 deselected`；
+- PaperAgent offline regression：`761 passed, 1 skipped, 12 deselected`；
+- PaperAgent strict mypy：`161 source files / no issues`；
+- 两仓 wheel 与 sdist 构建成功；wheel 内 `academic.v1` schema digest 与第 33 行一致；
+- 跨仓 tracer 已覆盖真实 PDF import → parse → normalized persistence →
+  canonical `EvidenceBundle` → PaperAgent adapter → locator resolve → PNG asset
+  readback 与 SHA-256 校验。
+
 PaperClaw 是 `academic.v1`、论文版本、解析/索引、Evidence、Artifact 和 Desktop
 的事实源。PaperAgent 是 Query Planning、Evidence Ledger、跨论文推理、
 Academic Tailoring 和科学决策的事实源。PaperAgent 不得直接读取 PaperClaw SQLite、
@@ -448,3 +477,413 @@ editable/wheel install、PyMuPDF。
 6. 冻结 12 篇验收集；
 7. 未完成 Native Desktop、真实 LLM、blinded labels 和人工审批前，状态保持
    `offline_validated / P0 GO blocked`。
+
+## 11. 2026-07-29 Release Gate 与 Batch 5 进展
+
+### 远端 Release Gate
+
+| 仓库 | 实现 head | CI | 结果 |
+|---|---|---|---|
+| PaperClaw | `1715ced1eebf9f36a394001e27f3ead51712a8a5` | Actions `30392043509` | Windows full pytest、Ubuntu academic extra、Ruff 全绿 |
+| PaperAgent | `7faaabd6989fd92d8eb3b9cbadf30fc73484a5cd` | Actions `30392478189` | Python 3.11/3.12 lint、format、mypy、offline tests 全绿 |
+
+待发布 commit range 使用 Gitleaks 8.30.1 扫描：PaperClaw 34 commits、
+PaperAgent 17 commits，均为 `no leaks found`。受保护的 PaperClaw `data/` 与
+PaperAgent `.venv-paperagent/`、`output/`、`academic/claims.py`、
+`academic/factory.py`、`academic/planner.py` 未进入提交。
+
+clean clone 验证：
+
+- PaperClaw：`python -m build` 成功；Academic/Papers 定向回归 `53 passed`。
+- PaperAgent：`python -m build` 成功；clean source Academic 回归 `25 passed`。
+- 两仓远端 branch SHA 可解析；`academic.v1` schema/golden 本批未修改。
+
+### Batch 5 已实现的 tracer
+
+PaperClaw 新增：
+
+- `AcademicIndexEntry`、`AcademicIndexManifest`、`AcademicObjectIndex`：
+  固定 `academic-object-index.v1`，manifest content hash 覆盖 generation、
+  corpus、encoder fingerprint 与完整 object identity；snapshot 从持久化索引
+  读取并逐 locator fail-closed resolve，重启后保持确定性。
+- `RetrievalService.search`：统一完成 bounded retrieve、canonical object resolve、
+  neighbor expansion、asset byte budget、资产关联与 SHA-256 校验、标准
+  `EvidenceBundle` 输出。
+- service locator/PNG readback 与 restart tracer：`14 passed`（与既有 Academic
+  runtime 定向集合合并运行）。
+
+PaperAgent 新增：
+
+- `PaperClawAcademicEvidenceSource` 优先消费
+  `RetrievalService.search/resolve_locator`，旧 `AcademicRuntime` seam 仅保留短期兼容。
+- 真实 PDF 跨仓 tracer 已改为
+  parse → index → RetrievalService → PaperAgent Evidence Ledger →
+  locator resolve → PNG SHA-256 readback；adapter 定向 `6 passed`，mypy 通过。
+
+### 当前状态与下一步
+
+```text
+第 1～4 步：COMPLETE
+远端 push / CI / clean-clone：COMPLETE
+Batch 5 object-aware manifest：IMPLEMENTED + CI VALIDATED
+Batch 5 Python RetrievalService tracer：IMPLEMENTED + CI VALIDATED
+增量 upsert / 版本删除 / stale index migration：PENDING
+REST/OpenAPI RetrievalService shape：PENDING
+真实论文 Benchmark / 人工验收：PENDING
+P0 Release：NO-GO / PENDING
+```
+
+下一 slice 只继续 Batch 5：增量版本同步、旧版本删除与幽灵结果测试、stale
+schema/index 拒绝、REST/OpenAPI 契约及跨仓 fixture；不提前进入 Query Planner、
+Relation Graph 或 Coding Worker。
+
+## 12. 2026-07-29 Batch 5 final closure
+
+This batch stops at the Step 1-4 foundation boundary. It does not enter Query
+Planner, Relation Graph, visual retrieval, real benchmark, or Coding Worker.
+
+| Repository | Validated implementation head | Final CI |
+|---|---|---|
+| PaperClaw | `10702d8a3a78a636df3918cb32c596ab1ed5659b` | [30427589118](https://github.com/ZyfNO2/PaperClaw/actions/runs/30427589118) success |
+| PaperAgent | `06b99107a913c9ab7d738c2223d7bc1e4fafca2d` | [30427589127](https://github.com/ZyfNO2/PaperAgent/actions/runs/30427589127) success |
+
+Final evidence:
+
+- PaperClaw local non-live regression: `1067 passed, 30 skipped, 15 deselected`.
+- PaperAgent local non-live regression: `769 passed, 11 skipped`.
+- Ruff, PaperAgent mypy, and both package builds passed.
+- PaperAgent CI passed Python 3.11/3.12 lint, format, mypy, offline tests, and
+  the 90% coverage gate.
+- PaperClaw CI passed Windows full pytest, Ubuntu academic-extra tests, and Ruff.
+- Canonical retrieval fixture SHA-256:
+  - success: `cd244b2346ffbcd6086286e3c97ec373d4f0a6fecb4f0fa8818e086c6b9e41e3`
+  - cases: `ef2d86e62a78705c4ac5368bf2ccc246ad90f57989886dc98d258bbb40769e24`
+
+Completed Batch 5 gates:
+
+- Incremental version upsert, explicit historical-version retrieval, canonical
+  version deletion, and ghost-result prevention.
+- Fail-closed stale schema/index/fingerprint/integrity checks. Explicit repair
+  of a damaged index creates a new generation with atomic visibility.
+- RetrievalService REST/OpenAPI, canonical locator refs, typed errors,
+  text/asset budgets, and schema/index/generation metadata.
+- PaperAgent REST validation of bundle, trace, index identity, object/page/type,
+  locator/source hash, and asset hash.
+- Offline real-minimal-PDF tracer: import -> parse -> incremental sync -> REST
+  search -> PaperAgent normalization -> resolve -> PNG hash readback -> restart
+  -> v2 upsert -> v1 delete/no ghost.
+
+Final status:
+
+```text
+Batch 5 engineering closure: COMPLETE
+P0 Release: NO-GO / PENDING
+```
+
+P0 still requires the real-paper benchmark, corpus license/source/status
+freeze, failed-input corpus, and human acceptance. This engineering closure
+must not be represented as P0 Release GO.
+
+## 13. 2026-07-30 H2/H3 engineering continuation
+
+Overall verdict: `REVISE` (automated engineering progress; live/scientific/human
+acceptance remains blocked).
+
+PaperClaw `codex/academic-rag-h2-retrieval` implementation head before this
+handoff update: `e465277`. Added deterministic structured conflict detection,
+reason-aware bounded corrective planning, identity-preserving rewrites, corrective
+trace details, and a serializer-produced REST fixture. The detector does not read
+`stop_reason`, prompts, or free-text conflict keywords. Verification:
+
+- conflict/corrective targeted: `24 passed`;
+- Academic suite plus REST fixture: `64 passed`;
+- non-live repository regression: `1085 passed, 30 skipped, 15 deselected`;
+- Ruff passed; wheel and sdist built successfully;
+- bare whole-package mypy is not the repository CI gate and reported 168 historical
+  errors, including optional dependency stubs; new modules passed targeted mypy.
+
+PaperAgent `codex/academic-rag-h3-reasoning` implementation head before this
+handoff update: `c6f1ae91`. Added an optional PaperClaw factory with exact
+`academic.v1` and capability checks, a serializable structured query planner,
+accepted-only context manifests with locator/source identity revalidation, and
+deterministic claim/locator mismatch checks. Existing eight Artifact drafts remain
+append-only through the PaperClaw sink and cannot finalize before approval.
+Verification:
+
+- Academic suite: `58 passed`;
+- non-live repository regression: `797 passed, 1 skipped, 12 deselected`;
+- strict mypy: `163 source files / no issues`; Ruff passed;
+- wheel and sdist built successfully;
+- an additional Academic-only coverage diagnostic was `87.81%` and therefore did
+  not satisfy the repository's `90%` threshold; it is recorded as failed, not passed.
+
+Blocked acceptance and required user inputs remain unchanged: real
+SentenceTransformer/ColQwen2 on the target GPU, 32 blinded human gold labels, two
+cross-paper expected decisions, a real OpenAI-compatible LLM trace, Native Windows
+click-through, and human reviewer approval. No `P0 GO`, `release_accepted`, real
+end-to-end validation, or scientific-validity claim is made.
+
+## 14. 2026-07-30 automatic infrastructure completion
+
+Final implementation heads before this synchronized documentation commit:
+
+- PaperClaw: `1b06179a34b1c6327bf21206f8fb028c9acaa834`;
+- PaperAgent: `4ff781acd985ba1c96664b5b58f748a53c6ae527`;
+- `academic.v1` schema SHA-256:
+  `62c3c6bbde000023a95025fdcae53c777fac479ddc9da02a63ea293b0855d2e0`.
+
+New automated evidence:
+
+- PaperAgent Academic coverage gate: `66 passed`, total `90.39%`;
+- after adding the human-review runner: `69 passed`, total `90.24%`;
+- PaperAgent strict mypy: `164 source files / no issues`;
+- latest-source cross-repo PDF/REST/adapter integration: `7 passed`;
+- PaperClaw blinded-label infrastructure: `3 passed`, status
+  `blocked_by_human_labeling`;
+- the 32-question template has eight text, eight Figure, eight Table, and eight
+  Equation slots and does not fabricate gold locators;
+- the two H3 tailoring scenarios have a runnable package generator which exits `2`
+  with `blocked_by_human_review` until human fields are supplied.
+
+Package digests:
+
+- PaperClaw wheel:
+  `38d4df13050dd00b7a847d8eb6b4ed09614012c26eaa978a40ed3b57b8d63ac6`;
+- PaperClaw sdist:
+  `91cd1875de226ee0a02d2928f63f32d82e5e1c64f5eaba98534efcef13443f15`;
+- PaperAgent wheel:
+  `a49be2561ef8ad6811f2b01fe4363c5d2242d12656e9c4fad6cdbb742160e719`;
+- PaperAgent sdist:
+  `512fdaecd8b0a653dc5e299347c9937d276e241a32261b2be77bc93638c13ce8`.
+
+All code, schema, template, validator, scorer, runner, configuration, and checklist
+work that does not require the missing hardware/provider/human authority has been
+completed. Remaining blockers are real GPU/model execution, real LLM credentials,
+human gold labels, Native Windows manual clicking/screenshots, and reviewer
+approval. Overall status remains `REVISE`; P0 Release remains `NO-GO`.
+
+## 15. Final-head CI dispatch evidence
+
+The branch-filtered workflows did not run automatically, so CI was explicitly
+dispatched against the exact documented branch heads:
+
+- PaperAgent CI run
+  [30537821013](https://github.com/ZyfNO2/PaperAgent/actions/runs/30537821013)
+  on `86fc2b543d91ba57e882073bab4973027e8650bc`: success; Python 3.11 and
+  Python 3.12 lint, format, strict mypy, offline tests, and coverage all passed.
+- PaperClaw CI run
+  [30537820415](https://github.com/ZyfNO2/PaperClaw/actions/runs/30537820415)
+  on `2ccc17dca957bf496acd9c3b9405462cda1f73c1`: success; Windows pytest,
+  Ubuntu Academic-extra tests, and Ruff all passed.
+
+These are real executed jobs, not skipped workflow records. A documentation-only
+commit containing this section follows those tested implementation heads.
+
+## 16. 2026-07-30 live provider and GPU evidence
+
+The previously blocked real-provider and dense-GPU checks were executed locally
+with secrets loaded only into the process environment:
+
+- OpenAI-compatible provider: `agnes-2.0-flash`;
+- fixed real-LLM acceptance: `completed_verified`, three model calls, two tool
+  calls, generated file content and execution both verified;
+- the event redactor was hardened to mask provider request IDs and recursively
+  mask credential-bearing fields; its two focused tests pass;
+- post-run scanning found no secret values or absolute Windows paths in modified
+  evidence files;
+- RTX 4070 SUPER / CUDA 12.6 dense embedding passed with pinned
+  `sentence-transformers/all-MiniLM-L6-v2` revision, two 384-dimensional vectors,
+  both L2 norms `1.0`, and `cuda:0` execution.
+
+The fixed-revision `vidore/colqwen2-base` download did not complete within the
+bounded acceptance window. No visual-model execution claim is made. The exact
+outcomes are recorded in `artifacts/academic_rag/live_gpu_acceptance.json`.
+Human labels, cross-paper human decisions, Native Windows click-through, and
+reviewer approval remain blocked; overall status is still `REVISE` / P0 `NO-GO`.
+
+## 17. Live-evidence head CI
+
+PaperClaw CI run
+[30540562592](https://github.com/ZyfNO2/PaperClaw/actions/runs/30540562592)
+completed successfully on live-evidence head
+`9251f7ac77077a5320a4043ffc967e34afb36a33`. Ubuntu Academic-extra tests,
+high-signal Ruff, and Windows pytest all passed. The Windows summary was
+`3649 passed, 0 failed, 0 errors, 21 skipped`. This synchronized
+documentation-only commit follows that tested head.
+
+## 18. Code-review remediation
+
+The REQUEST CHANGES engineering findings were addressed without changing the
+P0 NO-GO decision:
+
+- PaperClaw now converts retrieved candidates into deterministic structured
+  facts, executes conflict detection after primary retrieval, maps conflict types
+  to one bounded corrective round, re-detects conflicts, and records original,
+  resolved, and unresolved conflicts plus strategy and before/after object IDs.
+- `section_scope` is part of the canonical retrieval request, serialization,
+  corrective request, runtime filtering, REST request, and PaperAgent adapters.
+- REST responses expose `corrective_details`; Runtime and REST integration tests
+  cover a real numeric conflict and fail-closed `conflict_unresolved` result.
+- `MiniLMEncoder` now owns the pinned Transformers forward, masked mean pooling,
+  and L2 normalization path. A real RTX 4070 SUPER run executed
+  `MiniLMEncoder -> build_index -> retrieve`, indexed two objects, ranked the
+  crack document first with dense score `0.8140138277020745`, and used
+  `cuda:0`.
+- PaperAgent now executes `decompose_question`, every planned sub-query,
+  corrective/conflict rounds, Evidence Ledger construction, accepted-only
+  context, evidence-text claim generation, semantic/numeric citation validation,
+  and evidence-bound eight-artifact drafting through `AcademicRAGWorkflow`.
+- Context token budget is enforced with a conservative UTF-8 upper bound in
+  addition to the character budget.
+- PaperAgent CI now checks raw JSON coverage without rounding and includes a
+  required PaperClaw academic-extra PDF/REST integration job that fails on skip.
+- The real-LLM trace keeps numeric token usage while redacting request IDs and
+  actual credential/token fields. The rerun remained `completed_verified`.
+
+Local verification after remediation:
+
+- PaperClaw targeted Academic/REST/redaction: `74 passed`;
+- PaperClaw non-live full regression: `1093 passed, 34 skipped, 8 deselected`;
+- PaperAgent Academic/CI assertions: `74 passed`;
+- PaperAgent full regression: `812 passed, 11 skipped`;
+- PaperAgent raw branch coverage: `90.175488054126%`;
+- PaperAgent Ruff, format, and strict mypy (`164` source files): passed.
+
+ColQwen2 execution, 32 blinded human labels, two cross-paper human decisions,
+Native Windows click-through, and reviewer approval remain blocked. Scientific
+validity is not established; status remains `REVISE`, Draft PRs, P0 `NO-GO`.
+
+## 19. Review-remediation CI evidence
+
+- PaperClaw CI
+  [30544953035](https://github.com/ZyfNO2/PaperClaw/actions/runs/30544953035)
+  passed on `c49feca1fa61c411693e27e809fe82fd7bb7adbf`: Ubuntu Academic
+  extra, Windows pytest, and Ruff all succeeded.
+- PaperAgent CI
+  [30545605995](https://github.com/ZyfNO2/PaperAgent/actions/runs/30545605995)
+  passed on `7e3bbd7eb957d0747f301be2710aeff60b22190a`: Python 3.11 and
+  3.12 offline verification, full coverage, explicit raw coverage threshold,
+  Ruff, format, strict mypy, and the required no-skip PaperClaw academic
+  integration all succeeded.
+
+An earlier PaperAgent run failed because a test imported a repository-root
+`scripts` namespace unavailable on clean Linux runners. The assertions were
+moved into the installed `paperagent.ci_evidence` module, tested locally, and
+verified by the successful exact-head run above. These synchronized
+documentation-only commits follow the tested implementation heads.
+
+## 20. Frontend integration implementation evidence (2026-07-31)
+
+Implementation heads before this synchronized documentation commit:
+
+- PaperClaw `codex/academic-rag-h2-retrieval`: `400bcce`
+- PaperAgent `codex/academic-rag-h3-reasoning`: `232534f8`
+- Draft PRs remain #76 and #66 respectively; neither PR is ready or merged.
+- `academic.v1` schema SHA-256 remains
+  `62c3c6bbde000023a95025fdcae53c777fac479ddc9da02a63ea293b0855d2e0`;
+  golden fixture SHA-256 remains
+  `5f8b3b999de2139c6e328966086043663a3012a068636061971926b979ea647d`.
+
+The production PWA no longer silently reads demo data. Demo mode is explicit via
+`?demo=1`; a missing PaperClaw endpoint produces a structured fail-closed error.
+The implementation reuses PaperClaw project, paper, retrieval, locator, asset,
+and append-only artifact stores through public REST contracts.
+
+| Page | PaperAgent API/domain | PaperClaw public contract |
+|---|---|---|
+| Projects | project projection | `GET/POST /v1/projects` |
+| Literature | import, parse, index orchestration | paper import/parse/index endpoints |
+| Evidence | `AcademicRAGWorkflow`, accepted-only ledger | query, corrective trace, canonical locator resolve/asset |
+| Artifacts | eight bounded drafts and human review actions | artifact create/list/detail/review with append-only revisions |
+| Runs | bounded task create/poll/cancel client | existing task service; no fabricated run history |
+
+Verification on the implementation heads:
+
+- PaperClaw focused REST suite: `10 passed`; non-live regression excluding the
+  credential-gated `tests/real_llm`: `1097 passed, 38 skipped`; wheel and sdist build passed.
+- PaperAgent focused API/web/generated-two-PDF tracer: `9 passed`; offline suite
+  excluding browser: `817 passed, 10 skipped`; Playwright Chromium: `3 passed`;
+  Ruff, format, strict mypy (`167` source files), JavaScript syntax, wheel and sdist passed.
+- The dual-repository tracer imports two generated PDFs, parses and indexes them,
+  asserts accepted-only evidence, resolves a canonical locator, creates all eight
+  bounded draft types, requests revision, and observes revision history `[1, 2]`.
+- The generated PDFs verify engineering control flow only. They are not real-paper,
+  model-quality, or scientific validation evidence.
+- The previously recorded real LLM and RTX 4070 SUPER MiniLM evidence remains valid
+  at its recorded exact heads; this frontend batch did not rerun or broaden those claims.
+
+Scientific validity, ColQwen2 execution, blinded human labels, cross-paper human
+judgments, Native Windows manual acceptance, and reviewer approval remain
+unverified. Overall decision remains `REVISE`; P0 Release remains `NO-GO`.
+
+## 21. Frontend exact-head CI evidence
+
+- PaperClaw CI run
+  [30638342203](https://github.com/ZyfNO2/PaperClaw/actions/runs/30638342203)
+  succeeded on implementation/documentation head
+  `c43b2c9a1751d8ee0328f9a459037649ce19bbef`: high-signal Ruff, Ubuntu
+  academic extra, and Windows pytest all passed. Windows summary:
+  `3668 passed, 0 failed, 0 errors, 21 skipped`.
+- PaperAgent CI run
+  [30638710395](https://github.com/ZyfNO2/PaperAgent/actions/runs/30638710395)
+  succeeded on final implementation head
+  `ffa75979ee6e85a6024556f8c83535f28a023653`: Python 3.11/3.12 lint,
+  format, strict mypy, offline tests, and raw coverage gate passed; required
+  PaperClaw PDF/REST integration and Playwright browser E2E both passed with
+  no skips.
+
+An earlier PaperAgent run exposed missing `browser` extra installation and a
+Linux branch-coverage regression. The workflow now installs `.[dev,browser]`,
+and focused failure-boundary tests restore the raw coverage gate without
+lowering the 90% threshold. This synchronized documentation-only commit follows
+the tested heads above. Both PRs remain Draft; scientific status remains
+`REVISE` and P0 remains `NO-GO`.
+
+## 22. Acceptance-request remediation (2026-07-31)
+
+Implementation heads before this synchronized documentation commit:
+
+- PaperClaw: `454ab4b2b2e2b5e9b408aca2267e47fdb89ef023`
+  (`fix(api): enforce academic artifact boundary`)
+- PaperAgent: `5157acb4567bb0d0ff87037d1f780aeaf7c5ca05`
+  (`test(browser): await complete artifact workflow`)
+
+The blocking review findings were remediated as follows:
+
+- project switching is an asynchronous atomic boundary load. Navigation is disabled
+  while Papers and Artifacts are fetched; Evidence, lastEvidence, and Runs are
+  cleared, then project-scoped run IDs are restored. New projects use the same path.
+- PaperClaw creation uses a Pydantic discriminated union for the eight permitted
+  `academic.v1` draft types, validates evidence-bound claims and required fields,
+  and requires route/project/type/title consistency.
+- Artifact list/get/review validate type, project, schema and the complete common
+  draft structure. Non-academic and malformed records are hidden and cannot be
+  reviewed.
+- Runs now creates durable PaperAgent tasks, polls status, supports cancellation,
+  displays task/trace identity, and restores up to 50 task IDs per project from
+  browser-local state.
+- Literature is truthfully labelled `Server-local PDF path import`; browser upload
+  is not claimed or implemented.
+- Playwright now covers two-project isolation and a real in-process PaperClaw loop:
+  two generated PDFs are imported, parsed and indexed; a real PNG page asset is
+  fetched through the browser; Evidence is queried; all eight drafts are generated;
+  a revision is requested and verified as history `[1, 2]`; and a clean second
+  project is verified.
+
+Local verification:
+
+- PaperClaw focused REST: `11 passed`; non-live regression: `1098 passed, 38 skipped`;
+  Ruff and wheel/sdist build passed.
+- PaperAgent full suite including four Playwright cases: `832 passed, 10 skipped`;
+  Ruff, format, JavaScript syntax, strict mypy (`167` files), and wheel/sdist passed.
+- PaperClaw exact-head CI
+  [30642210850](https://github.com/ZyfNO2/PaperClaw/actions/runs/30642210850)
+  passed Windows pytest, Ubuntu academic-extra tests, and Ruff.
+- PaperAgent exact-head CI
+  [30642858819](https://github.com/ZyfNO2/PaperAgent/actions/runs/30642858819)
+  passed Python 3.11/3.12 verification, required PaperClaw PDF/REST integration,
+  and Playwright Chromium E2E without skips.
+
+Generated PDFs and the real in-process storage/API/browser path verify engineering
+control flow only. They do not establish scientific quality. Overall decision stays
+`REVISE`; P0 Release stays `NO-GO`; both PRs stay Draft.

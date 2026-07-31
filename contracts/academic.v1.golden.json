@@ -1,0 +1,103 @@
+{
+  "schema_version": "academic.v1",
+  "paper_record": {
+    "schema_version": "academic.v1",
+    "paper_id": "paper-1",
+    "project_id": "project-1",
+    "current_version": {
+      "version_id": "version-1",
+      "version_number": 1,
+      "source_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "format": "pdf",
+      "original_filename": "paper.pdf",
+      "byte_length": 1024,
+      "created_at": "2026-07-28T00:00:00+00:00"
+    },
+    "metadata": {"title": {"candidate": "A Paper", "confirmed": null}},
+    "metadata_revision": 1,
+    "source": {"kind": "local_import", "filename": "paper.pdf"},
+    "created_at": "2026-07-28T00:00:00+00:00",
+    "updated_at": "2026-07-28T00:00:00+00:00"
+  },
+  "academic_object": {
+    "schema_version": "academic.v1",
+    "object_id": "version-1:page:1",
+    "object_type": "page",
+    "reading_order": 1,
+    "locator": {
+      "schema_version": "academic.v1",
+      "paper_id": "paper-1",
+      "version_id": "version-1",
+      "object_id": "version-1:page:1",
+      "page_number": 1,
+      "object_type": "page",
+      "source_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "section_path": [],
+      "bounding_box": {"x0": 0.0, "y0": 0.0, "x1": 612.0, "y1": 792.0},
+      "paragraph_index": null,
+      "line_range": null,
+      "table_row": null,
+      "table_column": null
+    },
+    "text": null,
+    "assets": [],
+    "structured_content": {},
+    "provenance": "extracted"
+  },
+  "evidence_locator": {
+    "schema_version": "academic.v1",
+    "paper_id": "paper-1",
+    "version_id": "version-1",
+    "object_id": "version-1:page:1",
+    "page_number": 1,
+    "object_type": "page",
+    "source_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "section_path": [],
+    "bounding_box": {"x0": 0.0, "y0": 0.0, "x1": 612.0, "y1": 792.0},
+    "paragraph_index": null,
+    "line_range": null,
+    "table_row": null,
+    "table_column": null
+  },
+  "evidence_bundle": {
+    "schema_version": "academic.v1",
+    "bundle_id": "bundle-1",
+    "project_id": "project-1",
+    "query": "method",
+    "candidates": [],
+    "sufficiency": "insufficient",
+    "reasons": ["no matching evidence"],
+    "trace": {
+      "trace_id": "trace-1",
+      "request_fingerprint": "request-1",
+      "index_generation_id": "generation-1",
+      "channels": ["lexical"],
+      "model_fingerprints": {"lexical": "bm25-v1"},
+      "rounds_used": {"primary": 1},
+      "degraded_channels": [],
+      "stop_reason": "no_candidates"
+    }
+  },
+  "memory_snapshot": {
+    "schema_version": "academic.v1",
+    "project_id": "project-1",
+    "entries": [],
+    "used_chars": {"user": 0, "project": 0, "task": 0},
+    "limit_chars": {"user": 1000, "project": 1000, "task": 1000},
+    "fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "generated_at": "2026-07-28T00:00:00+00:00"
+  },
+  "artifact_revision": {
+    "schema_version": "academic.v1",
+    "artifact_id": "artifact-1",
+    "revision_id": "revision-1",
+    "revision_number": 1,
+    "parent_revision_id": null,
+    "state": "draft",
+    "content_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "byte_length": 128,
+    "media_type": "application/json",
+    "evidence": [],
+    "created_at": "2026-07-28T00:00:00+00:00"
+  }
+}

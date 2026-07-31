@@ -119,6 +119,7 @@ class TextParser:
             f"parse-{fingerprint}",
             paper_id,
             version_id,
+            source_hash,
             _PARSER_NAME,
             _PARSER_VERSION,
             fingerprint,

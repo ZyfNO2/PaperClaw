@@ -1,0 +1,18 @@
+{
+  "schema_version": "academic-retrieval-gate.v1",
+  "description": "H2 retrieval quality gates. Thresholds from Handoff section 4 H2.",
+  "gates": {
+    "document_recall_at_5": 0.90,
+    "page_recall_at_5": 0.80,
+    "object_recall_at_5": 0.75,
+    "table_cell_exact_accuracy": 0.85,
+    "locator_page_accuracy": 1.00,
+    "bbox_iou_ge_0.5_ratio": 0.80,
+    "abstention_accuracy": 0.90
+  },
+  "notes": [
+    "Gates require 32 blinded questions (H5) to evaluate formally.",
+    "This config defines thresholds only; the benchmark script reports raw metrics.",
+    "Do NOT claim P0 GO based on synthetic or offline metrics alone."
+  ]
+}

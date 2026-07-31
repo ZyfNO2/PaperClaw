@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paperclaw.local/contracts/academic.v1.schema.json",
+  "title": "PaperClaw Academic v1",
+  "oneOf": [
+    {"$ref": "#/$defs/paper_record"},
+    {"$ref": "#/$defs/academic_object"},
+    {"$ref": "#/$defs/evidence_locator"},
+    {"$ref": "#/$defs/evidence_bundle"},
+    {"$ref": "#/$defs/memory_snapshot"},
+    {"$ref": "#/$defs/artifact_revision"}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "bounding_box": {
+      "type": "object",
+      "required": ["x0", "y0", "x1", "y1"],
+      "properties": {
+        "x0": {"type": "number", "minimum": 0},
+        "y0": {"type": "number", "minimum": 0},
+        "x1": {"type": "number", "minimum": 0},
+        "y1": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "asset_reference": {
+      "type": "object",
+      "required": [
+        "asset_hash", "kind", "media_type", "width_px", "height_px", "dpi"
+      ],
+      "properties": {
+        "asset_hash": {"$ref": "#/$defs/sha256"},
+        "kind": {"enum": ["page", "region"]},
+        "media_type": {"const": "image/png"},
+        "width_px": {"type": ["integer", "null"], "minimum": 1},
+        "height_px": {"type": ["integer", "null"], "minimum": 1},
+        "dpi": {"type": "integer", "minimum": 72, "maximum": 600}
+      },
+      "additionalProperties": false
+    },
+    "evidence_locator": {
+      "type": "object",
+      "required": [
+        "schema_version", "paper_id", "version_id", "object_id",
+        "page_number", "object_type", "source_hash"
+      ],
+      "properties": {
+        "schema_version": {"const": "academic.v1"},
+        "paper_id": {"type": "string", "minLength": 1},
+        "version_id": {"type": "string", "minLength": 1},
+        "object_id": {"type": "string", "minLength": 1},
+        "page_number": {"type": "integer", "minimum": 1},
+        "object_type": {"type": "string", "minLength": 1},
+        "source_hash": {"$ref": "#/$defs/sha256"},
+        "section_path": {"type": "array", "items": {"type": "string"}},
+        "bounding_box": {
+          "oneOf": [{"$ref": "#/$defs/bounding_box"}, {"type": "null"}]
+        },
+        "paragraph_index": {"type": ["integer", "null"], "minimum": 0},
+        "line_range": {
+          "type": ["array", "null"],
+          "prefixItems": [{"type": "integer"}, {"type": "integer"}],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "table_row": {"type": ["integer", "null"], "minimum": 0},
+        "table_column": {"type": ["integer", "null"], "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "paper_record": {
+      "type": "object",
+      "required": [
+        "schema_version", "paper_id", "project_id", "current_version",
+        "metadata", "metadata_revision", "source", "created_at", "updated_at"
+      ],
+      "properties": {
+        "schema_version": {"const": "academic.v1"},
+        "paper_id": {"type": "string", "minLength": 1},
+        "project_id": {"type": "string", "minLength": 1},
+        "current_version": {
+          "type": "object",
+          "required": [
+            "version_id", "version_number", "source_hash", "format",
+            "original_filename", "byte_length", "created_at"
+          ],
+          "properties": {
+            "version_id": {"type": "string", "minLength": 1},
+            "version_number": {"type": "integer", "minimum": 1},
+            "source_hash": {"$ref": "#/$defs/sha256"},
+            "format": {"type": "string", "minLength": 1},
+            "original_filename": {"type": "string", "minLength": 1},
+            "byte_length": {"type": "integer", "minimum": 0},
+            "created_at": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        },
+        "metadata": {"type": "object"},
+        "metadata_revision": {"type": "integer", "minimum": 1},
+        "source": {"type": "object"},
+        "created_at": {"type": "string", "minLength": 1},
+        "updated_at": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "academic_object": {
+      "type": "object",
+      "required": [
+        "schema_version", "object_id", "object_type", "reading_order",
+        "locator", "text", "assets", "structured_content", "provenance"
+      ],
+      "properties": {
+        "schema_version": {"const": "academic.v1"},
+        "object_id": {"type": "string", "minLength": 1},
+        "object_type": {"type": "string", "minLength": 1},
+        "reading_order": {"type": "integer", "minimum": 0},
+        "locator": {"$ref": "#/$defs/evidence_locator"},
+        "text": {"type": ["string", "null"]},
+        "assets": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/asset_reference"}
+        },
+        "structured_content": {"type": "object"},
+        "provenance": {"enum": ["extracted", "inferred"]}
+      },
+      "additionalProperties": false
+    },
+    "retrieval_candidate": {
+      "type": "object",
+      "required": [
+        "locator", "text", "channel_scores", "fused_score", "explanation",
+        "provenance"
+      ],
+      "properties": {
+        "locator": {"$ref": "#/$defs/evidence_locator"},
+        "text": {"type": "string"},
+        "channel_scores": {
+          "type": "object",
+          "additionalProperties": {"type": "number"}
+        },
+        "fused_score": {"type": "number"},
+        "explanation": {"type": "array", "items": {"type": "string"}},
+        "provenance": {"enum": ["extracted", "inferred"]}
+      },
+      "additionalProperties": false
+    },
+    "retrieval_trace": {
+      "type": "object",
+      "required": [
+        "trace_id", "request_fingerprint", "index_generation_id", "channels",
+        "model_fingerprints", "rounds_used", "degraded_channels", "stop_reason"
+      ],
+      "properties": {
+        "trace_id": {"type": "string", "minLength": 1},
+        "request_fingerprint": {"type": "string", "minLength": 1},
+        "index_generation_id": {"type": "string", "minLength": 1},
+        "channels": {"type": "array", "items": {"type": "string"}},
+        "model_fingerprints": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        },
+        "rounds_used": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        },
+        "degraded_channels": {"type": "array", "items": {"type": "string"}},
+        "stop_reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "evidence_bundle": {
+      "type": "object",
+      "required": [
+        "schema_version", "bundle_id", "project_id", "query", "candidates",
+        "sufficiency", "reasons", "trace"
+      ],
+      "properties": {
+        "schema_version": {"const": "academic.v1"},
+        "bundle_id": {"type": "string", "minLength": 1},
+        "project_id": {"type": "string", "minLength": 1},
+        "query": {"type": "string", "minLength": 1},
+        "candidates": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/retrieval_candidate"}
+        },
+        "sufficiency": {"enum": ["sufficient", "partial", "insufficient"]},
+        "reasons": {"type": "array", "items": {"type": "string"}},
+        "trace": {"$ref": "#/$defs/retrieval_trace"}
+      },
+      "additionalProperties": false
+    },
+    "memory_entry": {
+      "type": "object",
+      "required": [
+        "entry_id", "scope", "category", "content", "content_hash", "updated_at"
+      ],
+      "properties": {
+        "entry_id": {"type": "string", "minLength": 1},
+        "scope": {"enum": ["user", "project", "task"]},
+        "category": {"type": "string", "minLength": 1},
+        "content": {"type": "string"},
+        "content_hash": {"$ref": "#/$defs/sha256"},
+        "updated_at": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "memory_snapshot": {
+      "type": "object",
+      "required": [
+        "schema_version", "project_id", "entries", "used_chars",
+        "limit_chars", "fingerprint", "generated_at"
+      ],
+      "properties": {
+        "schema_version": {"const": "academic.v1"},
+        "project_id": {"type": "string", "minLength": 1},
+        "entries": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/memory_entry"}
+        },
+        "used_chars": {
+          "type": "object",
+          "required": ["user", "project", "task"],
+          "properties": {
+            "user": {"type": "integer", "minimum": 0},
+            "project": {"type": "integer", "minimum": 0},
+            "task": {"type": "integer", "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "limit_chars": {
+          "type": "object",
+          "required": ["user", "project", "task"],
+          "properties": {
+            "user": {"type": "integer", "minimum": 0},
+            "project": {"type": "integer", "minimum": 0},
+            "task": {"type": "integer", "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "fingerprint": {"$ref": "#/$defs/sha256"},
+        "generated_at": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "artifact_revision": {
+      "type": "object",
+      "required": [
+        "schema_version", "artifact_id", "revision_id", "revision_number",
+        "parent_revision_id", "state", "content_hash", "byte_length",
+        "media_type", "evidence", "created_at"
+      ],
+      "properties": {
+        "schema_version": {"const": "academic.v1"},
+        "artifact_id": {"type": "string", "minLength": 1},
+        "revision_id": {"type": "string", "minLength": 1},
+        "revision_number": {"type": "integer", "minimum": 1},
+        "parent_revision_id": {"type": ["string", "null"]},
+        "state": {"enum": ["draft", "approved", "rejected", "final"]},
+        "content_hash": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 0},
+        "media_type": {"type": "string", "minLength": 1},
+        "evidence": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/evidence_locator"}
+        },
+        "created_at": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  }
+}

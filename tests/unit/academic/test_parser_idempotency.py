@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
+import math
 from pathlib import Path
+import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
 fitz = pytest.importorskip("fitz")
 
-from paperclaw.academic import AcademicRuntime
-from paperclaw.papers import PaperImportRequest, PaperService
-from paperclaw.projects import ProjectManifestStore
+from paperclaw.academic import AcademicRuntime  # noqa: E402
+from paperclaw.academic.parsers.pymupdf_parser import PyMuPDFParser  # noqa: E402
+from paperclaw.papers import PaperImportRequest, PaperService  # noqa: E402
+from paperclaw.projects import ProjectManifestStore  # noqa: E402
 
 
 def _make_pdf(tmp_path: Path, text: str = "Hello World") -> Path:
@@ -60,7 +65,9 @@ def test_index_generation_is_idempotent(workspace: tuple) -> None:
     assert gen1.state == "ready"
 
 
-def test_old_version_locator_fails_after_new_version(workspace: tuple) -> None:
+def test_old_version_locator_remains_resolvable_until_canonical_deletion(
+    workspace: tuple,
+) -> None:
     tmp_path, runtime, papers, project_id = workspace
     pdf_v1 = _make_pdf(tmp_path, "Version one content")
     imported = papers.import_paper(PaperImportRequest(project_id, pdf_v1))
@@ -81,8 +88,7 @@ def test_old_version_locator_fails_after_new_version(workspace: tuple) -> None:
 
     v1_non_doc = [o for o in v1_objects if o.object_type != "document"]
     if v1_non_doc:
-        with pytest.raises(KeyError):
-            runtime.resolve(v1_non_doc[0].locator)
+        assert runtime.resolve(v1_non_doc[0].locator) == v1_non_doc[0]
 
 
 def test_markdown_parser_produces_sections_and_paragraphs(
@@ -100,6 +106,12 @@ def test_markdown_parser_produces_sections_and_paragraphs(
     assert "section" in types
     assert "paragraph" in types
     assert "algorithm" in types
+    paragraphs = [item for item in result.objects if item.object_type == "paragraph"]
+    assert all(
+        item.locator.line_range is not None
+        and item.locator.line_range[1] >= item.locator.line_range[0]
+        for item in paragraphs
+    )
     assert result.status == "ready"
 
 
@@ -120,6 +132,7 @@ E = mc^2
 \begin{table}
 \caption{A table}
 \end{table}
+See \cite{ref1}.
 \bibitem{ref1} Author 2020
 \end{document}
 """,
@@ -133,6 +146,12 @@ E = mc^2
     assert "figure" in types
     assert "table" in types
     assert "reference" in types
+    assert "citation" in types
+    assert [item.reading_order for item in result.objects] == sorted(
+        item.reading_order for item in result.objects
+    )
+    equation = next(item for item in result.objects if item.object_type == "equation")
+    assert equation.locator.section_path == ("Introduction",)
     assert result.status == "ready"
 
 
@@ -145,3 +164,230 @@ def test_text_parser_produces_paragraphs(workspace: tuple) -> None:
     types = {o.object_type for o in result.objects}
     assert "paragraph" in types
     assert result.status == "ready"
+
+
+def test_docling_adapter_normalizes_items_and_keeps_page_assets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from paperclaw.academic.parsers.docling_parser import DoclingParser
+
+    pdf = _make_pdf(tmp_path)
+    content = pdf.read_bytes()
+
+    class FakeDocumentStream:
+        def __init__(self, **values):
+            self.values = values
+
+    class FakeBox:
+        l = 40.0  # noqa: E741 - mirrors Docling's bounding-box API
+        t = 40.0
+        r = 220.0
+        b = 80.0
+
+        def to_top_left_origin(self, *, page_height):
+            assert page_height == 300.0
+            return self
+
+    item = SimpleNamespace(
+        label="section_header",
+        text="Introduction",
+        prov=(SimpleNamespace(page_no=1, bbox=FakeBox()),),
+    )
+    fake_document = SimpleNamespace(
+        pages={1: SimpleNamespace(size=SimpleNamespace(height=300.0))},
+        iterate_items=lambda: iter(((item, 1),)),
+    )
+
+    class FakeConverter:
+        def convert(self, source):
+            assert source.values["name"] == "paper.pdf"
+            return SimpleNamespace(document=fake_document)
+
+    docling = ModuleType("docling")
+    datamodel = ModuleType("docling.datamodel")
+    base_models = ModuleType("docling.datamodel.base_models")
+    converter = ModuleType("docling.document_converter")
+    base_models.DocumentStream = FakeDocumentStream
+    converter.DocumentConverter = FakeConverter
+    monkeypatch.setitem(sys.modules, "docling", docling)
+    monkeypatch.setitem(sys.modules, "docling.datamodel", datamodel)
+    monkeypatch.setitem(sys.modules, "docling.datamodel.base_models", base_models)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", converter)
+
+    result = DoclingParser().parse(
+        content,
+        "pdf",
+        paper_id="paper-1",
+        version_id="version-1",
+        source_hash="a" * 64,
+        asset_dir=tmp_path / "assets",
+    )
+    section = next(value for value in result.objects if value.object_type == "section")
+    page = next(value for value in result.objects if value.object_type == "page")
+    assert section.locator.bounding_box is not None
+    assert section.locator.section_path == ("Introduction",)
+    assert page.assets and page.assets[0].kind == "page"
+
+
+def test_pdf_parser_marks_double_column_reading_order_as_partial(
+    workspace: tuple,
+) -> None:
+    tmp_path, runtime, papers, project_id = workspace
+    document = fitz.open()
+    page = document.new_page(width=600, height=800)
+    page.insert_textbox(
+        fitz.Rect(50, 80, 260, 300),
+        "Left column paragraph.\nSecond left line.",
+    )
+    page.insert_textbox(
+        fitz.Rect(340, 80, 550, 300),
+        "Right column paragraph.\nSecond right line.",
+    )
+    source = tmp_path / "two-column.pdf"
+    document.save(source)
+    document.close()
+
+    imported = papers.import_paper(PaperImportRequest(project_id, source))
+    result = runtime.parse_paper(imported.paper.paper_id)
+
+    assert result.status == "partial"
+    assert any(
+        warning.startswith("double_column_reading_order_uncertain:")
+        for warning in result.warnings
+    )
+
+
+def test_pdf_parser_emits_complete_core_object_vocabulary(
+    workspace: tuple,
+) -> None:
+    tmp_path, runtime, papers, project_id = workspace
+    document = fitz.open()
+    page = document.new_page(width=600, height=800)
+    page.insert_textbox(fitz.Rect(50, 40, 500, 80), "1 Introduction", fontsize=16)
+    page.insert_textbox(
+        fitz.Rect(50, 90, 500, 125),
+        "The baseline improves accuracy [1].",
+    )
+    page.insert_textbox(fitz.Rect(50, 135, 500, 170), "Figure 1 Architecture")
+    page.insert_textbox(fitz.Rect(50, 180, 500, 215), "Algorithm 1 Training")
+    page.insert_textbox(fitz.Rect(50, 225, 500, 260), "E = mc^2")
+    page.draw_rect(fitz.Rect(400, 300, 550, 420))
+    for x in (50, 200, 350):
+        page.draw_line((x, 300), (x, 400))
+    for y in (300, 350, 400):
+        page.draw_line((50, y), (350, y))
+    page.insert_text((70, 330), "A")
+    page.insert_text((220, 330), "B")
+    page.insert_text((70, 380), "1")
+    page.insert_text((220, 380), "2")
+
+    references = document.new_page(width=600, height=800)
+    references.insert_textbox(
+        fitz.Rect(50, 40, 500, 80), "References", fontsize=16
+    )
+    references.insert_textbox(
+        fitz.Rect(50, 120, 500, 180),
+        "[1] Smith, J. A grounded paper. 2025.",
+    )
+    source = tmp_path / "core-vocabulary.pdf"
+    document.save(source)
+    document.close()
+
+    imported = papers.import_paper(PaperImportRequest(project_id, source))
+    result = runtime.parse_paper(imported.paper.paper_id)
+    types = {item.object_type for item in result.objects}
+
+    assert {
+        "document",
+        "page",
+        "section",
+        "paragraph",
+        "reference",
+        "citation",
+        "figure",
+        "caption",
+        "table",
+        "table_cell",
+        "equation",
+        "algorithm",
+    } <= types
+    for object_type in ("figure", "table", "equation", "algorithm"):
+        item = next(value for value in result.objects if value.object_type == object_type)
+        assert {asset.kind for asset in item.assets} == {"page", "region"}
+        region = next(asset for asset in item.assets if asset.kind == "region")
+        bbox = item.locator.bounding_box
+        assert bbox is not None
+        assert region.width_px == (
+            math.ceil(bbox.x1 * region.dpi / 72)
+            - math.floor(bbox.x0 * region.dpi / 72)
+        )
+        assert region.height_px == (
+            math.ceil(bbox.y1 * region.dpi / 72)
+            - math.floor(bbox.y0 * region.dpi / 72)
+        )
+    cells = [value for value in result.objects if value.object_type == "table_cell"]
+    assert cells
+    assert all(
+        cell.locator.table_row is not None
+        and cell.locator.table_column is not None
+        and cell.locator.bounding_box is not None
+        for cell in cells
+    )
+
+
+def test_pdf_parser_failure_and_scanned_partial_states(tmp_path: Path) -> None:
+    parser = PyMuPDFParser()
+
+    encrypted_document = fitz.open()
+    encrypted_document.new_page()
+    encrypted = encrypted_document.tobytes(
+        encryption=fitz.PDF_ENCRYPT_AES_256,
+        user_pw="reader",
+        owner_pw="owner",
+    )
+    encrypted_document.close()
+    encrypted_result = parser.parse(
+        encrypted,
+        "pdf",
+        paper_id="encrypted",
+        version_id="encrypted-v1",
+        source_hash=hashlib.sha256(encrypted).hexdigest(),
+        asset_dir=tmp_path / "encrypted-assets",
+    )
+    assert encrypted_result.status == "failed"
+    assert encrypted_result.objects == ()
+    assert encrypted_result.warnings[0].startswith("encrypted_pdf:")
+
+    corrupt = b"%PDF-1.7\nbroken"
+    corrupt_result = parser.parse(
+        corrupt,
+        "pdf",
+        paper_id="corrupt",
+        version_id="corrupt-v1",
+        source_hash=hashlib.sha256(corrupt).hexdigest(),
+        asset_dir=tmp_path / "corrupt-assets",
+    )
+    assert corrupt_result.status == "failed"
+    assert corrupt_result.objects == ()
+
+    scanned_document = fitz.open()
+    scanned_page = scanned_document.new_page(width=200, height=200)
+    raster = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 20, 20), False)
+    raster.clear_with(255)
+    scanned_page.insert_image(fitz.Rect(20, 20, 180, 180), pixmap=raster)
+    scanned = scanned_document.tobytes()
+    scanned_document.close()
+    scanned_result = parser.parse(
+        scanned,
+        "pdf",
+        paper_id="scanned",
+        version_id="scanned-v1",
+        source_hash=hashlib.sha256(scanned).hexdigest(),
+        asset_dir=tmp_path / "scanned-assets",
+    )
+    assert scanned_result.status == "partial"
+    assert {item.object_type for item in scanned_result.objects} == {
+        "document",
+        "page",
+    }
+    assert any("appears scanned" in warning for warning in scanned_result.warnings)

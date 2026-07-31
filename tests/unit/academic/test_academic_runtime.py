@@ -6,16 +6,16 @@ import pytest
 
 fitz = pytest.importorskip("fitz")
 
-from paperclaw.academic import (
+from paperclaw.academic import (  # noqa: E402
     AcademicQuery,
     AcademicRuntime,
     BoundingBox,
     RetrievalBudget,
     RetrievalRequest,
 )
-from paperclaw.papers import PaperImportRequest, PaperService
-from paperclaw.projects import ProjectManifestStore
-from paperclaw.academic.runtime import _safe_bbox
+from paperclaw.papers import PaperImportRequest, PaperService  # noqa: E402
+from paperclaw.projects import ProjectManifestStore  # noqa: E402
+from paperclaw.academic.runtime import _safe_bbox  # noqa: E402
 
 
 class _FakeVisualEncoder:
@@ -88,6 +88,22 @@ def test_parse_index_retrieve_resolve_and_evidence_bundle(tmp_path: Path) -> Non
     assert "page-level evidence" in runtime.memory_snapshot()["project"][0]
 
 
+def test_page_and_region_assets_are_content_addressed_and_resolvable(
+    tmp_path: Path,
+) -> None:
+    runtime, paper_id = _runtime(tmp_path)
+    parsed = runtime.parse_paper(paper_id)
+    page = next(item for item in parsed.objects if item.object_type == "page")
+    figure = next(item for item in parsed.objects if item.object_type == "figure")
+
+    assert [asset.kind for asset in page.assets] == ["page"]
+    assert {asset.kind for asset in figure.assets} == {"page", "region"}
+    assert all(asset.width_px and asset.height_px for asset in figure.assets)
+    assert runtime.resolve(figure.locator) == figure
+    for asset in figure.assets:
+        assert runtime.object_store.asset_path(asset.asset_hash).is_file()
+
+
 def test_parser_revision_and_index_generation_are_idempotent(tmp_path: Path) -> None:
     runtime, paper_id = _runtime(tmp_path)
     first = runtime.parse_paper(paper_id)
@@ -105,6 +121,12 @@ def test_insufficient_query_abstains(tmp_path: Path) -> None:
     result = runtime.retrieve(AcademicQuery("quantum banana unobtainium"))
     assert result.sufficiency == "insufficient"
     assert result.should_abstain is True
+    assert result.trace is not None
+    details = result.trace.corrective_details
+    assert details["primary_reason"] == "no_candidates"
+    assert details["original_query"] == "quantum banana unobtainium"
+    assert details["rewritten_query"] != details["original_query"]
+    assert result.trace.rounds_used["corrective"] == 1
 
 
 def test_exact_identifier_channel_preserves_doi_identity(tmp_path: Path) -> None:
@@ -173,6 +195,8 @@ def test_visual_only_request_abstains_when_channel_is_unavailable(
     assert result.should_abstain
     assert result.trace is not None
     assert result.trace.degraded_channels == ("visual",)
+    assert result.trace.corrective_details["primary_reason"] == "channel_unavailable"
+    assert result.trace.corrective_details["channel_changes"]["after"] == ["lexical"]
 
 
 def test_retrieval_rejects_encoder_fingerprint_mismatch(tmp_path: Path) -> None:
@@ -184,3 +208,37 @@ def test_retrieval_rejects_encoder_fingerprint_mismatch(tmp_path: Path) -> None:
     )
     with pytest.raises(RuntimeError, match="model fingerprint is incompatible"):
         runtime_b.retrieve(RetrievalRequest("diagram", ("visual",)))
+
+
+def test_runtime_executes_conflict_driven_corrective_round(tmp_path: Path) -> None:
+    manifest = ProjectManifestStore(tmp_path).initialize("Conflict")
+    papers = PaperService.for_workspace(tmp_path, project_id=manifest.project_id)
+    for name, text in (
+        ("paper-a.txt", "Results\nF1 is 91.2 percent dataset: Crack500 split: test"),
+        ("paper-b.txt", "Results\nF1 is 88.0 percent dataset: Crack500 split: test"),
+    ):
+        source = tmp_path / name
+        source.write_text(text, encoding="utf-8")
+        papers.import_paper(PaperImportRequest(manifest.project_id, source))
+    runtime = AcademicRuntime.for_workspace(tmp_path, manifest.project_id)
+    for paper in papers.list_papers(manifest.project_id):
+        runtime.parse_paper(paper.paper_id)
+    runtime.build_index()
+
+    result = runtime.retrieve(
+        RetrievalRequest(
+            "F1",
+            ("lexical",),
+            budget=RetrievalBudget(max_candidates=10),
+        )
+    )
+
+    assert result.trace.rounds_used["conflict"] == 1
+    assert result.trace.stop_reason == "conflict_unresolved"
+    details = result.trace.corrective_details
+    assert details["primary_reason"] == "metric_conflict"
+    assert details["original_conflicts"][0]["conflict_type"] == "metric_value"
+    assert details["candidate_changes"]["before"]
+    assert details["candidate_changes"]["after"] == []
+    assert details["filter_changes"]["section_scope"] == []
+    assert details["unresolved_conflicts"]
