@@ -7,11 +7,13 @@ Does NOT write local absolute paths, usernames, or private directory structure.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 CORPUS_ROOT = Path("data/paper_corpus")
 OUTPUT = Path("benchmarks/academic_rag/v1/corpus_manifest.jsonl")
@@ -83,14 +85,20 @@ def _check_pdf_valid(path: Path) -> tuple[str, str | None]:
         return "failed", "invalid_pdf"
 
 
-def main() -> int:
-    corpus = CORPUS_ROOT.resolve(strict=True)
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--corpus", type=Path, default=CORPUS_ROOT)
+    parser.add_argument("--output", type=Path, default=OUTPUT)
+    args = parser.parse_args(argv)
+
+    corpus = args.corpus.resolve(strict=True)
+    output = args.output
     pdfs = sorted(corpus.rglob("*.pdf"), key=lambda p: p.as_posix().casefold())
     if not pdfs:
         print("ERROR: no PDFs found", file=sys.stderr)
         return 1
 
-    entries: list[dict] = []
+    entries: list[dict[str, Any]] = []
     for idx, pdf_path in enumerate(pdfs, start=1):
         relative = pdf_path.relative_to(corpus).as_posix()
         category = relative.split("/", 1)[0]
@@ -128,18 +136,18 @@ def main() -> int:
 
     entries.sort(key=lambda e: e["entry_id"])
 
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    output.parent.mkdir(parents=True, exist_ok=True)
     lines = []
     for entry in entries:
         ordered = {k: entry[k] for k in KEY_ORDER}
         lines.append(json.dumps(ordered, ensure_ascii=False, separators=(",", ":")))
 
     content = "\n".join(lines) + "\n"
-    OUTPUT.write_bytes(content.encode("utf-8"))
+    output.write_bytes(content.encode("utf-8"))
 
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
     print(f"entries: {len(entries)}")
-    print(f"output: {OUTPUT.as_posix()}")
+    print(f"output: {output.as_posix()}")
     print(f"manifest_sha256: {digest}")
 
     status_counts: dict[str, int] = {}

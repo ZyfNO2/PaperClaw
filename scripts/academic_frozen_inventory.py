@@ -62,7 +62,7 @@ def resolve_frozen_sources(
     return resolved
 
 
-def _candidate(obj, blind_id: str) -> dict[str, Any]:
+def _candidate(obj: Any, blind_id: str) -> dict[str, Any]:
     locator = obj.locator
     return {
         "blind_id": blind_id,
@@ -126,6 +126,8 @@ def main() -> int:
             for obj in parsed.objects
             if obj.object_type
             in {
+                "paragraph",
+                "figure",
                 "section",
                 "caption",
                 "table",

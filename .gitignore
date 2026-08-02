@@ -34,5 +34,10 @@ Thumbs.db
 tmp/
 temp/
 benchmarks/academic_rag/v1/eval/gold_labels.private.jsonl
+benchmarks/academic_rag/v1/eval/gold_labels.ai_draft.private.jsonl
+benchmarks/academic_rag/v1/eval/cross_paper_decisions.ai_draft.jsonl
 benchmarks/academic_rag/v1/eval/run_outputs/
+data/paper_corpus/
+output/corpus_manifest*.jsonl
+output/frozen-12-locator-inventory*.json
 .claude/hooks/_sop_completion_state.json

@@ -39,6 +39,7 @@ from .benchmark_labels import (
     GoldLabelValidation,
     load_blinded_questions,
     run_blinded_questions,
+    validate_ai_question_draft_file,
     validate_gold_label_file,
 )
 from .real_models import (
@@ -90,6 +91,7 @@ __all__ = [
     "plan_corrective_retrieval",
     "load_blinded_questions",
     "run_blinded_questions",
+    "validate_ai_question_draft_file",
     "validate_gold_label_file",
     "check_real_model_environment",
     "require_real_encoder",

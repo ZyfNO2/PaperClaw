@@ -57,9 +57,25 @@ python scripts/academic_frozen_inventory.py `
 
 The command resolves every PDF by SHA-256, imports and parses all 12 papers,
 incrementally synchronizes each version into the canonical object index, and
-emits bounded Table/Cell/Equation/Algorithm/Caption/Section candidates for
+emits bounded Paragraph/Figure/Table/Cell/Equation/Algorithm/Caption/Section candidates for
 human labelling. The output contains short text previews and must remain local;
 it is bound to the reported `index_generation_id` and is not a gold dataset.
+
+For an AI-assisted authoring draft, generate local-only candidate suggestions
+after the inventory run:
+
+```powershell
+python scripts/generate_p0_local_evidence_drafts.py `
+  --questions benchmarks/academic_rag/v1/eval/questions.ai_draft.jsonl `
+  --inventory output/frozen-12-locator-inventory.json `
+  --frozen-set benchmarks/academic_rag/v1/frozen_12.json `
+  --gold-output benchmarks/academic_rag/v1/eval/gold_labels.ai_draft.private.jsonl `
+  --cross-paper-output benchmarks/academic_rag/v1/eval/cross_paper_decisions.ai_draft.jsonl
+```
+
+These files contain parser-derived candidates only. They remain
+`AI_DRAFT_NOT_HUMAN_ANNOTATION` / `PENDING_INDEPENDENT_REVIEW` and can never
+be passed as P0 gold or as the two human cross-paper decisions.
 
 ## Constraints
 

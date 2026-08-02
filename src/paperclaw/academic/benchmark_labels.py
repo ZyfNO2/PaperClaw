@@ -19,6 +19,7 @@ from .contracts import EvidenceLocator
 
 
 P0_QUESTION_SCHEMA = "academic-rag-p0-blinded-question.v1"
+P0_AI_DRAFT_SCHEMA = "academic-retrieval-question-authoring.v1"
 P0_GOLD_SCHEMA = "academic-rag-p0-gold-label.v1"
 P0_QUESTION_TYPES = ("text", "figure", "table", "equation")
 _REQUIRED_GOLD_FIELDS = {
@@ -259,4 +260,84 @@ def validate_blinded_question_file(path: Path) -> BenchmarkLabelValidation:
         question_count=len(rows),
         source_digest=hashlib.sha256(raw).hexdigest(),
         missing_gold_question_ids=missing,
+    )
+
+
+def validate_ai_question_draft_file(path: Path) -> BenchmarkLabelValidation:
+    """Validate the AI-assisted authoring draft without promoting it to gold.
+
+    The draft is intentionally a different contract from ``questions.blinded``.
+    It may contain proposed paper IDs and question text, but every row must
+    remain explicitly pending human review and all gold-bearing fields must be
+    empty.  A caller must never pass this file to the blinded runner or the
+    human-gold validator as a substitute for reviewed labels.
+    """
+
+    raw = path.read_bytes()
+    rows = _jsonl(path)
+    if len(rows) != 32:
+        raise ValueError("AI-assisted P0 draft must contain exactly 32 questions")
+    expected_ids = tuple(f"Q{index:02d}" for index in range(1, 33))
+    ids = tuple(str(row.get("question_id", "")) for row in rows)
+    if ids != expected_ids or len(set(ids)) != len(ids):
+        raise ValueError("AI-assisted P0 draft IDs must be Q01-Q32 in order")
+    expected_types = (
+        ("text", 8),
+        ("figure", 8),
+        ("table", 8),
+        ("equation", 8),
+    )
+    actual_types = {
+        question_type: sum(row.get("question_type") == question_type for row in rows)
+        for question_type, _ in expected_types
+    }
+    if actual_types != dict(expected_types):
+        raise ValueError(f"AI-assisted P0 draft distribution is invalid: {actual_types}")
+    required = {
+        "schema_version",
+        "question_id",
+        "question_type",
+        "text",
+        "corpus_id",
+        "paper_id",
+        "gold_locator",
+        "object_type",
+        "bbox_target",
+        "table_cell_target",
+        "abstention_target",
+        "split",
+        "fingerprint",
+        "label_status",
+    }
+    for row in rows:
+        question_id = str(row["question_id"])
+        if set(row) != required:
+            raise ValueError(f"AI-assisted draft {question_id} has an unexpected schema")
+        if row["schema_version"] != P0_AI_DRAFT_SCHEMA:
+            raise ValueError(f"AI-assisted draft {question_id} has an unsupported schema")
+        if not isinstance(row["text"], str) or not row["text"].strip():
+            raise ValueError(f"AI-assisted draft {question_id} has empty text")
+        if row["corpus_id"] != "academic-rag-h0-v1":
+            raise ValueError(f"AI-assisted draft {question_id} has an unknown corpus")
+        if row["paper_id"] not in {f"P{index:02d}" for index in range(1, 13)}:
+            raise ValueError(f"AI-assisted draft {question_id} has an invalid paper ID")
+        if row["split"] != "blinded":
+            raise ValueError(f"AI-assisted draft {question_id} is not blinded")
+        if row["fingerprint"] != "HUMAN_REVIEW_REQUIRED":
+            raise ValueError(f"AI-assisted draft {question_id} has a review fingerprint")
+        if row["label_status"] != "pending_human_labeling":
+            raise ValueError(f"AI-assisted draft {question_id} is not human-pending")
+        for field in (
+            "gold_locator",
+            "bbox_target",
+            "table_cell_target",
+            "abstention_target",
+        ):
+            if row[field] is not None:
+                raise ValueError(f"AI-assisted draft {question_id} contains {field}")
+    return BenchmarkLabelValidation(
+        status="blocked_by_human_labeling",
+        question_count=len(rows),
+        source_digest=hashlib.sha256(raw).hexdigest(),
+        missing_gold_question_ids=expected_ids,
     )
