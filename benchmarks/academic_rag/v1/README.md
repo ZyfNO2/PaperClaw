@@ -2,6 +2,15 @@
 
 Frozen corpus manifest for the Academic RAG P0 acceptance pipeline.
 
+The P0 protocol's `starting_commit_pair` and
+`implementation_base_commit_pair` identify the implementation base used when
+the protocol freeze began; they are not the final handoff heads. The final
+handoff reports the new commit on each repository separately. The three
+question-pack digests are raw-byte SHA-256 seals of LF-frozen resources:
+`fbdd29881729e95f75994cb225eaf07ba46b1a0664893452cec778893238051e`,
+`0938c390e6ab90993a9b1bff6e5085253ec2a8c96d3035eae3582ae4b3041e5c`, and
+`74d94283730cc36fdac84d59d48ca53296f6cc776e3aa35fa97bf4a605ecd620`.
+
 ## Files
 
 | File | Description |

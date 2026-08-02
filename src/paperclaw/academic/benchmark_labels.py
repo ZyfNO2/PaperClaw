@@ -8,9 +8,10 @@ trace.  Gold validation is a separate, post-run operation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from collections.abc import Callable, Mapping
 from typing import Any, Literal
@@ -23,6 +24,7 @@ P0_AI_DRAFT_SCHEMA = "academic-retrieval-question-authoring.v1"
 P0_GOLD_SCHEMA = "academic-rag-p0-gold-label.v1"
 P0_QUESTION_TYPES = ("text", "figure", "table", "equation")
 _REQUIRED_GOLD_FIELDS = {
+    "schema_version",
     "question_id",
     "accepted_answers",
     "supporting_paper_ids",
@@ -35,6 +37,13 @@ _REQUIRED_GOLD_FIELDS = {
     "reviewer_id",
     "annotated_at",
     "disagreement_resolution",
+}
+_FROZEN_PAPER_IDS = {f"P{index:02d}" for index in range(1, 13)}
+_AI_OBJECT_TYPES = {
+    "text": {"paragraph", "section", "algorithm"},
+    "figure": {"figure", "caption"},
+    "table": {"table", "table_cell"},
+    "equation": {"equation"},
 }
 
 
@@ -192,10 +201,55 @@ def validate_gold_label_file(
         if row.get("schema_version") != P0_GOLD_SCHEMA:
             invalid.add(question_id)
             continue
-        if _REQUIRED_GOLD_FIELDS - set(row):
+        if set(row) != _REQUIRED_GOLD_FIELDS:
             invalid.add(question_id)
             continue
-        if not isinstance(row["accepted_answers"], list) or not row["accepted_answers"]:
+        if not isinstance(row["accepted_answers"], list):
+            invalid.add(question_id)
+        elif row["should_abstain"] is False and not row["accepted_answers"]:
+            invalid.add(question_id)
+        if not isinstance(row["supporting_paper_ids"], list):
+            invalid.add(question_id)
+        elif any(paper_id not in _FROZEN_PAPER_IDS for paper_id in row["supporting_paper_ids"]):
+            invalid.add(question_id)
+        if not isinstance(row["allowable_inference"], list):
+            invalid.add(question_id)
+        if not (
+            isinstance(row["forbidden_overclaim"], list)
+            and row["forbidden_overclaim"]
+        ):
+            invalid.add(question_id)
+        if not (
+            isinstance(row["severe_error_conditions"], list)
+            and row["severe_error_conditions"]
+        ):
+            invalid.add(question_id)
+        if not isinstance(row["should_abstain"], bool):
+            invalid.add(question_id)
+        if row["should_abstain"] and (
+            row["accepted_answers"] or row["evidence_locators"] or row["supporting_paper_ids"]
+        ):
+            invalid.add(question_id)
+        if (
+            not isinstance(row["annotator_id"], str)
+            or not row["annotator_id"].strip()
+            or not isinstance(row["reviewer_id"], str)
+            or not row["reviewer_id"].strip()
+            or row["annotator_id"] == row["reviewer_id"]
+        ):
+            invalid.add(question_id)
+        if not isinstance(row["annotated_at"], str) or not row["annotated_at"].strip():
+            invalid.add(question_id)
+        else:
+            try:
+                datetime.fromisoformat(row["annotated_at"].replace("Z", "+00:00"))
+            except ValueError:
+                invalid.add(question_id)
+        disagreement = row["disagreement_resolution"]
+        if not (
+            (isinstance(disagreement, str) and disagreement.strip())
+            or (isinstance(disagreement, dict) and disagreement)
+        ):
             invalid.add(question_id)
         locators = row["evidence_locators"]
         if not isinstance(locators, list):
@@ -212,6 +266,8 @@ def validate_gold_label_file(
             except (KeyError, TypeError, ValueError):
                 invalid.add(question_id)
                 continue
+            if raw_locator.get("paper_id") not in row["supporting_paper_ids"]:
+                invalid.add(question_id)
             if active_locator_keys is not None and _locator_key(raw_locator) not in active_locator_keys:
                 stale.add(question_id)
     missing = question_ids - seen
@@ -327,6 +383,12 @@ def validate_ai_question_draft_file(path: Path) -> BenchmarkLabelValidation:
             raise ValueError(f"AI-assisted draft {question_id} has a review fingerprint")
         if row["label_status"] != "pending_human_labeling":
             raise ValueError(f"AI-assisted draft {question_id} is not human-pending")
+        object_type = row["object_type"]
+        if object_type not in _AI_OBJECT_TYPES[row["question_type"]]:
+            raise ValueError(
+                f"AI-assisted draft {question_id} object_type {object_type!r} "
+                f"does not match question_type {row['question_type']!r}"
+            )
         for field in (
             "gold_locator",
             "bbox_target",

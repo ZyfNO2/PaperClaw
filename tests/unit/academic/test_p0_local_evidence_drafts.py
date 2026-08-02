@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from paperclaw.academic.benchmark_labels import validate_ai_question_draft_file
 from scripts.generate_p0_local_evidence_drafts import main
 
@@ -14,6 +16,31 @@ def test_ai_question_draft_is_always_human_blocked() -> None:
     assert result.status == "blocked_by_human_labeling"
     assert result.question_count == 32
     assert len(result.missing_gold_question_ids) == 32
+
+
+@pytest.mark.parametrize(
+    ("question_id", "object_type"),
+    [("Q09", "paragraph"), ("Q17", "paragraph"), ("Q25", "paragraph")],
+)
+def test_ai_question_draft_rejects_question_object_type_mismatch(
+    tmp_path: Path,
+    question_id: str,
+    object_type: str,
+) -> None:
+    rows = [
+        json.loads(line)
+        for line in Path("benchmarks/academic_rag/v1/eval/questions.ai_draft.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    next(row for row in rows if row["question_id"] == question_id)["object_type"] = object_type
+    path = tmp_path / "questions.ai_draft.jsonl"
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="does not match"):
+        validate_ai_question_draft_file(path)
 
 
 def test_local_drafts_never_claim_gold_or_cross_paper_approval(
@@ -52,6 +79,8 @@ def test_local_drafts_never_claim_gold_or_cross_paper_approval(
                         **candidate_fields,
                         "blind_id": f"P{index:02d}",
                         "object_type": "table_cell",
+                        "table_row": 0,
+                        "table_column": 0,
                     },
                     {
                         **candidate_fields,

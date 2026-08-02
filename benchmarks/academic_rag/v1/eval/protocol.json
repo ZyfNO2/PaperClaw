@@ -5,6 +5,10 @@
     "paperagent": "55eb95d23cd9451603b288de16ab6c436a1249c6",
     "paperclaw": "b41e28d0f3344ac878a7949c05c1fa051aad9119"
   },
+  "implementation_base_commit_pair": {
+    "paperagent": "55eb95d23cd9451603b288de16ab6c436a1249c6",
+    "paperclaw": "b41e28d0f3344ac878a7949c05c1fa051aad9119"
+  },
   "schema_digest": "62c3c6bbde000023a95025fdcae53c777fac479ddc9da02a63ea293b0855d2e0",
   "golden_fixture_digest": "5f8b3b999de2139c6e328966086043663a3012a068636061971926b979ea647d",
   "corpus": {
@@ -19,9 +23,9 @@
   "questions": {
     "owner": "PaperClaw",
     "blinded_file": "benchmarks/academic_rag/v1/eval/questions.blinded.jsonl",
-    "blinded_sha256": "4a2865bb091dff88a192197a736df0d8f4683a7481b43b57c6b52277883e4f14",
+    "blinded_sha256": "fbdd29881729e95f75994cb225eaf07ba46b1a0664893452cec778893238051e",
     "question_manifest": "benchmarks/academic_rag/v1/eval/question_manifest.json",
-    "question_manifest_sha256": "1f64820a16bc74499640bc08978d571d19ae79a5b2e90fa1237d572730d9e363",
+    "question_manifest_sha256": "0938c390e6ab90993a9b1bff6e5085253ec2a8c96d3035eae3582ae4b3041e5c",
     "count": 32,
     "distribution": {"text": 8, "figure": 8, "table": 8, "equation": 8},
     "gold_file": "benchmarks/academic_rag/v1/eval/gold_labels.private.jsonl",
@@ -29,7 +33,13 @@
   },
   "artifact_manifest": {
     "path": "benchmarks/academic_rag/v1/eval/artifact_manifest.json",
-    "sha256": "dda43e98d2a790f286ced45096b0672ec3376ff3db4f5527f8524e6a62ef9096"
+    "sha256": "74d94283730cc36fdac84d59d48ca53296f6cc776e3aa35fa97bf4a605ecd620"
+  },
+  "frozen_set": {
+    "path": "benchmarks/academic_rag/v1/frozen_12.json",
+    "sha256": "d1f7a0aeb39155749993eaa57d6bc80e453f0120444cf48dba3a37fca89705df",
+    "frozen_set_id": "academic-rag-h0-v1",
+    "count": 12
   },
   "gold_label_schema": {
     "schema_version": "academic-rag-p0-gold-label.v1",

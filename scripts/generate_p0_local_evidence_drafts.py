@@ -40,6 +40,14 @@ def _digest(path: Path) -> str:
 def _candidate_view(candidate: dict[str, Any], rank: int) -> dict[str, Any]:
     """Keep enough information for a human to inspect a candidate locally."""
 
+    if candidate["object_type"] == "table_cell" and (
+        not isinstance(candidate.get("table_row"), int)
+        or not isinstance(candidate.get("table_column"), int)
+        or candidate["table_row"] < 0
+        or candidate["table_column"] < 0
+    ):
+        raise ValueError("table_cell candidates require non-negative row and column")
+
     return {
         "rank": rank,
         "blind_id": candidate["blind_id"],
@@ -78,7 +86,12 @@ def _build_label_draft(
             for item in candidates
             if item["object_type"] in QUESTION_TYPES[question["question_type"]]
         ]
-        selected = preferred[:5] or candidates[:5]
+        if not preferred:
+            raise ValueError(
+                f"inventory has no object compatible with {question['question_id']} "
+                f"({question['question_type']})"
+            )
+        selected = preferred[:5]
         rows.append(
             {
                 "schema_version": "academic-rag-p0-ai-gold-draft.v1",

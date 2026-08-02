@@ -3,4 +3,6 @@
 /tests/fixtures/academic/*.json text eol=lf
 /benchmarks/academic_rag/v1/*.json text eol=lf
 /benchmarks/academic_rag/v1/*.jsonl text eol=lf
+/benchmarks/academic_rag/v1/eval/*.jsonl text eol=lf
+/benchmarks/academic_rag/v1/eval/*.json text eol=lf
 /docs/handoff/ACADEMIC_RAG_DUAL_REPO_HANDOFF.md text eol=lf

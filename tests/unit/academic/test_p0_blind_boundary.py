@@ -19,7 +19,7 @@ QUESTIONS = PACK / "questions.blinded.jsonl"
 def _locator(object_id: str = "object-1") -> dict[str, object]:
     return {
         "schema_version": "academic.v1",
-        "paper_id": "paper-1",
+        "paper_id": "P01",
         "version_id": "version-1",
         "object_id": object_id,
         "page_number": 1,
@@ -33,10 +33,10 @@ def _gold(question_id: str = "Q01", object_id: str = "object-1") -> dict[str, ob
         "schema_version": "academic-rag-p0-gold-label.v1",
         "question_id": question_id,
         "accepted_answers": ["human answer"],
-        "supporting_paper_ids": ["paper-1"],
+        "supporting_paper_ids": ["P01"],
         "evidence_locators": [_locator(object_id)],
-        "allowable_inference": "none",
-        "forbidden_overclaim": "no causal claim",
+        "allowable_inference": [],
+        "forbidden_overclaim": ["no causal claim"],
         "should_abstain": False,
         "severe_error_conditions": ["wrong paper"],
         "annotator_id": "human-a",
@@ -86,7 +86,7 @@ def test_invalid_and_stale_locator_are_blocked(tmp_path: Path) -> None:
     result = validate_gold_label_file(
         QUESTIONS,
         invalid,
-        active_locator_keys={("paper-1", "version-1", "active")},
+        active_locator_keys={("P01", "version-1", "active")},
     )
     assert result.status == "blocked_by_human_labeling"
     assert result.stale_locator_question_ids == ("Q01",)
@@ -96,4 +96,31 @@ def test_invalid_and_stale_locator_are_blocked(tmp_path: Path) -> None:
     row["evidence_locators"] = [{"schema_version": "academic.v1"}]
     malformed.write_text(json.dumps(row) + "\n", encoding="utf-8")
     result = validate_gold_label_file(QUESTIONS, malformed)
+    assert result.invalid_question_ids == ("Q01",)
+
+
+@pytest.mark.parametrize("field, value", [
+    ("accepted_answers", []),
+    ("evidence_locators", ["not-a-locator"]),
+    ("reviewer_id", "human-a"),
+    ("should_abstain", "false"),
+    ("disagreement_resolution", ""),
+    ("supporting_paper_ids", ["P99"]),
+])
+def test_human_gold_required_fields_fail_closed(tmp_path: Path, field: str, value: object) -> None:
+    row = _gold()
+    row[field] = value
+    path = tmp_path / "gold.jsonl"
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    result = validate_gold_label_file(QUESTIONS, path)
+    assert result.status == "blocked_by_human_labeling"
+    assert result.invalid_question_ids == ("Q01",)
+
+
+def test_ai_draft_status_cannot_be_loaded_as_human_gold(tmp_path: Path) -> None:
+    row = _gold()
+    row["draft_status"] = "AI_DRAFT_NOT_HUMAN_ANNOTATION"
+    path = tmp_path / "gold.ai_draft.jsonl"
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    result = validate_gold_label_file(QUESTIONS, path)
     assert result.invalid_question_ids == ("Q01",)
