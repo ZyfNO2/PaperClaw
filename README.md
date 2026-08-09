@@ -2,7 +2,24 @@
 
 PaperClaw 是一个面向 Coding、Research 与多 Agent 工作流的可审计 Agent Runtime。
 
-当前开发版本：**0.38.0**。
+当前开发版本：**0.39.0**。
+
+## v0.39 Durable Memory / Context Resume
+
+v0.39 extends the existing SQLite Context、Session、Memory、Trace and
+idempotency boundaries with ordered durable events, conflict provenance,
+deterministic context manifests, safe crash reconstruction and operator
+inspection. It does not replay an unresolved external Tool side effect.
+
+```powershell
+paperclaw session inspect SESSION_ID --database .paperclaw/context.sqlite3
+paperclaw session context SESSION_ID --latest --database .paperclaw/context.sqlite3
+paperclaw session resume SESSION_ID --database .paperclaw/context.sqlite3
+```
+
+Offline tests cover the implementation and deterministic SQLite integration.
+Real LLM、Docker sandbox and manual native-OS validation remain outside this
+v0.39 offline gate.
 
 ## Runtime Evaluation Harness
 

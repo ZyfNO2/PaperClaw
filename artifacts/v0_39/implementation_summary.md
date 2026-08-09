@@ -1,5 +1,24 @@
 # PaperClaw v0.39 Implementation Summary
 
+## v0.39 Durable Runtime Hardening Update
+
+The current implementation branch is `codex/v0.39-durable-memory-context-resume`,
+based on verified repository HEAD `9095b286aa1b902fd280b320ac4dbc9130fd5b3d`.
+It extends the existing v0.39 structured Memory and v0.08 Context/Session
+runtime with additive SQLite v5 durable event links, explicit Memory conflict
+decisions, deterministic priority ordering, atomic Tool observation groups,
+model-boundary ContextSnapshot manifests, safe reconstruction/resume,
+preserve/tighten permission mode and
+operator inspection. The planning branch commit `939410466507336dc1783fee0c1dd96552aa72e9`
+was not merged because it would remove newer verified implementation work.
+
+The final commit SHA and exact CI result are recorded in `HANDOFF.md` after
+the implementation commit. Offline implementation evidence is `partial` in
+this environment because two pre-existing Windows Bash tests fail due shell
+quoting/timeout behavior; the v0.39 focused tests, process acceptance, Ruff
+high-signal checks and package build pass. Full repository Ruff remains
+non-clean on 873 pre-existing findings; no type-check command is configured.
+
 ## 状态
 
 - 版本：v0.39 Structured Persistent Memory
@@ -35,4 +54,3 @@
 - 可复现的 frozen snapshot 结构示例：[`frozen_snapshot_demo.json`](frozen_snapshot_demo.json)
 - 已知限制与未运行项：[`known_limitations.md`](known_limitations.md)
 - 文件清单：[`file_manifest.txt`](file_manifest.txt)
-

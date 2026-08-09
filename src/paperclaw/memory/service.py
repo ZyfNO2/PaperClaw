@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import hashlib
 import re
 from typing import Any
+from uuid import uuid4
 
 from paperclaw.context.orchestration import estimate_tokens
 from paperclaw.context.repository import Repository
@@ -14,12 +15,16 @@ from paperclaw.context.repository import Repository
 from .contracts import (
     MemoryBoundaryError,
     MemoryContractError,
+    MemoryConflictDecision,
+    MemoryConflictDecisionRecord,
     MemoryItem,
     MemoryKind,
     MemoryScope,
     MemorySnapshot,
+    MemorySourceRef,
     MemoryTrustError,
 )
+from .store import MemoryEntry
 from .repository import MemoryRepository
 
 MemoryEventSink = Callable[[str, dict[str, Any]], Any]
@@ -34,6 +39,10 @@ _SOURCE_BODY_MARKERS = (
     "artifact_body:",
     "evidence_body:",
 )
+
+
+def _source_ref_value(value: str | MemorySourceRef) -> str:
+    return value.ref if isinstance(value, MemorySourceRef) else str(value).strip()
 
 
 @dataclass(frozen=True)
@@ -84,21 +93,22 @@ class MemoryService:
         scope_id: str,
         kind: str | MemoryKind,
         content: str,
-        source_refs: Iterable[str] = (),
+        source_refs: Iterable[str | MemorySourceRef] = (),
         trust_level: str = "trusted_local",
         importance: int = 50,
         pinned: bool = False,
         created_from_run_id: str | None = None,
         created_from_sequence: int | None = None,
         explicit_user_confirmation: bool = False,
+        memory_id: str | None = None,
     ) -> MemoryItem:
+        refs = tuple(source_refs)
         effective_trust = self._resolve_trust(
             trust_level,
-            source_refs=source_refs,
+            source_refs=refs,
             explicit_user_confirmation=explicit_user_confirmation,
         )
         normalized_content = self._validate_content(content)
-        refs = tuple(source_refs)
         if len(refs) > self.budget.max_source_refs:
             raise MemoryBoundaryError("source_refs exceed the bounded Memory limit")
         item = MemoryItem(
@@ -106,6 +116,7 @@ class MemoryService:
             scope_id=scope_id,
             kind=kind,
             content=normalized_content,
+            memory_id=memory_id if memory_id is not None else f"mem-{uuid4().hex}",
             source_refs=refs,
             trust_level=effective_trust,
             importance=importance,
@@ -117,12 +128,90 @@ class MemoryService:
         self._audit("memory.added", self._item_payload(item))
         return item
 
+    def import_legacy_snapshot(
+        self,
+        snapshot: Any,
+        *,
+        user_scope_id: str = "default-user",
+        project_scope_id: str = "legacy-project",
+        event_sink: MemoryEventSink | None = None,
+    ) -> tuple[MemoryItem, ...]:
+        """Import file-backed Memory entries without rewriting their files.
+
+        The importer is intentionally one-way and idempotent. A stable
+        ``legacy_file`` source reference prevents duplicate imports while the
+        structured SQLite Memory remains the sole runtime projection.
+        Expired entries are already excluded by ``FileMemoryStore.snapshot``.
+        """
+        imported: list[MemoryItem] = []
+        entries = tuple(getattr(snapshot, "memory_entries", ())) + tuple(
+            getattr(snapshot, "user_entries", ())
+        )
+        kind_map = {
+            "preference": MemoryKind.USER_PREFERENCE,
+            "constraint": MemoryKind.CONSTRAINT,
+            "decision": MemoryKind.DECISION,
+            "workflow": MemoryKind.WORKFLOW,
+            "lesson": MemoryKind.LESSON,
+            "fact": MemoryKind.PROJECT_FACT,
+        }
+        for entry in entries:
+            if not isinstance(entry, MemoryEntry):
+                raise MemoryContractError("legacy snapshot contains an invalid entry")
+            scope_type = (
+                MemoryScope.USER.value
+                if entry.target == "user"
+                else MemoryScope.PROJECT.value
+            )
+            scope_id = user_scope_id if scope_type == MemoryScope.USER.value else project_scope_id
+            source_ref = MemorySourceRef("legacy_file", entry.entry_id).ref
+            existing = next(
+                (
+                    item
+                    for item in self.repository.list_all(scope_type, scope_id)
+                    if source_ref in item.source_refs
+                ),
+                None,
+            )
+            if existing is not None:
+                continue
+            category = str(entry.category).strip().casefold()
+            kind = kind_map.get(
+                category,
+                MemoryKind.USER_PREFERENCE
+                if scope_type == MemoryScope.USER.value
+                else MemoryKind.LESSON,
+            )
+            stable_id = "mem-legacy-" + hashlib.sha256(
+                entry.entry_id.encode("utf-8")
+            ).hexdigest()[:24]
+            item = self.add_memory(
+                scope_type=scope_type,
+                scope_id=scope_id,
+                kind=kind,
+                content=entry.content,
+                source_refs=(source_ref,),
+                trust_level="trusted_local",
+                importance=max(0, min(100, round(float(entry.confidence) * 100))),
+                memory_id=stable_id,
+            )
+            imported.append(item)
+        self._audit(
+            "memory.legacy_imported",
+            {
+                "imported_count": len(imported),
+                "source": "file_memory_store",
+            },
+            event_sink=event_sink,
+        )
+        return tuple(imported)
+
     def replace_memory(
         self,
         memory_id: str,
         *,
         content: str,
-        source_refs: Iterable[str] | None = None,
+        source_refs: Iterable[str | MemorySourceRef] | None = None,
         trust_level: str | None = None,
         importance: int | None = None,
         pinned: bool | None = None,
@@ -188,6 +277,119 @@ class MemoryService:
             {**self._item_payload(tombstone), "supersedes_memory_id": previous.memory_id},
         )
         return tombstone
+
+    def record_conflict_decision(
+        self,
+        *,
+        candidate_memory_id: str,
+        conflicting_memory_ids: Iterable[str],
+        decision: str | MemoryConflictDecision,
+        merged_content: str | None = None,
+        created_from_run_id: str | None = None,
+        created_from_sequence: int | None = None,
+        explicit_user_confirmation: bool = False,
+        event_sink: MemoryEventSink | None = None,
+    ) -> MemoryConflictDecisionRecord:
+        """Persist and apply one explicit conflict decision.
+
+        The decision row is written after append-only memory mutations.  The
+        original records remain in history; ``supersede`` and ``merge`` add
+        tombstones/replacements so the active projection reflects the choice.
+        """
+        candidate = self._require_active(candidate_memory_id)
+        conflicts = tuple(dict.fromkeys(str(item) for item in conflicting_memory_ids))
+        if not conflicts:
+            raise MemoryContractError("conflicting_memory_ids must not be empty")
+        if candidate_memory_id in conflicts:
+            raise MemoryContractError("candidate memory must not conflict with itself")
+        for memory_id in conflicts:
+            conflicting = self.repository.get(memory_id)
+            if conflicting is None:
+                raise MemoryContractError(f"unknown conflicting memory_id={memory_id}")
+            if (
+                conflicting.scope_type != candidate.scope_type
+                or conflicting.scope_id != candidate.scope_id
+            ):
+                raise MemoryContractError("conflicting memories must share the candidate scope")
+        try:
+            resolved = (
+                decision
+                if isinstance(decision, MemoryConflictDecision)
+                else MemoryConflictDecision(str(decision))
+            )
+        except ValueError as exc:
+            raise MemoryContractError(
+                f"unsupported conflict decision: {decision!r}"
+            ) from exc
+        metadata: dict[str, Any] = {}
+        if resolved is MemoryConflictDecision.SUPERSEDE:
+            for memory_id in conflicts:
+                if memory_id != candidate.memory_id:
+                    try:
+                        self.remove_memory(
+                            memory_id,
+                            created_from_run_id=created_from_run_id,
+                            created_from_sequence=created_from_sequence,
+                        )
+                    except MemoryContractError:
+                        # A later idempotent retry sees the already-tombstoned
+                        # history and must not create another tombstone.
+                        pass
+        elif resolved is MemoryConflictDecision.REJECT_CANDIDATE:
+            self.remove_memory(
+                candidate.memory_id,
+                created_from_run_id=created_from_run_id,
+                created_from_sequence=created_from_sequence,
+            )
+        elif resolved is MemoryConflictDecision.MERGE:
+            if not merged_content or not merged_content.strip():
+                raise MemoryContractError("merged_content is required for merge")
+            merged = self.replace_memory(
+                candidate.memory_id,
+                content=merged_content,
+                source_refs=candidate.source_refs,
+                created_from_run_id=created_from_run_id,
+                created_from_sequence=created_from_sequence,
+                explicit_user_confirmation=explicit_user_confirmation,
+            )
+            metadata["result_memory_id"] = merged.memory_id
+            for memory_id in conflicts:
+                if memory_id != candidate.memory_id:
+                    try:
+                        self.remove_memory(
+                            memory_id,
+                            created_from_run_id=created_from_run_id,
+                            created_from_sequence=created_from_sequence,
+                        )
+                    except MemoryContractError:
+                        pass
+
+        record = MemoryConflictDecisionRecord(
+            candidate_memory_id=candidate.memory_id,
+            conflicting_memory_ids=conflicts,
+            decision=resolved,
+            source_refs=candidate.source_refs,
+            metadata=metadata,
+        )
+        self.repository.insert_conflict_decision(record)
+        self._audit(
+            "memory.decision.recorded",
+            {
+                "decision_id": record.decision_id,
+                "candidate_memory_id": record.candidate_memory_id,
+                "conflicting_memory_ids": list(record.conflicting_memory_ids),
+                "decision": record.decision,
+                "source_refs": list(record.source_refs),
+                **metadata,
+            },
+            event_sink=event_sink,
+        )
+        return record
+
+    def list_conflict_decisions(
+        self, candidate_memory_id: str | None = None
+    ) -> list[MemoryConflictDecisionRecord]:
+        return self.repository.list_conflict_decisions(candidate_memory_id)
 
     def list_memory(
         self,
@@ -348,7 +550,7 @@ class MemoryService:
     def _resolve_trust(
         trust_level: str,
         *,
-        source_refs: Iterable[str],
+        source_refs: Iterable[str | MemorySourceRef],
         explicit_user_confirmation: bool,
     ) -> str:
         if trust_level == "external_untrusted":
@@ -357,7 +559,10 @@ class MemoryService:
                     "external_untrusted content requires trusted Evidence or explicit user confirmation"
                 )
             return "user"
-        if any(str(ref).strip().casefold().startswith("external:") for ref in source_refs):
+        if any(
+            _source_ref_value(ref).casefold().startswith("external:")
+            for ref in source_refs
+        ):
             if not explicit_user_confirmation:
                 raise MemoryTrustError(
                     "external source cannot be promoted to persistent trusted Memory"

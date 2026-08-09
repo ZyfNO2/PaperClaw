@@ -29,6 +29,7 @@ Design constraints (SOP §5.3 / §10):
 
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
 from typing import Any, Protocol, TYPE_CHECKING
 from uuid import uuid4
 
@@ -43,6 +44,53 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # EventSink protocol and reference implementations
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SessionReconstruction:
+    """Bounded projection of durable facts used by safe resume."""
+
+    session_id: str
+    run_id: str
+    last_sequence: int
+    last_completed_sequence: int
+    terminal: bool
+    stop_reason: str | None
+    task_states: tuple[dict[str, Any], ...]
+    context_snapshot_ids: tuple[str, ...]
+    ambiguous_tool_call_ids: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["task_states"] = [dict(item) for item in self.task_states]
+        data["context_snapshot_ids"] = list(self.context_snapshot_ids)
+        data["ambiguous_tool_call_ids"] = list(self.ambiguous_tool_call_ids)
+        return data
+
+
+@dataclass(frozen=True)
+class SessionResumeDecision:
+    """Decision returned without replaying any external side effect."""
+
+    can_auto_resume: bool
+    status: str
+    reason: str
+    last_safe_sequence: int
+    last_completed_sequence: int
+    ambiguous_tool_call_ids: tuple[str, ...] = ()
+    reconstruction: SessionReconstruction | None = None
+    permission_mode: str = "preserve"
+
+    def __post_init__(self) -> None:
+        if self.permission_mode not in {"preserve", "tighten"}:
+            raise ValueError("permission_mode must be preserve or tighten")
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        if self.reconstruction is not None:
+            data["reconstruction"] = self.reconstruction.to_dict()
+        data["ambiguous_tool_call_ids"] = list(self.ambiguous_tool_call_ids)
+        return data
 
 
 class EventSink(Protocol):
@@ -64,6 +112,10 @@ class EventSink(Protocol):
         *,
         agent_id: str = "",
         task_id: str | None = None,
+        event_id: str | None = None,
+        idempotency_key: str | None = None,
+        turn_id: str | None = None,
+        payload_ref: str | None = None,
     ) -> int:
         """Record one event and return its sequence number.
 
@@ -89,6 +141,10 @@ class NullEventSink:
         *,
         agent_id: str = "",
         task_id: str | None = None,
+        event_id: str | None = None,
+        idempotency_key: str | None = None,
+        turn_id: str | None = None,
+        payload_ref: str | None = None,
     ) -> int:
         return 0
 
@@ -133,6 +189,10 @@ class SqliteEventSink:
         *,
         agent_id: str = "",
         task_id: str | None = None,
+        event_id: str | None = None,
+        idempotency_key: str | None = None,
+        turn_id: str | None = None,
+        payload_ref: str | None = None,
     ) -> int:
         """Append one event and return the assigned sequence.
 
@@ -158,14 +218,26 @@ class SqliteEventSink:
         # operation MUST reuse the same event_id. Callers that need
         # idempotency should pass their own event_id via payload['event_id']
         # — this sink will honor it.
-        event_id = persisted.pop("event_id", None) or f"evt-{uuid4().hex[:12]}"
+        resolved_event_id = (
+            event_id
+            or persisted.pop("event_id", None)
+            or f"evt-{uuid4().hex[:12]}"
+        )
+        resolved_idempotency_key = idempotency_key or persisted.pop(
+            "idempotency_key", None
+        )
+        resolved_turn_id = turn_id or persisted.pop("turn_id", None)
+        resolved_payload_ref = payload_ref or persisted.pop("payload_ref", None)
 
         appended, sequence = self._repo.append_event_with_auto_sequence(
-            event_id=event_id,
+            event_id=resolved_event_id,
+            idempotency_key=resolved_idempotency_key,
             conversation_id=self._conversation_id,
             run_id=self._run_id,
             event_type=event_type,
             payload=persisted,
+            turn_id=resolved_turn_id,
+            payload_ref=resolved_payload_ref,
         )
         return sequence
 
@@ -369,6 +441,10 @@ class SessionService:
         *,
         agent_id: str = "",
         task_id: str | None = None,
+        event_id: str | None = None,
+        idempotency_key: str | None = None,
+        turn_id: str | None = None,
+        payload_ref: str | None = None,
     ) -> int:
         """Emit one Runtime event via the bound sink.
 
@@ -385,6 +461,10 @@ class SessionService:
             payload or {},
             agent_id=agent_id or self._agent_id,
             task_id=task_id,
+            event_id=event_id,
+            idempotency_key=idempotency_key,
+            turn_id=turn_id,
+            payload_ref=payload_ref,
         )
 
     def event_sink(self, *, agent_id: str | None = None) -> EventSink:
@@ -470,6 +550,141 @@ class SessionService:
     def list_events(self, since_sequence: int = 0) -> list[SessionEvent]:
         return self._repo.list_events(self._run_id, since_sequence=since_sequence)
 
+    def reconstruct(self) -> SessionReconstruction:
+        """Rebuild the resume projection from ordered durable facts."""
+        run = self._repo.get_run(self._run_id)
+        if run is None:
+            raise RuntimeError(f"run does not exist: {self._run_id}")
+        events = self.list_events()
+        completed_types = {
+            "model.completed",
+            "model.failed",
+            "tool.completed",
+            "tool.failed",
+            "tool.cancelled",
+            "permission.denied",
+            "node.completed",
+        }
+        last_completed = max(
+            (event.sequence for event in events if event.event_type in completed_types),
+            default=0,
+        )
+        started: dict[str, SessionEvent] = {}
+        resolved: set[str] = set()
+        for event in events:
+            if event.event_type == "tool.started":
+                started[_tool_event_identity(event)] = event
+            elif event.event_type in {
+                "tool.completed",
+                "tool.failed",
+                "permission.denied",
+            }:
+                resolved.add(_tool_event_identity(event))
+        ambiguous = tuple(
+            sorted(
+                _display_tool_identity(identity, event)
+                for identity, event in started.items()
+                if identity not in resolved
+            )
+        )
+        terminal = bool(run.get("ended_at")) or any(
+            event.event_type
+            in {"flow.stopped", "run.completed", "run.failed", "run.cancelled"}
+            for event in events
+        )
+        snapshots = self._repo.list_snapshots(self._run_id)
+        return SessionReconstruction(
+            session_id=self._conversation_id,
+            run_id=self._run_id,
+            last_sequence=self.last_committed_sequence(),
+            last_completed_sequence=last_completed,
+            terminal=terminal,
+            stop_reason=run.get("stop_reason"),
+            task_states=tuple(self.list_task_states()),
+            context_snapshot_ids=tuple(item.snapshot_id for item in snapshots),
+            ambiguous_tool_call_ids=ambiguous,
+        )
+
+    # Explicit alias used by operator/integration callers.
+    reconstruct_state = reconstruct
+
+    def resume(self, *, permission_mode: str = "preserve") -> SessionResumeDecision:
+        """Return a bounded safe-resume decision; never replay a tool.
+
+        "preserve" keeps the original permission/sandbox policy. Callers may
+        explicitly request "tighten"; this method never expands permissions.
+        """
+        if permission_mode not in {"preserve", "tighten"}:
+            raise ValueError("permission_mode must be preserve or tighten")
+        reconstruction = self.reconstruct()
+        if reconstruction.terminal:
+            return SessionResumeDecision(
+                can_auto_resume=False,
+                status="terminal_noop",
+                reason="terminal session is already durable; no work was replayed",
+                last_safe_sequence=reconstruction.last_completed_sequence,
+                last_completed_sequence=reconstruction.last_completed_sequence,
+                reconstruction=reconstruction,
+                permission_mode=permission_mode,
+            )
+
+        self.emit(
+            "session.resume.started",
+            {
+                "session_id": self._conversation_id,
+                "run_id": self._run_id,
+                "last_sequence": reconstruction.last_sequence,
+                "last_completed_sequence": reconstruction.last_completed_sequence,
+            },
+            idempotency_key=f"resume-start:{self._run_id}",
+        )
+        if reconstruction.ambiguous_tool_call_ids:
+            self.emit(
+                "session.resume.blocked",
+                {
+                    "session_id": self._conversation_id,
+                    "run_id": self._run_id,
+                    "reason": "ambiguous_external_side_effect",
+                    "ambiguous_tool_call_ids": list(
+                        reconstruction.ambiguous_tool_call_ids
+                    ),
+                },
+                idempotency_key=f"resume-blocked:{self._run_id}",
+            )
+            return SessionResumeDecision(
+                can_auto_resume=False,
+                status="manual_review_required",
+                reason=(
+                    "a tool call has no durable result; external side effects "
+                    "must be reconciled manually before resume"
+                ),
+                last_safe_sequence=reconstruction.last_completed_sequence,
+                last_completed_sequence=reconstruction.last_completed_sequence,
+                ambiguous_tool_call_ids=reconstruction.ambiguous_tool_call_ids,
+                reconstruction=reconstruction,
+                permission_mode=permission_mode,
+            )
+
+        self.emit(
+            "session.resume.reconstructed",
+            {
+                "session_id": self._conversation_id,
+                "run_id": self._run_id,
+                "last_safe_sequence": reconstruction.last_completed_sequence,
+                "context_snapshot_ids": list(reconstruction.context_snapshot_ids),
+            },
+            idempotency_key=f"resume-reconstructed:{self._run_id}",
+        )
+        return SessionResumeDecision(
+            can_auto_resume=True,
+            status="resumable",
+            reason="durable state reconstructed at the last completed boundary",
+            last_safe_sequence=reconstruction.last_completed_sequence,
+            last_completed_sequence=reconstruction.last_completed_sequence,
+            reconstruction=reconstruction,
+            permission_mode=permission_mode,
+        )
+
     def latest_checkpoint(self):
         return self._repo.latest_checkpoint(self._run_id)
 
@@ -543,6 +758,28 @@ class SessionService:
             # Closing must not fail because of a sink error. The run is
             # already ended in the Repository.
             pass
+
+
+def _tool_event_identity(event: SessionEvent) -> str:
+    payload = event.payload
+    for key in ("call_id", "tool_call_id"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return f"id:{value.strip()}"
+    tool = payload.get("tool")
+    call_index = payload.get("call_index")
+    if isinstance(tool, str) and call_index is not None:
+        return f"index:{tool}:{call_index}"
+    return f"event:{event.event_id}"
+
+
+def _display_tool_identity(identity: str, event: SessionEvent) -> str:
+    payload = event.payload
+    for key in ("call_id", "tool_call_id"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return identity.removeprefix("index:")
 
 
 # ---------------------------------------------------------------------------

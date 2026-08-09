@@ -4,7 +4,7 @@
   "fixture": "cross_domain_context_injection",
   "policy_version": "paperclaw.context.v0.08.1",
   "prompt_version": "paperclaw.prompt.v0.08.1",
-  "fingerprint": "2920f37ba5280ef1298935b3560cb9c0456cffe6341f2407746d6c2803943ea4",
+  "fingerprint": "cbe32e93d3ecd83a75434e88d8f834d61635dba14516f03dd252feab1fec8158",
   "estimated_tokens": 150,
   "sections": [
     {
@@ -18,8 +18,8 @@
       "name": "SELECTED CONTEXT",
       "trust": "mixed_trusted",
       "candidate_ids": [
-        "message:msg-prior-user",
-        "workspace"
+        "workspace",
+        "message:msg-prior-user"
       ]
     },
     {
@@ -33,7 +33,16 @@
   "trace": {
     "policy_version": "paperclaw.context.v0.08.1",
     "prompt_version": "paperclaw.prompt.v0.08.1",
-    "fingerprint": "2920f37ba5280ef1298935b3560cb9c0456cffe6341f2407746d6c2803943ea4",
+    "priority_order": [
+      "protected",
+      "context",
+      "task",
+      "retrieval",
+      "recent",
+      "tool",
+      "user"
+    ],
+    "fingerprint": "cbe32e93d3ecd83a75434e88d8f834d61635dba14516f03dd252feab1fec8158",
     "selected": [
       {
         "candidate_id": "runtime-prompt",

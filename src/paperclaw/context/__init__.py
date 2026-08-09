@@ -38,7 +38,12 @@ from paperclaw.context.contracts import (
     ContextSource,
     SessionEvent,
 )
-from paperclaw.context.migrations import MigrationRunner, SCHEMA_VERSION_V1
+from paperclaw.context.migrations import (
+    CURRENT_SCHEMA_VERSION,
+    MigrationRunner,
+    SCHEMA_VERSION_V1,
+    SCHEMA_VERSION_V5,
+)
 from paperclaw.context.orchestration import (
     ContextAssemblyBudgetExhausted,
     ContextAssemblyError,
@@ -60,6 +65,8 @@ from paperclaw.context.session import (
     EventSink,
     NullEventSink,
     SessionService,
+    SessionReconstruction,
+    SessionResumeDecision,
     SqliteEventSink,
     open_session,
     reopen_session,
@@ -115,6 +122,7 @@ __all__ = [
     "EXCLUSION_SUPERSEDED",
     "EXCLUSION_TRUST_VIOLATION",
     "MigrationRunner",
+    "CURRENT_SCHEMA_VERSION",
     "NullEventSink",
     "PromptAssembler",
     "PromptAssembly",
@@ -125,8 +133,11 @@ __all__ = [
     "Repository",
     "RoleContextView",
     "SCHEMA_VERSION_V1",
+    "SCHEMA_VERSION_V5",
     "SQLiteRepository",
     "SessionEvent",
+    "SessionReconstruction",
+    "SessionResumeDecision",
     "SessionService",
     "SourceKind",
     "SqliteEventSink",

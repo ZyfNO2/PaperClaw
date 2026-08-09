@@ -179,6 +179,35 @@ def _run_doctor(args: argparse.Namespace) -> int:
     return 0 if report.ok else 1
 
 
+def _run_session(args: argparse.Namespace) -> int:
+    from paperclaw.context.repository import SQLiteRepository
+    from paperclaw.session_commands import SessionOperator
+
+    repository = SQLiteRepository(args.database, migrate=True)
+    try:
+        operator = SessionOperator(repository)
+        if args.session_command == "inspect":
+            output = operator.inspect(args.session_id, max_events=args.max_events)
+        elif args.session_command == "context":
+            output = operator.context(args.session_id)
+        else:
+            output = operator.resume(
+                args.session_id,
+                permission_mode=(
+                    "tighten" if args.tighten_permissions else "preserve"
+                ),
+            )
+        if args.format == "text":
+            console_print(json.dumps(output, ensure_ascii=False, indent=2))
+        else:
+            console_print(json.dumps(output, ensure_ascii=False, indent=2))
+        return 0
+    except (OSError, RuntimeError, ValueError) as exc:
+        return _print_error(exc)
+    finally:
+        repository.close()
+
+
 def _trace_reader(database: Path):
     from paperclaw.trace import SQLiteTraceReader, TraceRedactor
 
@@ -511,6 +540,36 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--database", type=Path, required=True)
     doctor_parser.add_argument("--full", action="store_true")
 
+    session_parser = subparsers.add_parser("session")
+    session_subparsers = session_parser.add_subparsers(
+        dest="session_command", required=True
+    )
+    session_inspect_parser = session_subparsers.add_parser("inspect")
+    session_inspect_parser.add_argument("session_id")
+    session_inspect_parser.add_argument("--database", type=Path, required=True)
+    session_inspect_parser.add_argument("--max-events", type=int, default=100)
+    session_inspect_parser.add_argument(
+        "--format", choices=("text", "json"), default="json"
+    )
+    session_context_parser = session_subparsers.add_parser("context")
+    session_context_parser.add_argument("session_id")
+    session_context_parser.add_argument("--database", type=Path, required=True)
+    session_context_parser.add_argument("--latest", action="store_true")
+    session_context_parser.add_argument(
+        "--format", choices=("text", "json"), default="json"
+    )
+    session_resume_parser = session_subparsers.add_parser("resume")
+    session_resume_parser.add_argument("session_id")
+    session_resume_parser.add_argument("--database", type=Path, required=True)
+    session_resume_parser.add_argument(
+        "--tighten-permissions",
+        action="store_true",
+        help="request a more restrictive permission/sandbox policy on resume",
+    )
+    session_resume_parser.add_argument(
+        "--format", choices=("text", "json"), default="json"
+    )
+
     trace_parser = subparsers.add_parser("trace")
     trace_subparsers = trace_parser.add_subparsers(dest="trace_command", required=True)
 
@@ -608,6 +667,7 @@ def main(argv: list[str] | None = None) -> int:
         "team",
         "tui",
         "doctor",
+        "session",
         "trace",
         "-h",
         "--help",
@@ -625,6 +685,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_tui(args)
     if args.command == "doctor":
         return _run_doctor(args)
+    if args.command == "session":
+        return _run_session(args)
     if args.command == "trace":
         handlers = {
             "export": _run_trace_export,

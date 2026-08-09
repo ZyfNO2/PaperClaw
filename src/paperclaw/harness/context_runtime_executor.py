@@ -10,6 +10,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+import hashlib
+import json
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -21,6 +23,7 @@ from paperclaw.context.orchestration import (
     PromptAssembly,
 )
 from paperclaw.context.repository import Repository
+from paperclaw.context.contracts import ContextSnapshot
 from paperclaw.context.session import SessionService
 from paperclaw.context.source_registry import (
     ContextSourceRegistry,
@@ -98,6 +101,15 @@ class _ContextAwareModel:
             at_sequence=at_sequence,
         )
         source_trace = self._source_trace_payload()
+        self._emit(
+            context,
+            "context.build.started",
+            {
+                "step_id": step_id,
+                "policy_version": self._orchestrator.policy.policy_version,
+                **source_trace,
+            },
+        )
         try:
             assembly = self._orchestrator.assemble(request)
         except ContextAssemblyBudgetExhausted as exc:
@@ -123,7 +135,122 @@ class _ContextAwareModel:
             **source_trace,
         }
         self._emit(context, "context.assembly.completed", payload)
+        snapshot = self._persist_snapshot(context, request, assembly, step_id)
+        self._emit(
+            context,
+            "context.snapshot.persisted",
+            {
+                "context_snapshot_id": snapshot.snapshot_id,
+                "model_call_id": snapshot.model_call_id,
+                "policy_fingerprint": snapshot.policy_fingerprint,
+                "input_tokens": snapshot.input_tokens,
+                "selected_memory_ids": list(snapshot.selected_memory_ids),
+                "omitted_counts": dict(snapshot.omitted_counts),
+            },
+        )
         return self._model.complete(assembly.prompt)
+
+    def _persist_snapshot(
+        self,
+        context: _BoundAssemblyContext,
+        request: ContextRequest,
+        assembly: PromptAssembly,
+        step_id: str,
+    ) -> ContextSnapshot:
+        """Persist the bounded manifest immediately before provider I/O."""
+        selected_ids = tuple(
+            item.candidate_id for item in assembly.trace.selected if item.selected
+        )
+        excluded = tuple(
+            {
+                "item_id": item.candidate_id,
+                "exclusion_reason": item.reason,
+            }
+            for item in assembly.trace.excluded
+        )
+        omitted_counts: dict[str, int] = {}
+        for item in assembly.trace.excluded:
+            omitted_counts[item.reason] = omitted_counts.get(item.reason, 0) + 1
+        selected_artifacts = tuple(
+            item.candidate_id
+            for item in assembly.trace.selected
+            if item.candidate_id.startswith(("evidence:", "artifact:", "context:"))
+        )
+        selected_event_ids: list[str] = []
+        compaction_summary_ref: str | None = None
+        end_sequence = (
+            context.repository.last_committed_sequence(request.run_id)
+            if context.repository is not None
+            else request.at_sequence
+        )
+        if context.repository is not None:
+            selected_tool_calls = {
+                item.candidate_id.removeprefix("tool-group:")
+                for item in assembly.trace.selected
+                if item.selected and item.candidate_id.startswith("tool-group:")
+            }
+            for event in context.repository.list_events(request.run_id):
+                payload = event.payload
+                call_id = payload.get("call_id") or payload.get("tool_call_id")
+                tool_key = None
+                if isinstance(payload.get("tool"), str) and payload.get("call_index") is not None:
+                    tool_key = f"{payload['tool']}:{payload['call_index']}"
+                if (
+                    isinstance(call_id, str)
+                    and call_id in selected_tool_calls
+                ) or (tool_key is not None and tool_key in selected_tool_calls):
+                    selected_event_ids.append(event.event_id)
+                if event.event_type == "context.compaction.completed":
+                    compaction_summary_ref = f"event:{event.event_id}"
+        policy_fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "policy_version": assembly.trace.policy_version,
+                    "prompt_version": assembly.trace.prompt_version,
+                    "assembly_fingerprint": assembly.fingerprint,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        snapshot = ContextSnapshot(
+            snapshot_id=f"ctxsnap:{request.run_id}:{step_id}",
+            run_id=request.run_id,
+            agent_id="context_orchestrator",
+            role=request.role,
+            source_item_ids=selected_ids,
+            excluded_items=excluded,
+            rendered_hash=hashlib.sha256(
+                assembly.prompt.encode("utf-8")
+            ).hexdigest(),
+            estimated_tokens=assembly.estimated_tokens,
+            estimator="char4",
+            created_sequence=end_sequence,
+            task_id=request.task_id,
+            session_id=request.conversation_id,
+            model_call_id=step_id,
+            system_prompt_hash=hashlib.sha256(
+                (assembly.sections[0].content if assembly.sections else "").encode(
+                    "utf-8"
+                )
+            ).hexdigest(),
+            static_prefix_hash=assembly.fingerprint,
+            selected_memory_ids=assembly.trace.memory_ids,
+            selected_artifact_locators=selected_artifacts,
+            selected_event_ids=tuple(selected_event_ids),
+            event_range={"start": request.at_sequence, "end": end_sequence},
+            compaction_summary_ref=compaction_summary_ref,
+            omitted_counts=omitted_counts,
+            input_tokens=assembly.estimated_tokens,
+            policy_fingerprint=policy_fingerprint,
+        )
+        if context.repository is not None:
+            existing = context.repository.get_snapshot(snapshot.snapshot_id)
+            if existing is None:
+                context.repository.insert_snapshot(snapshot)
+            else:
+                snapshot = existing
+        return snapshot
 
     def _source_trace_payload(self) -> dict[str, Any]:
         snapshot = self._source_snapshot

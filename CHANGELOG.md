@@ -4,6 +4,23 @@ All notable PaperClaw changes are recorded here. Versions are developed on isola
 branches and are intended to be squash-merged so one released version contributes
 one commit to `main`.
 
+## [0.39.0] — Unreleased
+
+### Added
+
+- additive SQLite v5 durable event idempotency and SessionEvent ordering links;
+- typed Memory provenance and explicit keep-both / supersede / merge / reject conflict decisions;
+- deterministic existing Context orchestration priority policy with atomic Tool call/result groups;
+- persisted ContextSnapshot manifests at the model boundary;
+- crash reconstruction and safe resume decisions that stop on ambiguous Tool side effects;
+- `paperclaw session inspect`, `context --latest` and `resume` operator commands;
+- v4-to-v5 migration, legacy file-memory import and contract/integration regression coverage.
+
+### Known limits
+
+- Provider, Docker, native OS and exact-commit CI validation require an external runtime;
+- the v0.39 gate does not implement the planned v0.40 sandbox or v0.41 evaluation harness work.
+
 ## [0.38.0] — Unreleased
 
 ### Added

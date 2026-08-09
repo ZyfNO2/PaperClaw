@@ -1,5 +1,29 @@
 # PaperClaw v0.39 Test Report
 
+## Current hardening verification (supersedes the historical Memory-only summary)
+
+| Check | Result |
+|---|---|
+| v0.39 durable contract tests | 9 passed |
+| Focused Memory / Context / Trace regression | passed; included in the targeted runs |
+| Real process acceptance | 2 passed with local mock Provider and restart flow |
+| Full non-live regression, writable USERPROFILE | 1078 passed, 23 skipped, 12 deselected; 2 pre-existing Bash failures |
+| Ruff high-signal CI check | `All checks passed!` |
+| Full repository Ruff check | not clean: 873 pre-existing findings across unrelated files; no v0.39-wide rewrite |
+| Type check | NOT CONFIGURED / NOT VERIFIED; no mypy/pyright gate exists in active repository CI |
+| Package build | passed with `python -m build --no-isolation` |
+| Exact-head GitHub CI | `AWAITING REAL TEST` — branch not pushed |
+| Real LLM / Docker / manual native OS | `NOT VERIFIED` |
+
+The two full-suite failures are existing Windows Bash tests:
+`test_bash_tool_respects_stop_token_mid_execution` and
+`test_bash_timeout_kills_child_process_tree`. Their failures occur in the
+PowerShell quoting/timeout path and no Bash code was changed for v0.39.
+
+Commands for the current verification used an isolated dependency directory
+and a writable `USERPROFILE`; the implementation itself does not commit that
+directory or any generated database.
+
 ## 结果摘要
 
 | 检查 | 结果 |

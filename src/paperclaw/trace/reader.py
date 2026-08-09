@@ -51,6 +51,8 @@ _COMPONENT_PREFIXES = {
     "flow": "runtime",
     "context": "context",
     "checkpoint": "context",
+    "session": "runtime",
+    "memory": "memory",
 }
 
 _COMPLETED_STOP_REASONS = frozenset({"done", "completed_verified"})

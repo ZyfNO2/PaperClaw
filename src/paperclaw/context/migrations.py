@@ -62,8 +62,13 @@ SCHEMA_VERSION_V3 = 3
 #: tables untouched.
 SCHEMA_VERSION_V4 = 4
 
+#: v5 adds the explicit durable-runtime links required by v0.39.  All new
+#: columns are nullable or have a deterministic empty default so existing v4
+#: workspaces remain readable without rewriting historical events/snapshots.
+SCHEMA_VERSION_V5 = 5
+
 #: Current target schema version after applying all known migrations.
-CURRENT_SCHEMA_VERSION = SCHEMA_VERSION_V4
+CURRENT_SCHEMA_VERSION = SCHEMA_VERSION_V5
 
 
 @dataclass
@@ -358,6 +363,45 @@ V4_STRUCTURED_MEMORY_SQL: tuple[str, ...] = (
 )
 
 
+V5_DURABLE_RUNTIME_SQL: tuple[str, ...] = (
+    "ALTER TABLE session_events ADD COLUMN turn_id TEXT",
+    "ALTER TABLE session_events ADD COLUMN idempotency_key TEXT",
+    "ALTER TABLE session_events ADD COLUMN payload_ref TEXT",
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_session_events_run_idempotency
+        ON session_events (run_id, idempotency_key)
+        WHERE idempotency_key IS NOT NULL
+    """,
+    "ALTER TABLE context_snapshots ADD COLUMN session_id TEXT",
+    "ALTER TABLE context_snapshots ADD COLUMN model_call_id TEXT",
+    "ALTER TABLE context_snapshots ADD COLUMN system_prompt_hash TEXT",
+    "ALTER TABLE context_snapshots ADD COLUMN static_prefix_hash TEXT",
+    "ALTER TABLE context_snapshots ADD COLUMN selected_memory_ids TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE context_snapshots ADD COLUMN selected_artifact_locators TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE context_snapshots ADD COLUMN selected_event_ids TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE context_snapshots ADD COLUMN event_range TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE context_snapshots ADD COLUMN compaction_summary_ref TEXT",
+    "ALTER TABLE context_snapshots ADD COLUMN omitted_counts TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE context_snapshots ADD COLUMN input_tokens INTEGER",
+    "ALTER TABLE context_snapshots ADD COLUMN policy_fingerprint TEXT NOT NULL DEFAULT ''",
+    """
+    CREATE TABLE IF NOT EXISTS memory_conflict_decisions (
+        decision_id TEXT PRIMARY KEY,
+        candidate_memory_id TEXT NOT NULL,
+        conflicting_memory_ids TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        source_refs TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        metadata TEXT NOT NULL DEFAULT '{}'
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_memory_conflict_candidate
+        ON memory_conflict_decisions (candidate_memory_id, created_at)
+    """,
+)
+
+
 #: Map schema_version -> (description, DDL tuple). Used by MigrationRunner.
 MIGRATIONS: dict[int, tuple[str, tuple[str, ...]]] = {
     SCHEMA_VERSION_V1: ("initial v0.04 context runtime schema", V1_SCHEMA_SQL),
@@ -372,6 +416,10 @@ MIGRATIONS: dict[int, tuple[str, tuple[str, ...]]] = {
     SCHEMA_VERSION_V4: (
         "add structured persistent MemoryItem and frozen snapshot tables",
         V4_STRUCTURED_MEMORY_SQL,
+    ),
+    SCHEMA_VERSION_V5: (
+        "add durable event idempotency, context manifests and memory decisions",
+        V5_DURABLE_RUNTIME_SQL,
     ),
 }
 

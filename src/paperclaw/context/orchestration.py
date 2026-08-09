@@ -46,6 +46,18 @@ DEFAULT_SOURCE_QUOTAS = (
     ("retrieval", 0.05),
 )
 
+# The names are the existing ContextCandidate buckets. They make the v0.39
+# ordering contract explicit without introducing a second prompt stack.
+DEFAULT_PRIORITY_ORDER = (
+    "protected",
+    "context",
+    "task",
+    "retrieval",
+    "recent",
+    "tool",
+    "user",
+)
+
 
 class ContextAssemblyError(RuntimeError):
     """Base error for deterministic assembly failures."""
@@ -75,6 +87,7 @@ class ContextPolicy:
     prompt_version: str = "paperclaw.prompt.v0.08.1"
     policy_version: str = "paperclaw.context.v0.08.1"
     source_quotas: tuple[tuple[str, float], ...] = DEFAULT_SOURCE_QUOTAS
+    priority_order: tuple[str, ...] = DEFAULT_PRIORITY_ORDER
 
     def __post_init__(self) -> None:
         if self.max_input_tokens < 1:
@@ -87,6 +100,10 @@ class ContextPolicy:
             raise ValueError("max_single_candidate_tokens must be positive")
         if self.recent_message_limit < 0 or self.recent_tool_result_limit < 0:
             raise ValueError("recent limits must be non-negative")
+        if not self.priority_order or len(set(self.priority_order)) != len(
+            self.priority_order
+        ):
+            raise ValueError("priority_order must contain unique bucket names")
 
         seen: set[str] = set()
         total = 0.0
@@ -225,6 +242,7 @@ class ContextAssemblyTrace:
     allocation: ContextBudgetAllocation
     latency_ms: int
     memory_ids: tuple[str, ...] = ()
+    priority_order: tuple[str, ...] = DEFAULT_PRIORITY_ORDER
 
     def to_event_payload(self, *, limit: int = 100) -> dict[str, Any]:
         """Return a bounded, content-free payload safe for durable Trace."""
@@ -232,6 +250,7 @@ class ContextAssemblyTrace:
         payload = {
             "policy_version": self.policy_version,
             "prompt_version": self.prompt_version,
+            "priority_order": list(self.priority_order),
             "fingerprint": self.fingerprint,
             "selected": [asdict(item) for item in self.selected[:limit]],
             "excluded": [asdict(item) for item in self.excluded[:limit]],
@@ -305,7 +324,7 @@ class PromptAssembler:
                     for item in supplemental
                     if item.trust != "external_untrusted"
                 ),
-                key=_stable_candidate_order,
+                key=lambda item: _stable_candidate_order(item, policy.priority_order),
             )
         )
         untrusted = tuple(
@@ -315,7 +334,7 @@ class PromptAssembler:
                     for item in supplemental
                     if item.trust == "external_untrusted"
                 ),
-                key=_stable_candidate_order,
+                key=lambda item: _stable_candidate_order(item, policy.priority_order),
             )
         )
         if trusted:
@@ -352,6 +371,7 @@ class PromptAssembler:
 
         fingerprint_payload = {
             "prompt_version": policy.prompt_version,
+            "priority_order": list(policy.priority_order),
             "sections": [
                 {
                     "name": section.name,
@@ -443,6 +463,7 @@ class ContextOrchestrator:
             allocation=allocation,
             latency_ms=max(0, round((perf_counter() - started) * 1000)),
             memory_ids=memory_ids,
+            priority_order=self._policy.priority_order,
         )
         return PromptAssembly(
             prompt=prompt,
@@ -568,38 +589,43 @@ class ContextOrchestrator:
                 )
             )
 
-        tool_events = [
-            event
-            for event in repo.list_events(request.run_id)
-            if event.event_type
-            in {"tool.completed", "tool.failed", "permission.denied"}
-        ]
+        tool_groups = _tool_event_groups(repo.list_events(request.run_id))
         if self._policy.recent_tool_result_limit:
-            tool_events = tool_events[-self._policy.recent_tool_result_limit :]
+            tool_groups = tool_groups[-self._policy.recent_tool_result_limit :]
         else:
-            tool_events = []
-        for event in tool_events:
-            payload = json.dumps(
-                event.payload,
-                sort_keys=True,
-                ensure_ascii=False,
-                default=str,
+            tool_groups = []
+        for group in tool_groups:
+            rendered = "\n".join(
+                f"{event.event_type}: "
+                + json.dumps(
+                    event.payload,
+                    sort_keys=True,
+                    ensure_ascii=False,
+                    default=str,
+                )
+                for event in group["events"]
             )
-            rendered = f"{event.event_type}: {payload}"
+            terminal = group["result"]
+            candidate_id = group["candidate_id"]
             collected.append(
                 ContextCandidate(
-                    candidate_id=f"event:{event.event_id}",
+                    candidate_id=candidate_id,
                     source="tool_result",
-                    source_ref=event.event_id,
+                    source_ref=candidate_id,
                     layer="L4",
                     kind="observation",
                     scope=("shared",),
                     priority=550,
                     trust="tool_output",
-                    freshness=event.sequence,
+                    freshness=terminal.sequence,
                     estimated_tokens=estimate_tokens(rendered),
                     content=rendered,
                     bucket="tool",
+                    metadata={
+                        "atomic_group": True,
+                        "event_ids": [event.event_id for event in group["events"]],
+                        "tool_call_id": group["tool_call_id"],
+                    },
                 )
             )
 
@@ -981,8 +1007,15 @@ def _winner_order(candidate: ContextCandidate) -> tuple[int, int, int, int, str]
     )
 
 
-def _stable_candidate_order(candidate: ContextCandidate) -> tuple[str, int, str]:
-    return (candidate.bucket, -candidate.priority, candidate.candidate_id)
+def _stable_candidate_order(
+    candidate: ContextCandidate,
+    priority_order: tuple[str, ...] = DEFAULT_PRIORITY_ORDER,
+) -> tuple[int, int, str]:
+    try:
+        bucket_rank = priority_order.index(candidate.bucket)
+    except ValueError:
+        bucket_rank = len(priority_order)
+    return (bucket_rank, -candidate.priority, candidate.candidate_id)
 
 
 def _render_candidate_block(candidates: Iterable[ContextCandidate]) -> str:
@@ -1003,6 +1036,71 @@ def _render_candidate_block(candidates: Iterable[ContextCandidate]) -> str:
             )
         )
     return "\n\n".join(blocks)
+
+
+def _tool_event_groups(events: Iterable[Any]) -> list[dict[str, Any]]:
+    """Pair tool starts/results before budget selection.
+
+    A result without a matching start is retained only as a legacy event when
+    no call identity is available.  Once a call identity is present, the
+    group is the atomic selection unit; compaction cannot keep one half.
+    """
+    starts: dict[str, Any] = {}
+    results: list[tuple[str, Any]] = []
+    for event in events:
+        if event.event_type == "tool.started":
+            starts[_tool_event_key(event)] = event
+        elif event.event_type in {
+            "tool.completed",
+            "tool.failed",
+            "permission.denied",
+        }:
+            results.append((_tool_event_key(event), event))
+
+    groups: list[dict[str, Any]] = []
+    for key, result in results:
+        start = starts.get(key)
+        if start is None and key.startswith("legacy:"):
+            event_list = [result]
+            candidate_id = f"event:{result.event_id}"
+            call_id = None
+        elif start is None:
+            # A structured result with no durable start is ambiguous and must
+            # not be presented as a complete tool observation.
+            continue
+        else:
+            event_list = [start, result]
+            call_id = _tool_call_id(result) or _tool_call_id(start) or key
+            candidate_id = f"tool-group:{call_id}"
+        groups.append(
+            {
+                "candidate_id": candidate_id,
+                "tool_call_id": call_id,
+                "events": tuple(event_list),
+                "result": result,
+            }
+        )
+    return sorted(groups, key=lambda group: group["result"].sequence)
+
+
+def _tool_call_id(event: Any) -> str | None:
+    payload = event.payload
+    value = payload.get("call_id") or payload.get("tool_call_id")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _tool_event_key(event: Any) -> str:
+    call_id = _tool_call_id(event)
+    if call_id:
+        return f"call:{call_id}"
+    payload = event.payload
+    tool = payload.get("tool")
+    call_index = payload.get("call_index")
+    if isinstance(tool, str) and call_index is not None:
+        return f"call:{tool}:{call_index}"
+    return f"legacy:{event.event_id}"
 
 
 def _safe_int(value: Any, default: int) -> int:
@@ -1028,6 +1126,7 @@ __all__ = [
     "ContextPolicy",
     "ContextRequest",
     "ContextSelection",
+    "DEFAULT_PRIORITY_ORDER",
     "PromptAssembler",
     "PromptAssembly",
     "PromptSection",

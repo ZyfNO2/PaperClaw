@@ -221,9 +221,20 @@ class SessionEvent:
     event_type: str
     payload: dict[str, Any]
     created_at: str
+    turn_id: str | None = None
+    idempotency_key: str | None = None
+    payload_ref: str | None = None
+    schema_version: int = 1
+
+    @property
+    def session_id(self) -> str:
+        """Compatibility alias for the durable conversation/session id."""
+        return self.conversation_id
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data["session_id"] = self.session_id
+        return data
 
 
 # ---------------------------------------------------------------------------
@@ -252,11 +263,38 @@ class ContextSnapshot:
     estimator: str
     created_sequence: int
     task_id: str | None = None
+    session_id: str | None = None
+    model_call_id: str | None = None
+    system_prompt_hash: str | None = None
+    static_prefix_hash: str | None = None
+    selected_memory_ids: tuple[str, ...] = ()
+    selected_artifact_locators: tuple[str, ...] = ()
+    selected_event_ids: tuple[str, ...] = ()
+    event_range: dict[str, int] = field(default_factory=dict)
+    compaction_summary_ref: str | None = None
+    omitted_counts: dict[str, int] = field(default_factory=dict)
+    input_tokens: int | None = None
+    policy_fingerprint: str = ""
+
+    def __post_init__(self) -> None:
+        if self.estimated_tokens < 0:
+            raise ValueError("estimated_tokens must be non-negative")
+        if self.input_tokens is None:
+            object.__setattr__(self, "input_tokens", self.estimated_tokens)
+        if self.input_tokens < 0:
+            raise ValueError("input_tokens must be non-negative")
+        if any(value < 0 for value in self.omitted_counts.values()):
+            raise ValueError("omitted_counts must be non-negative")
+        if any(value < 0 for value in self.event_range.values()):
+            raise ValueError("event_range values must be non-negative")
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["source_item_ids"] = list(self.source_item_ids)
         data["excluded_items"] = list(self.excluded_items)
+        data["selected_memory_ids"] = list(self.selected_memory_ids)
+        data["selected_artifact_locators"] = list(self.selected_artifact_locators)
+        data["selected_event_ids"] = list(self.selected_event_ids)
         return data
 
 
@@ -423,7 +461,21 @@ def validate_event(event: SessionEvent) -> None:
     """Validate SessionEvent invariants before persistence."""
     if event.sequence < 0:
         raise ValueError("sequence must be non-negative")
-    if "schema_version" not in event.payload:
+    payload_schema_version = event.payload.get("schema_version")
+    if payload_schema_version is None:
         raise ValueError("payload must carry schema_version")
     if not event.event_type:
         raise ValueError("event_type must be non-empty")
+    if event.schema_version < 1:
+        raise ValueError("schema_version must be positive")
+    if payload_schema_version != event.schema_version:
+        raise ValueError("event and payload schema_version must match")
+    if event.schema_version != 1:
+        raise ValueError(f"unsupported SessionEvent schema_version: {event.schema_version}")
+    for name, value in (
+        ("turn_id", event.turn_id),
+        ("idempotency_key", event.idempotency_key),
+        ("payload_ref", event.payload_ref),
+    ):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ValueError(f"{name} must be a non-empty string when provided")

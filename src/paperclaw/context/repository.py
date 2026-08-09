@@ -89,6 +89,20 @@ class Repository(Protocol):
 
     def append_event(self, event: SessionEvent) -> bool: ...
 
+    def append_event_with_auto_sequence(
+        self,
+        *,
+        event_id: str,
+        conversation_id: str,
+        run_id: str,
+        event_type: str,
+        payload: dict[str, Any],
+        created_at: str | None = None,
+        turn_id: str | None = None,
+        idempotency_key: str | None = None,
+        payload_ref: str | None = None,
+    ) -> tuple[bool, int]: ...
+
     def list_events(self, run_id: str, since_sequence: int = 0) -> list[SessionEvent]: ...
 
     def last_committed_sequence(self, run_id: str) -> int: ...
@@ -158,6 +172,8 @@ class Repository(Protocol):
 
     def list_snapshots(self, run_id: str) -> list[ContextSnapshot]: ...
 
+    def get_snapshot(self, snapshot_id: str) -> ContextSnapshot | None: ...
+
     # -- structured persistent memory ---------------------------------
 
     def insert_memory_item(self, item: "MemoryItem") -> None: ...
@@ -181,6 +197,18 @@ class Repository(Protocol):
     def insert_memory_snapshot(self, snapshot: "MemorySnapshot") -> None: ...
 
     def get_memory_snapshot(self, conversation_id: str) -> "MemorySnapshot | None": ...
+
+    def insert_memory_conflict_decision(self, decision: Any) -> None: ...
+
+    def list_memory_conflict_decisions(
+        self, candidate_memory_id: str | None = None
+    ) -> list[Any]: ...
+
+    # -- run inspection / reconstruction --------------------------------
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None: ...
+
+    def latest_run_for_conversation(self, conversation_id: str) -> dict[str, Any] | None: ...
 
     # -- checkpoints ----------------------------------------------------
 
@@ -325,6 +353,34 @@ class SQLiteRepository:
                 (utc_now_iso(), stop_reason, run_id),
             )
 
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT run_id, conversation_id, agent_id, role, task_id, created_at, "
+            "ended_at, stop_reason, metadata FROM runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "run_id": row["run_id"],
+            "conversation_id": row["conversation_id"],
+            "agent_id": row["agent_id"],
+            "role": row["role"],
+            "task_id": row["task_id"],
+            "created_at": row["created_at"],
+            "ended_at": row["ended_at"],
+            "stop_reason": row["stop_reason"],
+            "metadata": json.loads(row["metadata"] or "{}"),
+        }
+
+    def latest_run_for_conversation(self, conversation_id: str) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT run_id FROM runs WHERE conversation_id = ? "
+            "ORDER BY created_at DESC, run_id DESC LIMIT 1",
+            (conversation_id,),
+        ).fetchone()
+        return self.get_run(str(row["run_id"])) if row is not None else None
+
     # ------------------------------------------------------------------
     # session events
     # ------------------------------------------------------------------
@@ -374,16 +430,18 @@ class SQLiteRepository:
             # sequence) UNIQUE constraint would otherwise fire first and we
             # would have to inspect the error message — fragile.
             existing = self._conn.execute(
-                "SELECT 1 FROM session_events WHERE event_id = ?",
-                (event.event_id,),
+                "SELECT 1 FROM session_events WHERE event_id = ? "
+                "OR (run_id = ? AND idempotency_key = ? AND idempotency_key IS NOT NULL)",
+                (event.event_id, event.run_id, event.idempotency_key),
             ).fetchone()
             if existing is not None:
                 return False
             try:
                 self._exec_txn(
                     "INSERT INTO session_events (event_id, conversation_id, run_id, "
-                    "sequence, event_type, payload, created_at, schema_version) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "sequence, event_type, payload, created_at, schema_version, "
+                    "turn_id, idempotency_key, payload_ref) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         event.event_id,
                         event.conversation_id,
@@ -392,7 +450,10 @@ class SQLiteRepository:
                         event.event_type,
                         json.dumps(event.payload),
                         event.created_at,
-                        int(event.payload.get("schema_version", 1)),
+                        int(event.schema_version),
+                        event.turn_id,
+                        event.idempotency_key,
+                        event.payload_ref,
                     ),
                 )
             except sqlite3.IntegrityError:
@@ -410,6 +471,9 @@ class SQLiteRepository:
         event_type: str,
         payload: dict[str, Any],
         created_at: str | None = None,
+        turn_id: str | None = None,
+        idempotency_key: str | None = None,
+        payload_ref: str | None = None,
     ) -> tuple[bool, int]:
         """Atomically allocate the next sequence and append the event.
 
@@ -425,30 +489,49 @@ class SQLiteRepository:
           present (idempotent success); ``existing_sequence`` is the sequence
           of the original event so callers can confirm the prior write.
         """
-        if "schema_version" not in payload:
-            raise ValueError("payload must carry schema_version")
-        if not event_type:
-            raise ValueError("event_type must be non-empty")
         timestamp = created_at or utc_now_iso()
-        with self._write_lock:
-            existing = self._conn.execute(
-                "SELECT sequence FROM session_events WHERE event_id = ?",
-                (event_id,),
-            ).fetchone()
-            if existing is not None:
-                return (False, int(existing["sequence"]))
-            cur = self._conn.execute(
-                "SELECT MAX(sequence) FROM session_events WHERE run_id = ?",
-                (run_id,),
+        schema_version = int(payload.get("schema_version", 0))
+        validate_event(
+            SessionEvent(
+                event_id=event_id,
+                conversation_id=conversation_id,
+                run_id=run_id,
+                sequence=0,
+                event_type=event_type,
+                payload=payload,
+                created_at=timestamp,
+                turn_id=turn_id,
+                idempotency_key=idempotency_key,
+                payload_ref=payload_ref,
+                schema_version=schema_version,
             )
-            row = cur.fetchone()
-            current = int(row[0]) if row and row[0] is not None else 0
-            sequence = current + 1
+        )
+        with self._write_lock:
             try:
-                self._exec_txn(
+                # The sequence read must be inside BEGIN IMMEDIATE. A
+                # repository-local lock protects threads sharing one
+                # connection; the SQLite write transaction also protects
+                # independent processes sharing the same database.
+                self._conn.execute("BEGIN IMMEDIATE")
+                existing = self._conn.execute(
+                    "SELECT sequence FROM session_events WHERE event_id = ? "
+                    "OR (run_id = ? AND idempotency_key = ? AND idempotency_key IS NOT NULL)",
+                    (event_id, run_id, idempotency_key),
+                ).fetchone()
+                if existing is not None:
+                    self._conn.execute("COMMIT")
+                    return (False, int(existing["sequence"]))
+                cur = self._conn.execute(
+                    "SELECT MAX(sequence) FROM session_events WHERE run_id = ?",
+                    (run_id,),
+                )
+                row = cur.fetchone()
+                sequence = int(row[0]) + 1 if row and row[0] is not None else 1
+                self._conn.execute(
                     "INSERT INTO session_events (event_id, conversation_id, run_id, "
-                    "sequence, event_type, payload, created_at, schema_version) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "sequence, event_type, payload, created_at, schema_version, "
+                    "turn_id, idempotency_key, payload_ref) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         event_id,
                         conversation_id,
@@ -457,19 +540,39 @@ class SQLiteRepository:
                         event_type,
                         json.dumps(payload),
                         timestamp,
-                        int(payload.get("schema_version", 1)),
+                        schema_version,
+                        turn_id,
+                        idempotency_key,
+                        payload_ref,
                     ),
                 )
+                self._conn.execute("COMMIT")
+                return (True, sequence)
             except sqlite3.IntegrityError:
-                # Should not happen: we just allocated the sequence under the
-                # writer lock. If it does, surface it as a real bug.
+                try:
+                    self._conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                existing = self._conn.execute(
+                    "SELECT sequence FROM session_events WHERE event_id = ? "
+                    "OR (run_id = ? AND idempotency_key = ? AND idempotency_key IS NOT NULL)",
+                    (event_id, run_id, idempotency_key),
+                ).fetchone()
+                if existing is not None:
+                    return (False, int(existing["sequence"]))
                 raise
-            return (True, sequence)
+            except sqlite3.Error:
+                try:
+                    self._conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                raise
 
     def list_events(self, run_id: str, since_sequence: int = 0) -> list[SessionEvent]:
         cur = self._conn.execute(
             "SELECT event_id, conversation_id, run_id, sequence, event_type, payload, "
-            "created_at FROM session_events WHERE run_id = ? AND sequence > ? "
+            "created_at, schema_version, turn_id, idempotency_key, payload_ref "
+            "FROM session_events WHERE run_id = ? AND sequence > ? "
             "ORDER BY sequence ASC",
             (run_id, since_sequence),
         )
@@ -484,6 +587,10 @@ class SQLiteRepository:
                     event_type=row["event_type"],
                     payload=json.loads(row["payload"]),
                     created_at=row["created_at"],
+                    turn_id=row["turn_id"],
+                    idempotency_key=row["idempotency_key"],
+                    payload_ref=row["payload_ref"],
+                    schema_version=int(row["schema_version"]),
                 )
             )
         return events
@@ -775,8 +882,12 @@ class SQLiteRepository:
             self._exec_txn(
                 "INSERT INTO context_snapshots (snapshot_id, run_id, agent_id, role, "
                 "task_id, source_item_ids, excluded_items, rendered_hash, "
-                "estimated_tokens, estimator, created_sequence, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "estimated_tokens, estimator, created_sequence, created_at, session_id, "
+                "model_call_id, system_prompt_hash, static_prefix_hash, "
+                "selected_memory_ids, selected_artifact_locators, selected_event_ids, "
+                "event_range, compaction_summary_ref, omitted_counts, input_tokens, "
+                "policy_fingerprint) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     snapshot.snapshot_id,
                     snapshot.run_id,
@@ -790,6 +901,18 @@ class SQLiteRepository:
                     snapshot.estimator,
                     int(snapshot.created_sequence),
                     utc_now_iso(),
+                    snapshot.session_id,
+                    snapshot.model_call_id,
+                    snapshot.system_prompt_hash,
+                    snapshot.static_prefix_hash,
+                    json.dumps(list(snapshot.selected_memory_ids)),
+                    json.dumps(list(snapshot.selected_artifact_locators)),
+                    json.dumps(list(snapshot.selected_event_ids)),
+                    json.dumps(snapshot.event_range, sort_keys=True),
+                    snapshot.compaction_summary_ref,
+                    json.dumps(snapshot.omitted_counts, sort_keys=True),
+                    snapshot.input_tokens,
+                    snapshot.policy_fingerprint,
                 ),
             )
 
@@ -813,9 +936,68 @@ class SQLiteRepository:
                     estimated_tokens=int(row["estimated_tokens"]),
                     estimator=row["estimator"],
                     created_sequence=int(row["created_sequence"]),
+                    session_id=row["session_id"],
+                    model_call_id=row["model_call_id"],
+                    system_prompt_hash=row["system_prompt_hash"],
+                    static_prefix_hash=row["static_prefix_hash"],
+                    selected_memory_ids=tuple(json.loads(row["selected_memory_ids"] or "[]")),
+                    selected_artifact_locators=tuple(
+                        json.loads(row["selected_artifact_locators"] or "[]")
+                    ),
+                    selected_event_ids=tuple(json.loads(row["selected_event_ids"] or "[]")),
+                    event_range=json.loads(row["event_range"] or "{}"),
+                    compaction_summary_ref=row["compaction_summary_ref"],
+                    omitted_counts=json.loads(row["omitted_counts"] or "{}"),
+                    input_tokens=(
+                        int(row["input_tokens"])
+                        if row["input_tokens"] is not None
+                        else None
+                    ),
+                    policy_fingerprint=row["policy_fingerprint"] or "",
                 )
             )
         return out
+
+    def get_snapshot(self, snapshot_id: str) -> ContextSnapshot | None:
+        row = self._conn.execute(
+            "SELECT * FROM context_snapshots WHERE snapshot_id = ?",
+            (snapshot_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_context_snapshot(row)
+
+    @staticmethod
+    def _row_to_context_snapshot(row: sqlite3.Row) -> ContextSnapshot:
+        return ContextSnapshot(
+            snapshot_id=row["snapshot_id"],
+            run_id=row["run_id"],
+            agent_id=row["agent_id"],
+            role=row["role"],
+            task_id=row["task_id"],
+            source_item_ids=tuple(json.loads(row["source_item_ids"])),
+            excluded_items=tuple(json.loads(row["excluded_items"])),
+            rendered_hash=row["rendered_hash"],
+            estimated_tokens=int(row["estimated_tokens"]),
+            estimator=row["estimator"],
+            created_sequence=int(row["created_sequence"]),
+            session_id=row["session_id"],
+            model_call_id=row["model_call_id"],
+            system_prompt_hash=row["system_prompt_hash"],
+            static_prefix_hash=row["static_prefix_hash"],
+            selected_memory_ids=tuple(json.loads(row["selected_memory_ids"] or "[]")),
+            selected_artifact_locators=tuple(
+                json.loads(row["selected_artifact_locators"] or "[]")
+            ),
+            selected_event_ids=tuple(json.loads(row["selected_event_ids"] or "[]")),
+            event_range=json.loads(row["event_range"] or "{}"),
+            compaction_summary_ref=row["compaction_summary_ref"],
+            omitted_counts=json.loads(row["omitted_counts"] or "{}"),
+            input_tokens=(
+                int(row["input_tokens"]) if row["input_tokens"] is not None else None
+            ),
+            policy_fingerprint=row["policy_fingerprint"] or "",
+        )
 
     # ------------------------------------------------------------------
     # structured persistent memory
@@ -982,6 +1164,54 @@ class SQLiteRepository:
             created_at=row["created_at"],
         )
 
+    def insert_memory_conflict_decision(self, decision: Any) -> None:
+        from paperclaw.memory.contracts import MemoryConflictDecisionRecord
+
+        if not isinstance(decision, MemoryConflictDecisionRecord):
+            raise TypeError("decision must be a MemoryConflictDecisionRecord")
+        with self._write_lock:
+            self._exec_txn(
+                "INSERT INTO memory_conflict_decisions (decision_id, candidate_memory_id, "
+                "conflicting_memory_ids, decision, source_refs, created_at, metadata) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    decision.decision_id,
+                    decision.candidate_memory_id,
+                    json.dumps(list(decision.conflicting_memory_ids)),
+                    decision.decision,
+                    json.dumps(list(decision.source_refs)),
+                    decision.created_at,
+                    json.dumps(decision.metadata, sort_keys=True),
+                ),
+            )
+
+    def list_memory_conflict_decisions(
+        self, candidate_memory_id: str | None = None
+    ) -> list[Any]:
+        from paperclaw.memory.contracts import MemoryConflictDecisionRecord
+
+        query = "SELECT * FROM memory_conflict_decisions"
+        params: tuple[Any, ...] = ()
+        if candidate_memory_id is not None:
+            query += " WHERE candidate_memory_id = ?"
+            params = (candidate_memory_id,)
+        query += " ORDER BY created_at ASC, decision_id ASC"
+        rows = self._conn.execute(query, params).fetchall()
+        return [
+            MemoryConflictDecisionRecord(
+                decision_id=row["decision_id"],
+                candidate_memory_id=row["candidate_memory_id"],
+                conflicting_memory_ids=tuple(
+                    json.loads(row["conflicting_memory_ids"])
+                ),
+                decision=row["decision"],
+                source_refs=tuple(json.loads(row["source_refs"])),
+                created_at=row["created_at"],
+                metadata=json.loads(row["metadata"] or "{}"),
+            )
+            for row in rows
+        ]
+
     # ------------------------------------------------------------------
     # checkpoints
     # ------------------------------------------------------------------
@@ -1096,8 +1326,9 @@ class SQLiteRepository:
             # replay. Return False WITHOUT entering a transaction; the prior
             # commit's state is the source of truth.
             existing = self._conn.execute(
-                "SELECT 1 FROM session_events WHERE event_id = ?",
-                (event.event_id,),
+                "SELECT 1 FROM session_events WHERE event_id = ? "
+                "OR (run_id = ? AND idempotency_key = ? AND idempotency_key IS NOT NULL)",
+                (event.event_id, event.run_id, event.idempotency_key),
             ).fetchone()
             if existing is not None:
                 return False
@@ -1108,8 +1339,9 @@ class SQLiteRepository:
                 # 1. Append SessionEvent.
                 self._conn.execute(
                     "INSERT INTO session_events (event_id, conversation_id, run_id, "
-                    "sequence, event_type, payload, created_at, schema_version) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "sequence, event_type, payload, created_at, schema_version, "
+                    "turn_id, idempotency_key, payload_ref) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         event.event_id,
                         event.conversation_id,
@@ -1118,7 +1350,10 @@ class SQLiteRepository:
                         event.event_type,
                         json.dumps(event.payload),
                         event.created_at,
-                        int(event.payload.get("schema_version", 1)),
+                        int(event.schema_version),
+                        event.turn_id,
+                        event.idempotency_key,
+                        event.payload_ref,
                     ),
                 )
 
@@ -1141,8 +1376,12 @@ class SQLiteRepository:
                     self._conn.execute(
                         "INSERT INTO context_snapshots (snapshot_id, run_id, agent_id, role, "
                         "task_id, source_item_ids, excluded_items, rendered_hash, "
-                        "estimated_tokens, estimator, created_sequence, created_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "estimated_tokens, estimator, created_sequence, created_at, session_id, "
+                        "model_call_id, system_prompt_hash, static_prefix_hash, "
+                        "selected_memory_ids, selected_artifact_locators, selected_event_ids, "
+                        "event_range, compaction_summary_ref, omitted_counts, input_tokens, "
+                        "policy_fingerprint) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             snapshot.snapshot_id,
                             snapshot.run_id,
@@ -1156,6 +1395,18 @@ class SQLiteRepository:
                             snapshot.estimator,
                             int(snapshot.created_sequence),
                             utc_now_iso(),
+                            snapshot.session_id,
+                            snapshot.model_call_id,
+                            snapshot.system_prompt_hash,
+                            snapshot.static_prefix_hash,
+                            json.dumps(list(snapshot.selected_memory_ids)),
+                            json.dumps(list(snapshot.selected_artifact_locators)),
+                            json.dumps(list(snapshot.selected_event_ids)),
+                            json.dumps(snapshot.event_range, sort_keys=True),
+                            snapshot.compaction_summary_ref,
+                            json.dumps(snapshot.omitted_counts, sort_keys=True),
+                            snapshot.input_tokens,
+                            snapshot.policy_fingerprint,
                         ),
                     )
 

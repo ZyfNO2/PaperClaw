@@ -35,6 +35,39 @@ class MemoryKind(str, Enum):
     LESSON = "lesson"
 
 
+class MemoryConflictDecision(str, Enum):
+    """Explicit resolution choices for competing durable-memory candidates."""
+
+    KEEP_BOTH = "keep_both"
+    SUPERSEDE = "supersede"
+    MERGE = "merge"
+    REJECT_CANDIDATE = "reject_candidate"
+
+
+@dataclass(frozen=True)
+class MemorySourceRef:
+    """Typed provenance that can be projected to the legacy string ref field."""
+
+    source_type: str
+    source_id: str
+    locator: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.source_type.strip() or not self.source_id.strip():
+            raise MemoryContractError("MemorySourceRef requires type and id")
+
+    @property
+    def ref(self) -> str:
+        suffix = f"#{self.locator}" if self.locator else ""
+        return f"{self.source_type.strip().lower()}:{self.source_id.strip()}{suffix}"
+
+    def to_dict(self) -> dict[str, str]:
+        data = {"source_type": self.source_type, "source_id": self.source_id}
+        if self.locator:
+            data["locator"] = self.locator
+        return data
+
+
 SUPPORTED_MEMORY_SCOPES = frozenset(item.value for item in MemoryScope)
 SUPPORTED_MEMORY_KINDS = frozenset(item.value for item in MemoryKind)
 
@@ -51,16 +84,63 @@ class MemoryBoundaryError(MemoryContractError):
     """Raised when Memory is used as an unbounded source-object store."""
 
 
+@dataclass(frozen=True)
+class MemoryConflictDecisionRecord:
+    """Durable, append-only record of a Memory conflict decision."""
+
+    candidate_memory_id: str
+    conflicting_memory_ids: tuple[str, ...]
+    decision: str | MemoryConflictDecision
+    source_refs: tuple[str | MemorySourceRef, ...] = ()
+    decision_id: str = field(default_factory=lambda: f"mdec-{uuid4().hex}")
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        try:
+            resolved = (
+                self.decision
+                if isinstance(self.decision, MemoryConflictDecision)
+                else MemoryConflictDecision(str(self.decision))
+            )
+        except ValueError as exc:
+            raise MemoryContractError(
+                f"unsupported conflict decision: {self.decision!r}"
+            ) from exc
+        if not self.candidate_memory_id.strip():
+            raise MemoryContractError("candidate_memory_id must be non-empty")
+        conflicts = tuple(dict.fromkeys(self.conflicting_memory_ids))
+        if not conflicts:
+            raise MemoryContractError("at least one conflicting memory is required")
+        if any(not item.strip() for item in conflicts):
+            raise MemoryContractError("conflicting memory ids must be non-empty")
+        refs = _normalize_refs(self.source_refs)
+        object.__setattr__(self, "decision", resolved.value)
+        object.__setattr__(self, "conflicting_memory_ids", conflicts)
+        object.__setattr__(self, "source_refs", refs)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["conflicting_memory_ids"] = list(self.conflicting_memory_ids)
+        data["source_refs"] = list(self.source_refs)
+        return data
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _normalize_refs(values: Iterable[str]) -> tuple[str, ...]:
+def _normalize_refs(values: Iterable[str | MemorySourceRef]) -> tuple[str, ...]:
     refs: list[str] = []
     for value in values:
-        if not isinstance(value, str) or not value.strip():
+        if isinstance(value, MemorySourceRef):
+            normalized = value.ref
+        elif isinstance(value, str) and value.strip():
+            normalized = value.strip()
+        else:
             raise MemoryContractError("source_refs must contain non-empty strings")
-        normalized = value.strip()
         if len(normalized) > 512 or "\n" in normalized or "\r" in normalized:
             raise MemoryContractError("source_refs contain an invalid reference")
         refs.append(normalized)
@@ -81,7 +161,7 @@ class MemoryItem:
     kind: str
     content: str
     memory_id: str = field(default_factory=lambda: f"mem-{uuid4().hex}")
-    source_refs: tuple[str, ...] = ()
+    source_refs: tuple[str | MemorySourceRef, ...] = ()
     trust_level: str = "trusted_local"
     importance: int = 50
     pinned: bool = False
@@ -205,11 +285,14 @@ def _kind_value(value: str | MemoryKind) -> str:
 __all__ = [
     "MemoryBoundaryError",
     "MemoryContractError",
+    "MemoryConflictDecision",
+    "MemoryConflictDecisionRecord",
     "MemoryItem",
     "MemoryKind",
     "MemoryScope",
     "MemorySnapshot",
     "MemoryTrustError",
+    "MemorySourceRef",
     "SUPPORTED_MEMORY_KINDS",
     "SUPPORTED_MEMORY_SCOPES",
 ]

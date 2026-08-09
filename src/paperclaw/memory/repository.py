@@ -11,7 +11,7 @@ from typing import Protocol
 
 from paperclaw.context.repository import Repository
 
-from .contracts import MemoryItem, MemorySnapshot
+from .contracts import MemoryConflictDecisionRecord, MemoryItem, MemorySnapshot
 
 
 class MemoryRepositoryProtocol(Protocol):
@@ -25,6 +25,12 @@ class MemoryRepositoryProtocol(Protocol):
     ) -> list[MemoryItem]: ...
     def insert_memory_snapshot(self, snapshot: MemorySnapshot) -> None: ...
     def get_memory_snapshot(self, conversation_id: str) -> MemorySnapshot | None: ...
+    def insert_memory_conflict_decision(
+        self, decision: MemoryConflictDecisionRecord
+    ) -> None: ...
+    def list_memory_conflict_decisions(
+        self, candidate_memory_id: str | None = None
+    ) -> list[MemoryConflictDecisionRecord]: ...
 
 
 class MemoryRepository:
@@ -67,6 +73,14 @@ class MemoryRepository:
 
     def get_snapshot(self, conversation_id: str) -> MemorySnapshot | None:
         return self._repository.get_memory_snapshot(conversation_id)
+
+    def insert_conflict_decision(self, decision: MemoryConflictDecisionRecord) -> None:
+        self._repository.insert_memory_conflict_decision(decision)
+
+    def list_conflict_decisions(
+        self, candidate_memory_id: str | None = None
+    ) -> list[MemoryConflictDecisionRecord]:
+        return self._repository.list_memory_conflict_decisions(candidate_memory_id)
 
 
 __all__ = ["MemoryRepository", "MemoryRepositoryProtocol"]
