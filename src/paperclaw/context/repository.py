@@ -31,24 +31,21 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Protocol
+from typing import Any, Iterable, Iterator, Protocol, TYPE_CHECKING
 
 from paperclaw.context.contracts import (
     Checkpoint,
-    ContextBudget,
     ContextItem,
     ContextSnapshot,
     SessionEvent,
-    SCOPE_SHARED,
     utc_now_iso,
     validate_event,
     validate_item,
 )
-from paperclaw.context.migrations import (
-    CURRENT_SCHEMA_VERSION,
-    MigrationRunner,
-    open_connection,
-)
+from paperclaw.context.migrations import MigrationRunner, open_connection
+
+if TYPE_CHECKING:
+    from paperclaw.memory.contracts import MemoryItem, MemorySnapshot
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +157,30 @@ class Repository(Protocol):
     def insert_snapshot(self, snapshot: ContextSnapshot) -> None: ...
 
     def list_snapshots(self, run_id: str) -> list[ContextSnapshot]: ...
+
+    # -- structured persistent memory ---------------------------------
+
+    def insert_memory_item(self, item: "MemoryItem") -> None: ...
+
+    def get_memory_item(self, memory_id: str) -> "MemoryItem | None": ...
+
+    def list_active_memory(self, scope_type: str, scope_id: str) -> list["MemoryItem"]: ...
+
+    def list_all_memory(self, scope_type: str, scope_id: str) -> list["MemoryItem"]: ...
+
+    def list_memory_history(self, memory_id: str) -> list["MemoryItem"]: ...
+
+    def search_memory_items(
+        self,
+        query: str,
+        scope_type: str,
+        scope_id: str,
+        limit: int = 10,
+    ) -> list["MemoryItem"]: ...
+
+    def insert_memory_snapshot(self, snapshot: "MemorySnapshot") -> None: ...
+
+    def get_memory_snapshot(self, conversation_id: str) -> "MemorySnapshot | None": ...
 
     # -- checkpoints ----------------------------------------------------
 
@@ -797,6 +818,171 @@ class SQLiteRepository:
         return out
 
     # ------------------------------------------------------------------
+    # structured persistent memory
+    # ------------------------------------------------------------------
+
+    def insert_memory_item(self, item: "MemoryItem") -> None:
+        """Append one immutable MemoryItem; never UPDATE an existing row."""
+        from paperclaw.memory.contracts import MemoryItem
+
+        if not isinstance(item, MemoryItem):
+            raise TypeError("item must be a structured MemoryItem")
+        with self._write_lock:
+            self._exec_txn(
+                "INSERT INTO memory_items (memory_id, scope_type, scope_id, kind, "
+                "content, source_refs, trust_level, importance, pinned, "
+                "created_from_run_id, created_from_sequence, supersedes_memory_id, "
+                "tombstone, content_hash, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                self._memory_item_to_row(item),
+            )
+
+    def get_memory_item(self, memory_id: str) -> "MemoryItem | None":
+        row = self._conn.execute(
+            "SELECT * FROM memory_items WHERE memory_id = ?",
+            (memory_id,),
+        ).fetchone()
+        return self._row_to_memory_item(row) if row is not None else None
+
+    def list_active_memory(self, scope_type: str, scope_id: str) -> list["MemoryItem"]:
+        """Return the deterministic non-tombstone head projection."""
+        rows = self._conn.execute(
+            "SELECT m.* FROM memory_items AS m "
+            "WHERE m.scope_type = ? AND m.scope_id = ? AND m.tombstone = 0 "
+            "AND NOT EXISTS ("
+            "SELECT 1 FROM memory_items AS newer "
+            "WHERE newer.supersedes_memory_id = m.memory_id "
+            "AND newer.scope_type = m.scope_type AND newer.scope_id = m.scope_id"
+            ") "
+            "ORDER BY m.importance DESC, m.kind ASC, m.created_at ASC, m.memory_id ASC",
+            (scope_type, scope_id),
+        ).fetchall()
+        return [self._row_to_memory_item(row) for row in rows]
+
+    def list_all_memory(self, scope_type: str, scope_id: str) -> list["MemoryItem"]:
+        rows = self._conn.execute(
+            "SELECT * FROM memory_items WHERE scope_type = ? AND scope_id = ? "
+            "ORDER BY created_at ASC, memory_id ASC",
+            (scope_type, scope_id),
+        ).fetchall()
+        return [self._row_to_memory_item(row) for row in rows]
+
+    def list_memory_history(self, memory_id: str) -> list["MemoryItem"]:
+        """Return one immutable replacement/tombstone lineage in order."""
+        first = self.get_memory_item(memory_id)
+        if first is None:
+            return []
+        rows: dict[str, Any] = {first.memory_id: first}
+        pending = [first.memory_id]
+        while pending:
+            current = pending.pop()
+            children = self._conn.execute(
+                "SELECT * FROM memory_items WHERE supersedes_memory_id = ? "
+                "AND scope_type = ? AND scope_id = ?",
+                (current, first.scope_type, first.scope_id),
+            ).fetchall()
+            for row in children:
+                item = self._row_to_memory_item(row)
+                if item.memory_id not in rows:
+                    rows[item.memory_id] = item
+                    pending.append(item.memory_id)
+            parent = rows[current].supersedes_memory_id
+            if parent and parent not in rows:
+                parent_row = self._conn.execute(
+                    "SELECT * FROM memory_items WHERE memory_id = ?",
+                    (parent,),
+                ).fetchone()
+                if parent_row is not None:
+                    parent_item = self._row_to_memory_item(parent_row)
+                    rows[parent_item.memory_id] = parent_item
+                    pending.append(parent_item.memory_id)
+        return sorted(rows.values(), key=lambda item: (item.created_at, item.memory_id))
+
+    def search_memory_items(
+        self,
+        query: str,
+        scope_type: str,
+        scope_id: str,
+        limit: int = 10,
+    ) -> list["MemoryItem"]:
+        """Run deterministic local lexical recall over active Memory heads.
+
+        The repository intentionally keeps a Python lexical fallback instead
+        of requiring SQLite FTS5, which is not consistently compiled into all
+        supported Windows Python distributions.
+        """
+        import re
+
+        if limit < 1:
+            return []
+        tokens = tuple(re.findall(r"[\w]+", query.casefold()))
+        candidates = self.list_active_memory(scope_type, scope_id)
+        if not tokens:
+            return candidates[:limit]
+        ranked: list[tuple[int, "MemoryItem"]] = []
+        for item in candidates:
+            haystack = item.content.casefold()
+            score = sum(haystack.count(token) for token in tokens)
+            if score:
+                ranked.append((score, item))
+        ranked.sort(
+            key=lambda pair: (
+                -pair[0],
+                -pair[1].importance,
+                pair[1].kind,
+                pair[1].created_at,
+                pair[1].memory_id,
+            )
+        )
+        return [item for _, item in ranked[:limit]]
+
+    def insert_memory_snapshot(self, snapshot: "MemorySnapshot") -> None:
+        from paperclaw.memory.contracts import MemorySnapshot
+
+        if not isinstance(snapshot, MemorySnapshot):
+            raise TypeError("snapshot must be a structured MemorySnapshot")
+        with self._write_lock:
+            self._exec_txn(
+                "INSERT INTO memory_snapshots (snapshot_id, conversation_id, "
+                "user_scope_id, project_scope_id, memory_ids, rendered_content, "
+                "rendered_hash, estimated_tokens, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    snapshot.snapshot_id,
+                    snapshot.conversation_id,
+                    snapshot.user_scope_id,
+                    snapshot.project_scope_id,
+                    json.dumps(list(snapshot.memory_ids), ensure_ascii=False),
+                    snapshot.rendered_content,
+                    snapshot.rendered_hash,
+                    int(snapshot.estimated_tokens),
+                    snapshot.created_at,
+                ),
+            )
+
+    def get_memory_snapshot(self, conversation_id: str) -> "MemorySnapshot | None":
+        row = self._conn.execute(
+            "SELECT * FROM memory_snapshots WHERE conversation_id = ? "
+            "ORDER BY created_at DESC, snapshot_id DESC LIMIT 1",
+            (conversation_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        from paperclaw.memory.contracts import MemorySnapshot
+
+        return MemorySnapshot(
+            snapshot_id=row["snapshot_id"],
+            conversation_id=row["conversation_id"],
+            user_scope_id=row["user_scope_id"],
+            project_scope_id=row["project_scope_id"],
+            memory_ids=tuple(json.loads(row["memory_ids"])),
+            rendered_content=row["rendered_content"],
+            rendered_hash=row["rendered_hash"],
+            estimated_tokens=int(row["estimated_tokens"]),
+            created_at=row["created_at"],
+        )
+
+    # ------------------------------------------------------------------
     # checkpoints
     # ------------------------------------------------------------------
 
@@ -1103,6 +1289,26 @@ class SQLiteRepository:
         )
 
     @staticmethod
+    def _memory_item_to_row(item: "MemoryItem") -> tuple[Any, ...]:
+        return (
+            item.memory_id,
+            item.scope_type,
+            item.scope_id,
+            item.kind,
+            item.content,
+            json.dumps(list(item.source_refs), ensure_ascii=False),
+            item.trust_level,
+            int(item.importance),
+            int(item.pinned),
+            item.created_from_run_id,
+            item.created_from_sequence,
+            item.supersedes_memory_id,
+            int(item.tombstone),
+            item.content_hash,
+            item.created_at,
+        )
+
+    @staticmethod
     def _row_to_checkpoint(row: sqlite3.Row) -> Checkpoint:
         """Reconstruct a Checkpoint from a ``checkpoints`` row.
 
@@ -1131,6 +1337,32 @@ class SQLiteRepository:
                 if "checkpoint_registry_hash" in keys
                 else None
             ),
+        )
+
+    @staticmethod
+    def _row_to_memory_item(row: sqlite3.Row) -> "MemoryItem":
+        from paperclaw.memory.contracts import MemoryItem
+
+        return MemoryItem(
+            memory_id=row["memory_id"],
+            scope_type=row["scope_type"],
+            scope_id=row["scope_id"],
+            kind=row["kind"],
+            content=row["content"],
+            source_refs=tuple(json.loads(row["source_refs"])),
+            trust_level=row["trust_level"],
+            importance=int(row["importance"]),
+            pinned=bool(row["pinned"]),
+            created_from_run_id=row["created_from_run_id"],
+            created_from_sequence=(
+                int(row["created_from_sequence"])
+                if row["created_from_sequence"] is not None
+                else None
+            ),
+            supersedes_memory_id=row["supersedes_memory_id"],
+            tombstone=bool(row["tombstone"]),
+            content_hash=row["content_hash"],
+            created_at=row["created_at"],
         )
 
     @staticmethod

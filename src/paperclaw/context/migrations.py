@@ -1,4 +1,4 @@
-"""SQLite schema migrations for the v0.04 Context Runtime.
+"""SQLite schema migrations for the Context Runtime and v0.39 Memory.
 
 Design rules (SOP §5.3):
 
@@ -21,7 +21,8 @@ The v1 schema creates the minimal table set defined in SOP §5.1:
     checkpoints
     idempotency_ledger
 
-``memory_items`` is intentionally omitted (deferred to a later version).
+v4 adds the structured persistent-memory tables.  The older file-backed
+memory compatibility layer does not use these tables.
 """
 
 from __future__ import annotations
@@ -30,7 +31,6 @@ import shutil
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 SCHEMA_VERSION_V1 = 1
 
@@ -57,8 +57,13 @@ SCHEMA_VERSION_V2 = 2
 #: columns via this migration immediately after v1 creation.
 SCHEMA_VERSION_V3 = 3
 
+#: v4 adds bounded structured persistent MemoryItem and frozen session-memory
+#: snapshot persistence.  The migration is additive and leaves all v0.04-v0.38
+#: tables untouched.
+SCHEMA_VERSION_V4 = 4
+
 #: Current target schema version after applying all known migrations.
-CURRENT_SCHEMA_VERSION = SCHEMA_VERSION_V3
+CURRENT_SCHEMA_VERSION = SCHEMA_VERSION_V4
 
 
 @dataclass
@@ -293,6 +298,67 @@ V3_CHECKPOINTS_NODE_IDENTITY_SQL: tuple[str, ...] = (
 )
 
 
+#: v4 structured persistent Memory.  ``rendered_content`` is retained in a
+#: snapshot so a frozen prompt prefix remains reproducible even if a future
+#: implementation changes its renderer.  Memory history is append-only: the
+#: tables intentionally have no UPDATE/DELETE path in the Repository API.
+V4_STRUCTURED_MEMORY_SQL: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS memory_items (
+        memory_id TEXT PRIMARY KEY,
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        content TEXT NOT NULL,
+        source_refs TEXT NOT NULL,
+        trust_level TEXT NOT NULL,
+        importance INTEGER NOT NULL,
+        pinned INTEGER NOT NULL,
+        created_from_run_id TEXT,
+        created_from_sequence INTEGER,
+        supersedes_memory_id TEXT,
+        tombstone INTEGER NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_memory_items_scope
+        ON memory_items (scope_type, scope_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_memory_items_pinned
+        ON memory_items (scope_type, scope_id, pinned, tombstone)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_memory_items_hash
+        ON memory_items (content_hash)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_memory_items_supersedes
+        ON memory_items (supersedes_memory_id)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS memory_snapshots (
+        snapshot_id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        user_scope_id TEXT NOT NULL,
+        project_scope_id TEXT,
+        memory_ids TEXT NOT NULL,
+        rendered_content TEXT NOT NULL,
+        rendered_hash TEXT NOT NULL,
+        estimated_tokens INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_memory_snapshots_conversation
+        ON memory_snapshots (conversation_id, created_at)
+    """,
+)
+
+
 #: Map schema_version -> (description, DDL tuple). Used by MigrationRunner.
 MIGRATIONS: dict[int, tuple[str, tuple[str, ...]]] = {
     SCHEMA_VERSION_V1: ("initial v0.04 context runtime schema", V1_SCHEMA_SQL),
@@ -303,6 +369,10 @@ MIGRATIONS: dict[int, tuple[str, tuple[str, ...]]] = {
     SCHEMA_VERSION_V3: (
         "add node-identity columns to checkpoints for Addendum P0-C resume",
         V3_CHECKPOINTS_NODE_IDENTITY_SQL,
+    ),
+    SCHEMA_VERSION_V4: (
+        "add structured persistent MemoryItem and frozen snapshot tables",
+        V4_STRUCTURED_MEMORY_SQL,
     ),
 }
 
