@@ -348,8 +348,7 @@ V4_STRUCTURED_MEMORY_SQL: tuple[str, ...] = (
         rendered_content TEXT NOT NULL,
         rendered_hash TEXT NOT NULL,
         estimated_tokens INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id)
+        created_at TEXT NOT NULL
     )
     """,
     """
