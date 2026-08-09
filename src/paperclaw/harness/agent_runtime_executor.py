@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
 
 from paperclaw.agent.flow import AgentRuntime, default_registry
 from paperclaw.context.repository import Repository
@@ -28,6 +28,9 @@ from paperclaw.tools.registry import ToolRegistry
 from paperclaw.trace.redaction import TraceRedactor
 
 from .contracts import EventEmitter, ExecutionReport, RunLimits, RunRequest, StopToken
+
+if TYPE_CHECKING:
+    from paperclaw.memory.service import MemoryService
 
 LegacyEventHandler = Callable[[str, dict], None]
 
@@ -313,6 +316,9 @@ class AgentRuntimeExecutor:
         enable_verification_gate: bool = True,
         repository: Repository | None = None,
         legacy_event_handler: LegacyEventHandler | None = None,
+        memory_service: "MemoryService | None" = None,
+        user_scope_id: str = "default-user",
+        project_scope_id: str | None = None,
     ) -> None:
         self._model = model
         self._workspace = Path(workspace).resolve(strict=True)
@@ -320,6 +326,9 @@ class AgentRuntimeExecutor:
         self._enable_verification_gate = enable_verification_gate
         self._repository = repository
         self._legacy_event_handler = legacy_event_handler
+        self._memory_service = memory_service
+        self._user_scope_id = user_scope_id
+        self._project_scope_id = project_scope_id
         api_key = getattr(model, "api_key", "")
         self._event_redactor = TraceRedactor(
             secret_values=[api_key] if isinstance(api_key, str) else (),
@@ -347,14 +356,14 @@ class AgentRuntimeExecutor:
             return sequence
 
         model = _BudgetedModel(self._model, usage, runtime_emit, stop_token)
+        tool_objects = [self._registry.get(name) for name in self._registry.names]
+        if self._memory_service is not None and "memory" not in self._registry.names:
+            from paperclaw.memory.tool import MemoryTool
+
+            tool_objects.append(MemoryTool(self._memory_service))
         tools = ToolRegistry(
-            _BudgetedTool(
-                self._registry.get(name),
-                usage,
-                runtime_emit,
-                stop_token,
-            )
-            for name in self._registry.names
+            _BudgetedTool(tool, usage, runtime_emit, stop_token)
+            for tool in tool_objects
         )
         runtime = AgentRuntime(
             model,
@@ -459,6 +468,13 @@ class AgentRuntimeExecutor:
             },
         )
         session.append_message("user", request.text)
+        if self._memory_service is not None:
+            self._memory_service.event_sink = session.emit
+            session.capture_memory_snapshot(
+                self._memory_service,
+                user_scope_id=self._user_scope_id,
+                project_scope_id=self._project_scope_id,
+            )
         return session
 
     @staticmethod

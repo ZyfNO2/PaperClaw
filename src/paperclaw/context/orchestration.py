@@ -224,6 +224,7 @@ class ContextAssemblyTrace:
     conflicts: tuple[ContextConflict, ...]
     allocation: ContextBudgetAllocation
     latency_ms: int
+    memory_ids: tuple[str, ...] = ()
 
     def to_event_payload(self, *, limit: int = 100) -> dict[str, Any]:
         """Return a bounded, content-free payload safe for durable Trace."""
@@ -240,6 +241,7 @@ class ContextAssemblyTrace:
             "selected_count": len(self.selected),
             "excluded_count": len(self.excluded),
             "conflict_count": len(self.conflicts),
+            "memory_ids": list(self.memory_ids),
             "trace_truncated": any(
                 len(items) > limit
                 for items in (self.selected, self.excluded, self.conflicts)
@@ -415,6 +417,11 @@ class ContextOrchestrator:
             selections=selections,
             allocation=allocation,
         )
+        memory_ids = tuple(
+            str(item.metadata["memory_id"])
+            for item in selected
+            if item.metadata.get("memory_id")
+        )
         del selected  # captured by selections/sections after the final Gate
         excluded = tuple(
             duplicate_exclusions
@@ -433,6 +440,7 @@ class ContextOrchestrator:
             conflicts=tuple(conflicts),
             allocation=allocation,
             latency_ms=max(0, round((perf_counter() - started) * 1000)),
+            memory_ids=memory_ids,
         )
         return PromptAssembly(
             prompt=prompt,

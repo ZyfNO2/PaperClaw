@@ -208,6 +208,7 @@ class MemoryService:
         *,
         scopes: Iterable[tuple[str | MemoryScope, str]],
         top_k: int = 10,
+        event_sink: MemoryEventSink | None = None,
     ) -> list[MemoryItem]:
         if not isinstance(query, str) or not query.strip():
             return []
@@ -231,6 +232,7 @@ class MemoryService:
                 "result_count": len(results),
                 "memory_ids": [item.memory_id for item in results],
             },
+            event_sink=event_sink,
         )
         return results
 

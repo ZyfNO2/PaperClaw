@@ -29,11 +29,15 @@ Design constraints (SOP §5.3 / §10):
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, Protocol, TYPE_CHECKING
 from uuid import uuid4
 
-from paperclaw.context.contracts import SessionEvent, utc_now_iso
+from paperclaw.context.contracts import SessionEvent
 from paperclaw.context.repository import Repository, SQLiteRepository
+
+if TYPE_CHECKING:
+    from paperclaw.memory.contracts import MemorySnapshot
+    from paperclaw.memory.service import MemoryService
 
 
 # ---------------------------------------------------------------------------
@@ -206,11 +210,15 @@ class SessionService:
         run_id: str,
         agent_id: str = "runtime",
         sink: EventSink | None = None,
+        memory_service: "MemoryService | None" = None,
+        memory_snapshot: "MemorySnapshot | None" = None,
     ):
         self._repo = repo
         self._conversation_id = conversation_id
         self._run_id = run_id
         self._agent_id = agent_id
+        self._memory_service = memory_service
+        self._memory_snapshot = memory_snapshot
         # Sink defaults to a SqliteEventSink bound to this run. Callers can
         # pass NullEventSink to disable persistence for parity mode.
         self._sink: EventSink = sink or SqliteEventSink(
@@ -237,6 +245,9 @@ class SessionService:
         agent_id: str = "runtime",
         metadata: dict[str, Any] | None = None,
         sink: EventSink | None = None,
+        memory_service: "MemoryService | None" = None,
+        user_scope_id: str = "default-user",
+        project_scope_id: str | None = None,
     ) -> "SessionService":
         """Start a fresh conversation + run.
 
@@ -259,7 +270,18 @@ class SessionService:
             run_id=run_id,
             agent_id=agent_id,
             sink=sink,
+            memory_service=memory_service,
         )
+        if memory_service is not None:
+            # Snapshot capture is deliberately part of session initialization,
+            # never of a per-turn Context build. A failure is propagated so a
+            # required pinned snapshot cannot silently degrade to empty memory.
+            svc._memory_snapshot = memory_service.capture_snapshot(
+                conversation_id=conversation_id,
+                user_scope_id=user_scope_id,
+                project_scope_id=project_scope_id,
+                event_sink=svc.emit,
+            )
         return svc
 
     @classmethod
@@ -271,6 +293,7 @@ class SessionService:
         run_id: str,
         agent_id: str = "runtime",
         sink: EventSink | None = None,
+        memory_service: "MemoryService | None" = None,
     ) -> "SessionService":
         """Reopen an existing run by ID.
 
@@ -284,6 +307,12 @@ class SessionService:
             run_id=run_id,
             agent_id=agent_id,
             sink=sink,
+            memory_service=memory_service,
+            memory_snapshot=(
+                memory_service.get_snapshot(conversation_id)
+                if memory_service is not None
+                else None
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -301,6 +330,28 @@ class SessionService:
     @property
     def agent_id(self) -> str:
         return self._agent_id
+
+    @property
+    def memory_snapshot(self) -> "MemorySnapshot | None":
+        """Frozen pinned Memory captured for this Conversation, if enabled."""
+        return self._memory_snapshot
+
+    def capture_memory_snapshot(
+        self,
+        memory_service: "MemoryService",
+        *,
+        user_scope_id: str,
+        project_scope_id: str | None = None,
+    ) -> "MemorySnapshot":
+        """Capture the one pinned-memory snapshot for this Session."""
+        self._memory_service = memory_service
+        self._memory_snapshot = memory_service.capture_snapshot(
+            conversation_id=self._conversation_id,
+            user_scope_id=user_scope_id,
+            project_scope_id=project_scope_id,
+            event_sink=self.emit,
+        )
+        return self._memory_snapshot
 
     @property
     def sink(self) -> EventSink:

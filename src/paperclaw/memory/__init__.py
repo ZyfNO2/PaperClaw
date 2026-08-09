@@ -1,6 +1,18 @@
 """Bounded long-term memory and user-profile support."""
 
 from .runtime import MemoryRuntimeComponents, MemoryRuntimeSettings, build_memory_runtime
+from .context_source import StructuredMemoryContextSource
+from .contracts import (
+    MemoryBoundaryError,
+    MemoryContractError,
+    MemoryItem,
+    MemoryKind,
+    MemoryScope,
+    MemoryTrustError,
+    MemorySnapshot as StructuredMemorySnapshot,
+)
+from .repository import MemoryRepository, MemoryRepositoryProtocol
+from .service import MemoryBudget, MemoryService
 from .scoped import MemoryStoreProtocol, ProjectMemoryPaths, ProjectScopedMemoryStore
 from .source import (
     FrozenFoundationalContextSource,
@@ -29,6 +41,16 @@ __all__ = [
     "MemoryMatchError",
     "MemoryPolicy",
     "MemoryPrivacyError",
+    "MemoryBoundaryError",
+    "MemoryContractError",
+    "MemoryItem",
+    "MemoryKind",
+    "MemoryScope",
+    "MemoryTrustError",
+    "MemoryBudget",
+    "MemoryRepository",
+    "MemoryRepositoryProtocol",
+    "MemoryService",
     "MemoryRuntimeComponents",
     "MemoryRuntimeSettings",
     "MemorySnapshot",
@@ -39,5 +61,7 @@ __all__ = [
     "ProjectInstructionSnapshot",
     "ProjectMemoryPaths",
     "ProjectScopedMemoryStore",
+    "StructuredMemoryContextSource",
+    "StructuredMemorySnapshot",
     "build_memory_runtime",
 ]

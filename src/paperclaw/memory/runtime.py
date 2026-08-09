@@ -22,8 +22,12 @@ from paperclaw.projects import (
 )
 from paperclaw.retrieval import RetrievalContextSource, register_retrieval_context_source
 from paperclaw.tools.registry import ToolRegistry
+from paperclaw.context.repository import Repository
 
 from .scoped import MemoryStoreProtocol, ProjectScopedMemoryStore
+from .context_source import StructuredMemoryContextSource
+from .repository import MemoryRepository
+from .service import MemoryService
 from .source import FrozenFoundationalContextSource, ProjectInstructionLoader
 from .store import FileMemoryStore, MemoryPolicy, MemorySnapshot
 from .tool import MemoryTool
@@ -139,6 +143,8 @@ class MemoryRuntimeComponents:
     project_manifest: ProjectManifest | None = None
     project_index_status: ProjectIndexStatus | None = None
     project_knowledge_snapshot: ProjectKnowledgeSnapshot | None = None
+    structured_memory_service: MemoryService | None = None
+    structured_memory_snapshot: Any | None = None
     _closeables: tuple[Any, ...] = field(default=(), repr=False, compare=False)
 
     def close(self) -> None:
@@ -153,6 +159,10 @@ def build_memory_runtime(
     *,
     settings: MemoryRuntimeSettings | None = None,
     store: MemoryStoreProtocol | None = None,
+    repository: Repository | None = None,
+    conversation_id: str | None = None,
+    user_scope_id: str = "default-user",
+    project_scope_id: str | None = None,
 ) -> MemoryRuntimeComponents:
     resolved_workspace = Path(workspace).expanduser().resolve(strict=True)
     resolved_settings = settings or MemoryRuntimeSettings.from_env()
@@ -196,7 +206,24 @@ def build_memory_runtime(
         )
 
     tools = default_registry()
-    if resolved_settings.memory_enabled and resolved_settings.memory_tool_enabled:
+    structured_service: MemoryService | None = None
+    structured_snapshot: Any | None = None
+    resolved_project_scope_id = project_scope_id or (
+        project_manifest.project_id if project_manifest is not None else None
+    )
+    if repository is not None and resolved_settings.memory_enabled:
+        structured_service = MemoryService(MemoryRepository(repository))
+        if conversation_id is not None:
+            structured_snapshot = structured_service.get_snapshot(conversation_id)
+            if structured_snapshot is None:
+                structured_snapshot = structured_service.capture_snapshot(
+                    conversation_id=conversation_id,
+                    user_scope_id=user_scope_id,
+                    project_scope_id=resolved_project_scope_id,
+                )
+        if resolved_settings.memory_tool_enabled:
+            tools.register(MemoryTool(structured_service))
+    elif resolved_settings.memory_enabled and resolved_settings.memory_tool_enabled:
         tools.register(MemoryTool(resolved_store))
 
     instruction_files = (
@@ -219,6 +246,18 @@ def build_memory_runtime(
         kind="memory",
         priority=1_000,
     )
+    if structured_service is not None:
+        sources.register(
+            "structured_memory",
+            StructuredMemoryContextSource(
+                structured_service,
+                snapshot=structured_snapshot,
+                user_scope_id=user_scope_id,
+                project_scope_id=resolved_project_scope_id,
+            ),
+            kind="memory",
+            priority=980,
+        )
 
     closeables: list[Any] = []
     project_index_status: ProjectIndexStatus | None = None
@@ -253,6 +292,8 @@ def build_memory_runtime(
         project_manifest=project_manifest,
         project_index_status=project_index_status,
         project_knowledge_snapshot=knowledge_snapshot,
+        structured_memory_service=structured_service,
+        structured_memory_snapshot=structured_snapshot,
         _closeables=tuple(closeables),
     )
 

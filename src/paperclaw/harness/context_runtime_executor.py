@@ -177,6 +177,9 @@ class ContextOrchestratedAgentRuntimeExecutor:
         context_policy: ContextPolicy | None = None,
         orchestrator: ContextOrchestrator | None = None,
         context_source_registry: ContextSourceRegistry | None = None,
+        memory_service: Any | None = None,
+        user_scope_id: str = "default-user",
+        project_scope_id: str | None = None,
     ) -> None:
         if orchestrator is not None and context_source_registry is not None:
             raise ValueError(
@@ -212,6 +215,9 @@ class ContextOrchestratedAgentRuntimeExecutor:
             enable_verification_gate=enable_verification_gate,
             repository=repository,
             legacy_event_handler=legacy_event_handler,
+            memory_service=memory_service,
+            user_scope_id=user_scope_id,
+            project_scope_id=project_scope_id,
         )
         self.last_state: dict[str, Any] | None = None
         self.last_assemblies: tuple[PromptAssembly, ...] = ()

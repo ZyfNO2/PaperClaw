@@ -109,7 +109,10 @@ class PersistentSessionRuntime:
         enable_verification_gate: bool,
         legacy_event_handler,
     ) -> Any:
-        components = build_memory_runtime(workspace)
+        components = build_memory_runtime(
+            workspace,
+            repository=self._repository,
+        )
         return ContextOrchestratedAgentRuntimeExecutor(
             model,
             workspace,
@@ -119,6 +122,12 @@ class PersistentSessionRuntime:
             legacy_event_handler=legacy_event_handler,
             context_policy=components.context_policy,
             context_source_registry=components.source_registry,
+            memory_service=components.structured_memory_service,
+            project_scope_id=(
+                components.project_manifest.project_id
+                if components.project_manifest is not None
+                else None
+            ),
         )
 
     def close(self) -> None:
