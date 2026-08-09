@@ -343,8 +343,8 @@ class TestMigrations:
     """SOP §12: S-01 fresh migration, S-02 upgrade, S-03 rollback on failure."""
 
     def test_s01_fresh_migration_latest_succeeds(self, tmp_db: Path):
-        # S-01: empty database, migration runs to latest (v3 in v0.04 after
-        # Addendum P0-C added the node-identity columns on checkpoints).
+        # S-01: empty database, migration runs to latest (v4 after v0.39
+        # structured persistent-memory tables were added).
         conn = open_connection(tmp_db)
         runner = MigrationRunner(conn)
         result = runner.migrate(make_backup=False)
@@ -390,10 +390,10 @@ class TestMigrations:
             "checkpoint_registry_hash",
         }.issubset(col_names), f"v3 checkpoints table missing P0-C columns: {col_names}"
 
-        # v1, v2, v3 are all recorded in schema_migrations.
+        # v1 through v4 are all recorded in schema_migrations.
         cur = conn.execute("SELECT version FROM schema_migrations ORDER BY version")
         versions = [row[0] for row in cur.fetchall()]
-        assert versions == [1, 2, 3]
+        assert versions == [1, 2, 3, 4]
         conn.close()
 
     def test_migration_is_idempotent(self, tmp_db: Path):
@@ -416,21 +416,21 @@ class TestMigrations:
             "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)"
         )
         conn.execute("INSERT INTO schema_migrations VALUES (0, '1970', 'pre')")
-        # Run migration: should reach latest (v3 in v0.04 after Addendum P0-C).
+        # Run migration: should reach latest v4.
         runner = MigrationRunner(conn)
         result = runner.migrate(make_backup=False)
         assert result.ok
         assert result.applied_version == CURRENT_SCHEMA_VERSION
-        # Verify the v0 row is preserved AND v1, v2, v3 rows exist.
+        # Verify the v0 row is preserved AND v1-v4 rows exist.
         cur = conn.execute("SELECT version FROM schema_migrations ORDER BY version")
         versions = [row[0] for row in cur.fetchall()]
-        assert versions == [0, 1, 2, 3]
+        assert versions == [0, 1, 2, 3, 4]
         conn.close()
 
     def test_s03_migration_failure_rolls_back_version(self, tmp_db: Path):
-        # S-03: Inject a broken DDL after the legit v3 DDL to force a failure.
-        # We register a fake v4 migration with invalid SQL; schema_version
-        # must remain at 3 (the prior version).
+        # S-03: Inject a broken DDL after the legit v4 DDL to force a failure.
+        # We register a fake v5 migration with invalid SQL; schema_version
+        # must remain at 4 (the prior version).
         conn = open_connection(tmp_db)
         runner = MigrationRunner(conn)
         first = runner.migrate(make_backup=False)
@@ -438,14 +438,14 @@ class TestMigrations:
 
         # Inject a fake broken migration into the global registry.
         original = MIGRATIONS.copy()
-        MIGRATIONS[4] = ("broken", ("THIS IS NOT VALID SQL;",))
+        MIGRATIONS[5] = ("broken", ("THIS IS NOT VALID SQL;",))
         try:
             runner2 = MigrationRunner(conn)
             result = runner2.migrate(make_backup=False)
             assert not result.ok
             assert result.error is not None
-            # Version must NOT advance past 3.
-            assert runner2.current_version() == 3
+            # Version must NOT advance past 4.
+            assert runner2.current_version() == 4
         finally:
             MIGRATIONS.clear()
             MIGRATIONS.update(original)
@@ -453,19 +453,19 @@ class TestMigrations:
 
     def test_backup_is_created_when_backup_dir_set(self, tmp_db: Path, tmp_path: Path):
         backup_dir = tmp_path / "backups"
-        # First open + migrate to latest (v3). No backup because the file is
+        # First open + migrate to latest (v4). No backup because the file is
         # newly created (MigrationRunner skips backup for fresh files).
         repo = SQLiteRepository(tmp_db, backup_dir=backup_dir, migrate=True)
         repo.close()
 
-        # Re-open the SAME db file (now at v3) with a fake v4 migration that
+        # Re-open the SAME db file (now at v4) with a fake v5 migration that
         # is valid; backup should be created before upgrade.
         from paperclaw.context.migrations import MIGRATIONS
 
         original = MIGRATIONS.copy()
-        # Create a new "v4" migration that adds a column to conversations.
-        MIGRATIONS[4] = (
-            "add column v4",
+        # Create a new "v5" migration that adds a column to conversations.
+        MIGRATIONS[5] = (
+            "add column v5",
             ("ALTER TABLE conversations ADD COLUMN extra TEXT;",),
         )
         try:

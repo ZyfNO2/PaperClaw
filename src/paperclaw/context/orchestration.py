@@ -229,7 +229,7 @@ class ContextAssemblyTrace:
     def to_event_payload(self, *, limit: int = 100) -> dict[str, Any]:
         """Return a bounded, content-free payload safe for durable Trace."""
 
-        return {
+        payload = {
             "policy_version": self.policy_version,
             "prompt_version": self.prompt_version,
             "fingerprint": self.fingerprint,
@@ -241,12 +241,14 @@ class ContextAssemblyTrace:
             "selected_count": len(self.selected),
             "excluded_count": len(self.excluded),
             "conflict_count": len(self.conflicts),
-            "memory_ids": list(self.memory_ids),
             "trace_truncated": any(
                 len(items) > limit
                 for items in (self.selected, self.excluded, self.conflicts)
             ),
         }
+        if self.memory_ids:
+            payload["memory_ids"] = list(self.memory_ids)
+        return payload
 
 
 @dataclass(frozen=True)
