@@ -1,0 +1,29 @@
+{
+  "demo_type": "offline_fixture",
+  "schema": "paperclaw.v0.39.frozen_memory_snapshot",
+  "evidence_test": "tests/unit/memory/test_frozen_session_memory.py",
+  "semantics": {
+    "session_1": "snapshot A remains stable after a mid-session replacement",
+    "session_2": "a newly opened session captures the replacement",
+    "scope_order": ["USER", "PROJECT"]
+  },
+  "session_1": {
+    "conversation_id": "conv-s1",
+    "snapshot_id": "snap-a",
+    "memory_ids": ["m-a"],
+    "rendered_content": "[m-a] scope=PROJECT:paperclaw kind=constraint trust=trusted_local\nQueryEngine remains a thin façade.",
+    "rendered_hash": "990c453eb054fbe1a83c7d06f57c8b8e66653d5b014445e38ad68a92063efb70",
+    "after_mid_session_write": {
+      "active_projection_memory_ids": ["m-b"],
+      "snapshot_memory_ids": ["m-a"],
+      "snapshot_hash_unchanged": true
+    }
+  },
+  "session_2": {
+    "conversation_id": "conv-s2",
+    "snapshot_id": "snap-b",
+    "memory_ids": ["m-b"],
+    "rendered_content": "[m-b] scope=PROJECT:paperclaw kind=constraint trust=trusted_local\nQueryEngine remains a thin façade over the runtime.",
+    "rendered_hash": "855cc33119a95afb7adf24fae87097bc073c096d6469934ba66859efa14a31cb"
+  }
+}

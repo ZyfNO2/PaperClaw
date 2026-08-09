@@ -1,0 +1,45 @@
+PaperClaw v0.39 structured persistent memory file manifest
+Branch: feat/v0.39-memory-runtime
+Base merge-base: 5891d87
+
+[Design and SOP]
+Plan/PaperClaw_v0.39_HermesMemory改造计划.md
+Plan/drafts/PaperClaw_v0.39_HermesMemory_SOP草案.md
+.trae/specs/v0-39-hermes-memory/spec.md
+
+[Context, session, runtime integration]
+src/paperclaw/context/migrations.py
+src/paperclaw/context/orchestration.py
+src/paperclaw/context/repository.py
+src/paperclaw/context/session.py
+src/paperclaw/harness/agent_runtime_executor.py
+src/paperclaw/harness/context_runtime_executor.py
+src/paperclaw/session_commands.py
+
+[Structured memory implementation]
+src/paperclaw/memory/__init__.py
+src/paperclaw/memory/context_source.py
+src/paperclaw/memory/contracts.py
+src/paperclaw/memory/repository.py
+src/paperclaw/memory/runtime.py
+src/paperclaw/memory/service.py
+src/paperclaw/memory/tool.py
+
+[Tests]
+tests/unit/memory/test_frozen_session_memory.py
+tests/unit/memory/test_memory_boundaries_and_compat.py
+tests/unit/memory/test_memory_context_source.py
+tests/unit/memory/test_memory_contracts.py
+tests/unit/memory/test_memory_migration.py
+tests/unit/memory/test_memory_service.py
+tests/unit/memory/test_memory_traceability.py
+tests/unit/memory/test_structured_memory_runtime.py
+tests/unit/test_context_contracts.py
+
+[Handoff artifacts]
+artifacts/v0_39/implementation_summary.md
+artifacts/v0_39/test_report.md
+artifacts/v0_39/memory_semantics.md
+artifacts/v0_39/frozen_snapshot_demo.json
+artifacts/v0_39/known_limitations.md
+artifacts/v0_39/file_manifest.txt
