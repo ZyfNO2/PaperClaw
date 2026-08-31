@@ -4,6 +4,39 @@ PaperClaw 是一个面向 Coding、Research 与多 Agent 工作流的可审计 A
 
 当前开发版本：**0.39.0**。
 
+## Desktop Workbench 界面预览
+
+PaperClaw 提供面向 Runtime、任务、Provider、能力和项目状态的 Desktop
+Workbench。以下截图是本地界面示例；截图中的任务与指标属于演示/验收状态，
+不等同于当前进程的实时状态。
+
+### 任务与事件时间线
+
+任务页集中展示 queued、running、waiting、succeeded、failed 和 cancelled
+状态，并提供任务列表与事件时间线，便于观察一次运行的生命周期。
+
+![PaperClaw 任务与事件时间线](docs/assets/frontend/paperclaw-missions.png)
+
+### Runtime 总览
+
+总览页聚合 Runtime、Agent、Provider、能力、最近运行和当前项目状态。
+
+![PaperClaw Runtime 总览](docs/assets/frontend/paperclaw-overview.png)
+
+### Provider 状态
+
+Provider 页展示连接状态、模型、超时、最近检查时间与启用开关；API Key
+区域仅用于演示，不应把截图中的占位值当作真实凭据。
+
+![PaperClaw Provider 状态](docs/assets/frontend/paperclaw-providers.png)
+
+### 能力与风险等级
+
+能力页按 Tool、Connector、Runtime Capability 和 Skill 分类，显示权限范围、
+风险等级与当前启用状态。
+
+![PaperClaw 能力与风险等级](docs/assets/frontend/paperclaw-capabilities.png)
+
 ## v0.39 Durable Memory / Context Resume
 
 v0.39 extends the existing SQLite Context、Session、Memory、Trace and
